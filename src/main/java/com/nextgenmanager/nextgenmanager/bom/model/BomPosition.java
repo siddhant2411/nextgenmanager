@@ -42,6 +42,6 @@ public class BomPosition {
     @Column(name = "position")
     private int position;
 
-    private int quantity;
+    private double quantity;
 
 }

@@ -1,0 +1,30 @@
+package com.nextgenmanager.nextgenmanager.Inventory.service;
+
+
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ItemType;
+import com.nextgenmanager.nextgenmanager.items.model.UOM;
+import org.springframework.data.domain.Page;
+
+import java.util.List;
+
+public interface InventoryInstanceService  {
+
+    public List<InventoryInstance> getAllInventoryInstances(int page, int size, String sortBy, String sortDir, String query);
+
+    public Page<InventoryInstance> getPresentInventoryInstances(int page, int size, String sortBy, String sortDir, String queryItemCode,
+                                                                String queryItemName, String queryHsnCode, Double totalQuantityCondition, String filterType, UOM queryUOM, ItemType itemType);
+
+    public List<InventoryInstance> getInventoryInstanceByItemId(int inventoryItemId,int page, int size, String sortBy, String sortDir, String query);
+
+    public void createInventoryInstances(InventoryInstance inventoryInstance, double qty);
+
+    public List<InventoryInstance> consumeInventoryInstance(InventoryItem inventoryItem, double consumedQty);
+
+    public void updateInventoryInstance(InventoryInstance inventoryInstance);
+
+    public void deleteInventoryInstance(double id);
+
+
+}
