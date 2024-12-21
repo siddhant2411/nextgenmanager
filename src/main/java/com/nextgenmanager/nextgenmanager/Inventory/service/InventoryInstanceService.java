@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
@@ -13,8 +14,8 @@ public interface InventoryInstanceService  {
 
     public List<InventoryInstance> getAllInventoryInstances(int page, int size, String sortBy, String sortDir, String query);
 
-    public Page<InventoryInstance> getPresentInventoryInstances(int page, int size, String sortBy, String sortDir, String queryItemCode,
-                                                                String queryItemName, String queryHsnCode, Double totalQuantityCondition, String filterType, UOM queryUOM, ItemType itemType);
+    public Page<InventoryPresentDTO> getPresentInventoryInstances(int page, int size, String sortBy, String sortDir, String queryItemCode,
+                                                                  String queryItemName, String queryHsnCode, Double totalQuantityCondition, String filterType, UOM queryUOM, ItemType itemType);
 
     public List<InventoryInstance> getInventoryInstanceByItemId(int inventoryItemId,int page, int size, String sortBy, String sortDir, String query);
 

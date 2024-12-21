@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.Inventory.controller;
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -97,7 +98,7 @@ public class InventoryInstanceController {
                     page, size, sortBy, sortDir);
 
             // Call the service method to fetch paginated inventory instances
-            Page<InventoryInstance> paginatedInventoryInstances =
+            Page<InventoryPresentDTO> paginatedInventoryInstances =
                     inventoryInstanceService.getPresentInventoryInstances(page, size, sortBy, sortDir, itemCode,itemName,hsnCode,totalQty,filterType,uom,itemType);
 
             // Wrap the results in a response body

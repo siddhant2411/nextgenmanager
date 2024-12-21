@@ -45,6 +45,9 @@ public class InventoryInstance {
     private Date consumeDate;
 
 
+    private Double costPerUnit;
+
+    private Double sellPricePerUnit;
 
     @CreationTimestamp
     @Column(updatable = false)

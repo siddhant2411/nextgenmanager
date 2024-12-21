@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -166,9 +167,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     }
 
     @Override
-    public Page<InventoryInstance> getPresentInventoryInstances(int page, int size, String sortBy, String sortDir, String queryItemCode,
-                                                                String queryItemName, String queryHsnCode, Double totalQuantityCondition,
-                                                                String filterType, UOM queryUOM, ItemType itemType) {
+    public Page<InventoryPresentDTO> getPresentInventoryInstances(int page, int size, String sortBy, String sortDir,
+                                                                  String queryItemCode, String queryItemName, String queryHsnCode,
+                                                                  Double totalQuantityCondition, String filterType, UOM queryUOM,
+                                                                  ItemType itemType) {
         try {
             logger.info("Fetching paginated present inventory instances. Page: {}, Size: {}, SortBy: {}, SortDir: {}",
                     page, size, sortBy, sortDir);
@@ -177,40 +179,46 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             Pageable pageable = PageRequest.of(page, size,
                     sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending());
 
-            Integer uom,itemTypeValue;
-            if(queryUOM!=null){
-                uom =queryUOM.ordinal();
-            }else {
-                uom=null;
-            }
-            if(itemType!=null){
-                itemTypeValue = itemType.ordinal();
-            }
-            else {
-                itemTypeValue = null;
-            }
+            // Convert UOM and ItemType to their ordinal values if not null
+            Integer uom = (queryUOM != null) ? queryUOM.ordinal() : null;
+            Integer itemTypeValue = (itemType != null) ? itemType.ordinal() : null;
 
+            // Fetch raw data from repository
+            Page<Object[]> inventoryListWithCount = inventoryInstanceRepository.getItemsForInventoryPage(
+                    pageable, queryItemCode, queryItemName, queryHsnCode, totalQuantityCondition, filterType, uom, itemTypeValue);
 
-            // Fetch paginated data from repository
-            Page<Object[]> inventoryListWithCount = inventoryInstanceRepository.getItemsWithTotalQuantity(pageable,queryItemCode,queryItemName,queryHsnCode,totalQuantityCondition,filterType,uom,itemTypeValue);
+            // Map raw data to InventoryPresentDTO
+            Page<InventoryPresentDTO> inventoryPresentDTOPage = inventoryListWithCount.map(record -> {
+                try {
+                    int inventoryItemRef = (int)record[0];
+                    double totalQuantity = (double) record[6];
+                    double averageCost = (double)record[7];
 
-            // Process and map the results
-            Page<InventoryInstance> inventoryInstances = inventoryListWithCount.map(record -> {
-                int inventoryItemRef = (int) record[0];
-                Double totalQuantity = (Double) record[1];
+                    // Fetch inventory item details
+                    InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(inventoryItemRef);
+                    if(inventoryItem==null){
+                        throw new RuntimeException("Invalid inventory item reference: " + inventoryItemRef);
+                    }
 
-                InventoryItem inventoryItem = inventoryItemRepository.findById(inventoryItemRef)
-                        .orElseThrow(() -> new IllegalArgumentException("Invalid inventory item reference: " + inventoryItemRef));
-
-                InventoryInstance instance = new InventoryInstance();
-                instance.setInventoryItem(inventoryItem);
-                instance.setQuantity(totalQuantity);
-                instance.setUniqueId(null);
-                return instance;
+                    // Map to DTO
+                    return new InventoryPresentDTO(
+                            inventoryItem.getInventoryItemId(),
+                            inventoryItem.getItemCode(),
+                            inventoryItem.getName(),
+                            inventoryItem.getHsnCode(),
+                            inventoryItem.getItemType(),
+                            inventoryItem.getUom(),
+                            totalQuantity,
+                            averageCost
+                    );
+                } catch (Exception e) {
+                    // Add logging here
+                    throw new RuntimeException("Error mapping inventory data: " + e.getMessage(), e);
+                }
             });
 
-            logger.info("Successfully fetched {} inventory items.", inventoryInstances.getTotalElements());
-            return inventoryInstances;
+            logger.info("Successfully fetched {} inventory items.", inventoryPresentDTOPage.getTotalElements());
+            return inventoryPresentDTOPage;
         } catch (Exception e) {
             logger.error("Error fetching present inventory instances: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to fetch present inventory instances. Please try again later.", e);
