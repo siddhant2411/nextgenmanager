@@ -3,9 +3,12 @@ package com.nextgenmanager.nextgenmanager.Inventory.controller;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
+import io.swagger.models.auth.In;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +17,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/inventory")
@@ -110,6 +115,68 @@ public class InventoryInstanceController {
             logger.error("Error fetching present inventory instances: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Error fetching present inventory instances: " + e.getMessage());
+        }
+    }
+
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteInventoryInstance(@PathVariable String id) {
+        logger.info("Received request to delete inventory instance with id: {}", id);
+        try {
+            inventoryInstanceService.deleteInventoryInstance(Long.parseLong(id));
+            return ResponseEntity.status(HttpStatus.OK).body("Inventory Instance deleted successfully");
+        }
+        catch (ResourceNotFoundException e){
+            logger.error("Inventory Instance does not exist: {}", e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Failed to delete Inventory Instance: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }catch (Exception e) {
+            logger.error("Error deleting BOM: {}", e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Failed to delete BOM: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateInventoryInstance(@PathVariable String id, @RequestBody InventoryInstance inventoryInstance) {
+        logger.info("Received request to update BOM with id: {}", id);
+        try {
+            inventoryInstance.setId(Long.parseLong(id));
+            InventoryInstance updateInventoryInstance = inventoryInstanceService.updateInventoryInstance(inventoryInstance);
+            return ResponseEntity.ok(updateInventoryInstance);
+        }  catch (ResourceNotFoundException e){
+            logger.error("Inventory Instance does not exist: {}", e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Failed to update Inventory Instance: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        } catch (Exception e) {
+            logger.error("Error updating Inventory Instance: {}", e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Failed to update Inventory Instance: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getInventoryInstance(@PathVariable String id) {
+        logger.info("Received request to update BOM with id: {}", id);
+        try {
+
+            InventoryInstance inventoryInstance = inventoryInstanceService.getInventoryInstanceById(Long.parseLong(id));
+            return ResponseEntity.ok(inventoryInstance);
+        }  catch (ResourceNotFoundException e){
+            logger.error("Inventory Instance does not exist: {}", e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Failed to get Inventory Instance: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        } catch (Exception e) {
+            logger.error("Error get Inventory Instance: {}", e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Failed to update Inventory Instance: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
 

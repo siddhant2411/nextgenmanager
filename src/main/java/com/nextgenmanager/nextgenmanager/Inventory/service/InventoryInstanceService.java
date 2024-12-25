@@ -6,6 +6,7 @@ import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
+import io.swagger.models.auth.In;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
@@ -23,9 +24,9 @@ public interface InventoryInstanceService  {
 
     public List<InventoryInstance> consumeInventoryInstance(InventoryItem inventoryItem, double consumedQty);
 
-    public void updateInventoryInstance(InventoryInstance inventoryInstance);
+    public InventoryInstance updateInventoryInstance(InventoryInstance inventoryInstance);
 
-    public void deleteInventoryInstance(double id);
+    public void deleteInventoryInstance(long id);
 
-
+    public InventoryInstance getInventoryInstanceById(long id);
 }

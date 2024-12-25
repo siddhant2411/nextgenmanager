@@ -3,10 +3,14 @@ package com.nextgenmanager.nextgenmanager.Inventory.service;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
+import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import io.swagger.models.auth.In;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +64,8 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     newInstance.setInventoryItem(inventoryItem);
                     newInstance.setEntryDate(inventoryInstance.getEntryDate());
                     newInstance.setQuantity(1);
+                    newInstance.setCostPerUnit(inventoryInstance.getCostPerUnit());
+                    newInstance.setSellPricePerUnit(inventoryInstance.getSellPricePerUnit());
                     instances.add(newInstance);
                 }
                 inventoryInstanceRepository.saveAll(instances);
@@ -148,15 +154,80 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     }
 
     @Override
-    public void updateInventoryInstance(InventoryInstance inventoryInstance) {
-        // Implementation to be added with logging
-        logger.warn("updateInventoryInstance method not implemented");
+    @Transactional
+    public InventoryInstance updateInventoryInstance(InventoryInstance updatedInventoryInstance) {
+        try {
+            logger.info("Starting inventory instance update for item ID: {}",
+                    updatedInventoryInstance.getInventoryItem().getInventoryItemId());
+
+            InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(
+                    updatedInventoryInstance.getInventoryItem().getInventoryItemId()
+            );
+
+            if (inventoryItem == null) {
+                logger.error("Inventory item not found or inactive for ID: {}",
+                        updatedInventoryInstance.getInventoryItem().getInventoryItemId());
+                throw new IllegalArgumentException("Invalid inventory item ID");
+            }
+
+            // Fetch existing inventory instances for the given item
+            InventoryInstance existingInstance = getInventoryInstanceById(updatedInventoryInstance.getId());
+            existingInstance.setConsumed(updatedInventoryInstance.isConsumed());
+            existingInstance.setQuantity(updatedInventoryInstance.getQuantity());
+            if (updatedInventoryInstance.getInventoryItem() != null) {
+                existingInstance.setInventoryItem(inventoryItem);
+            }
+            if (updatedInventoryInstance.getUniqueId() != null) {
+                existingInstance.setUniqueId(updatedInventoryInstance.getUniqueId());
+            }
+            if (updatedInventoryInstance.getConsumeDate() != null) {
+                existingInstance.setConsumeDate(updatedInventoryInstance.getConsumeDate());
+            }
+            if (updatedInventoryInstance.getEntryDate() != null) {
+                existingInstance.setEntryDate(updatedInventoryInstance.getEntryDate());
+            }
+            if (updatedInventoryInstance.getDeletedDate() != null) {
+                existingInstance.setDeletedDate(updatedInventoryInstance.getDeletedDate());
+            }
+            if (updatedInventoryInstance.getCostPerUnit() != null) {
+                existingInstance.setCostPerUnit(updatedInventoryInstance.getCostPerUnit());
+            }
+            if (updatedInventoryInstance.getSellPricePerUnit() != null) {
+                existingInstance.setSellPricePerUnit(updatedInventoryInstance.getSellPricePerUnit());
+            }
+            inventoryInstanceRepository.save(existingInstance);
+
+            logger.info("Updated inventory instance for item ID: {}",
+                    inventoryItem.getInventoryItemId());
+            return existingInstance;
+        } catch (Exception e) {
+            logger.error("Error updating inventory instances: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update inventory instances", e);
+        }
     }
 
+
     @Override
-    public void deleteInventoryInstance(double id) {
-        // Implementation to be added with logging
-        logger.warn("deleteInventoryInstance method not implemented");
+    public void deleteInventoryInstance(long id) {
+        logger.info("Starting deletion of Inventory Instance with ID: {}", id);
+
+        try {
+            InventoryInstance inventoryInstance = getInventoryInstanceById(id); // This will throw if not found
+
+            // Soft delete - update the deletedDate
+            inventoryInstance.setDeletedDate(new Date());
+
+            // Save the updated BOM
+            inventoryInstanceRepository.save(inventoryInstance);
+            logger.info("Successfully soft-deleted BOM with ID: {}", id);
+
+
+        } catch (ResourceNotFoundException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Error while deleting Inventory Instance with ID {}: {}", id, e.getMessage());
+            throw new BomServiceException("Failed to delete Inventory Instance", e);
+        }
     }
 
     @Override
@@ -230,5 +301,19 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         // Placeholder implementation
         logger.warn("getInventoryInstance method not implemented");
         return null;
+    }
+
+    @Override
+    public InventoryInstance getInventoryInstanceById(long id){
+        logger.info("Fetching Inventory Instance with ID: {}", id);
+
+
+        return inventoryInstanceRepository.findById(id)
+                .filter(bom -> bom.getDeletedDate() == null)
+                .orElseThrow(() -> {
+                    logger.error("Inventory Instance not found or deleted with ID: {}", id);
+                    return new ResourceNotFoundException("Inventory Instance not found with ID: " + id);
+                });
+
     }
 }

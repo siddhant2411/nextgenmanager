@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Date;
 import java.util.List;
 
 @Repository
@@ -61,28 +62,31 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     @Query(value = "SELECT * FROM inventoryInstance i where i.id=:inventoryItemId AND i.deletedDate IS NULL", nativeQuery = true)
     InventoryInstance findByItemId(long inventoryItemId);
 
-    @Query(value = "SELECT " +
-            "   i.inventoryItemRef AS inventoryItemRef, " +
-            "   item.itemCode AS itemCode, " +
-            "   item.name AS name, " +
-            "   item.hsnCode AS hsnCode, " +
-            "   item.itemType AS itemType, " +
-            "   item.uom AS uom, " +
-            "   SUM(i.quantity) AS totalQuantity, " +
-            "   COALESCE(AVG(i.costPerUnit), 0) AS averageCost " +
-            "FROM inventoryInstance i " +
-            "INNER JOIN inventoryItem item ON i.inventoryItemRef = item.inventoryItemId " +
-            "WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
-            "AND (:queryCode IS NULL OR LOWER(item.itemCode) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
-            "AND (:queryName IS NULL OR LOWER(item.name) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
-            "AND (:queryHsnCode IS NULL OR LOWER(item.hsnCode) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
-            "AND (:uom IS NULL OR item.uom = :uom) " +
-            "AND (:itemTypeValue IS NULL OR item.itemType = :itemTypeValue) " +
-            "GROUP BY i.inventoryItemRef, item.itemCode, item.name, item.hsnCode, item.itemType, item.uom " +
-            "HAVING (:filterType IS NULL) " +
-            "   OR (:filterType = '=' AND SUM(i.quantity) = :totalQuantityCondition) " +
-            "   OR (:filterType = '<' AND SUM(i.quantity) < :totalQuantityCondition) " +
-            "   OR (:filterType = '>' AND SUM(i.quantity) > :totalQuantityCondition)",
+    @Query(value = "WITH inventory_summary AS ( " +
+            "   SELECT " +
+            "       i.inventoryItemRef AS inventoryItemRef, " +
+            "       item.itemCode AS itemCode, " +
+            "       item.name AS name, " +
+            "       item.hsnCode AS hsnCode, " +
+            "       item.itemType AS itemType, " +
+            "       item.uom AS uom, " +
+            "       SUM(i.quantity) AS totalQuantity, " +
+            "       COALESCE(AVG(i.costPerUnit), 0) AS averageCost " +
+            "   FROM inventoryInstance i " +
+            "   INNER JOIN inventoryItem item ON i.inventoryItemRef = item.inventoryItemId " +
+            "   WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
+            "   AND (:queryCode IS NULL OR LOWER(item.itemCode) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
+            "   AND (:queryName IS NULL OR LOWER(item.name) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
+            "   AND (:queryHsnCode IS NULL OR LOWER(item.hsnCode) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
+            "   AND (:uom IS NULL OR item.uom = :uom) " +
+            "   AND (:itemTypeValue IS NULL OR item.itemType = :itemTypeValue) " +
+            "   GROUP BY i.inventoryItemRef, item.itemCode, item.name, item.hsnCode, item.itemType, item.uom " +
+            "   HAVING (:filterType IS NULL) " +
+            "       OR (:filterType = '=' AND SUM(i.quantity) = :totalQuantityCondition) " +
+            "       OR (:filterType = '<' AND SUM(i.quantity) < :totalQuantityCondition) " +
+            "       OR (:filterType = '>' AND SUM(i.quantity) > :totalQuantityCondition) " +
+            ") " +
+            "SELECT * FROM inventory_summary",
             nativeQuery = true)
     Page<Object[]> getItemsForInventoryPage(
             Pageable pageable,
