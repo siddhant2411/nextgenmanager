@@ -1,19 +1,23 @@
-package com.nextgenmanager.nextgenmanager.sales.quotation.service;
+package com.nextgenmanager.nextgenmanager.marketing.quotation.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
-import com.nextgenmanager.nextgenmanager.contact.model.Contact;
-import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
-import com.nextgenmanager.nextgenmanager.contact.model.ContactPersonDetail;
-import com.nextgenmanager.nextgenmanager.sales.quotation.model.Quotation;
-import com.nextgenmanager.nextgenmanager.sales.quotation.model.QuotationProducts;
-import com.nextgenmanager.nextgenmanager.sales.quotation.repository.QuotationRepository;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.EnquiryTableDTO;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.dto.QuotationDisplayDTO;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProducts;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.QuotationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -52,6 +56,40 @@ public class QuotationServiceImp implements QuotationService{
     }
 
     @Override
+    public Page<QuotationDisplayDTO> getQuotationDisplayList(
+            int page, int size, String sortBy, String sortDir,
+            String qtnNoFilter, LocalDate qtnDateFilter, LocalDate enqDateFilter,
+            String enqNoFilter, String companyNameFilter, BigDecimal netAmountFilter,
+            BigDecimal totalAmountFilter) {
+
+        Pageable pageable = PageRequest.of(page, size,
+                sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending());
+
+        Page<Object[]> activeQuotations = quotationRepository.getActiveQuotation(
+                pageable, companyNameFilter, qtnNoFilter, qtnDateFilter, enqDateFilter,
+                enqNoFilter, netAmountFilter, totalAmountFilter);
+
+        return activeQuotations.map(record -> {
+            try {
+                return new QuotationDisplayDTO(
+                        record[0] != null ? ((Number) record[0]).intValue() : null,
+                        record[1] != null ? record[1].toString() : null,
+                        record[2] != null ? ((java.sql.Date) record[2]).toLocalDate() : null,
+                        record[3] != null ? record[3].toString() : null,
+                        record[4] != null ? ((java.sql.Date) record[4]).toLocalDate() : null,
+                        record[5] != null ? record[5].toString() : null,
+                        record[6] != null ? (BigDecimal) record[6] : null,
+                        record[7] != null ? (BigDecimal) record[7] : null
+                );
+            } catch (Exception e) {
+                logger.error("Error mapping quotation data for record {}: {}", record, e.getMessage());
+                throw new RuntimeException("Data mapping error", e);
+            }
+        });
+    }
+
+
+    @Override
     public Quotation createQuotation(Quotation quotation) {
         try {
             if (quotation.getQuotationProducts() != null) {
@@ -63,7 +101,9 @@ public class QuotationServiceImp implements QuotationService{
             long totalAmount;
             for(QuotationProducts quotationProduct: quotation.getQuotationProducts()){
                 double discount =  quotationProduct.getDiscountPercentage();
-                int inventoryItemId = quotationProduct.getInventoryInstance().getInventoryItem().getInventoryItemId();
+                long instanceId = quotationProduct.getInventoryInstance().getId();
+                InventoryInstance inventoryInstance = inventoryInstanceRepository.findByItemId(instanceId);
+                int inventoryItemId = inventoryInstance.getInventoryItem().getInventoryItemId();
                 double sellPrice = inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId).getSellPricePerUnit();
                 double totalUnitPrice = sellPrice - sellPrice * discount * 0.01;
                 quotationProduct.setUnitPriceAfterDiscount(BigDecimal.valueOf(totalUnitPrice));

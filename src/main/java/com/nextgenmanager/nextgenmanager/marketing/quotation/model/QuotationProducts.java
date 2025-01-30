@@ -1,9 +1,8 @@
-package com.nextgenmanager.nextgenmanager.sales.quotation.model;
+package com.nextgenmanager.nextgenmanager.marketing.quotation.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
-import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
