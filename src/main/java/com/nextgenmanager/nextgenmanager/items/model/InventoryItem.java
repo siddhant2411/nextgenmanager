@@ -1,11 +1,13 @@
 package com.nextgenmanager.nextgenmanager.items.model;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.util.Date;
+import java.util.List;
 
 @Entity
 @Getter
@@ -55,5 +57,9 @@ public class InventoryItem {
     private Date updatedDate;
 
     private Date deletedDate;
+
+    @OneToMany(mappedBy = "inventoryItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
+    private List<InventoryItemAttachment> inventoryItemAttachmentList;
 
 }

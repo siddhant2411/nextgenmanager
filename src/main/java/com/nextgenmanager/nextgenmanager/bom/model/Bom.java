@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -50,4 +51,8 @@ public class Bom {
     private Date updatedDate;
 
     private Date deletedDate;
+
+    @OneToMany(mappedBy = "bom", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
+    private List<BomAttachment> bomAttachmentList;
 }

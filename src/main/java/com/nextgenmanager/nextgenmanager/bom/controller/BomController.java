@@ -5,16 +5,28 @@ import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/bom")
@@ -104,4 +116,62 @@ public class BomController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+
+    @PostMapping(value = "/{id}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<String> uploadFile(@PathVariable int id, @RequestParam("file") MultipartFile file) {
+        try {
+
+            bomService.saveAttachment(id, file);
+
+            return ResponseEntity.ok("File uploaded successfully!");
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error uploading file: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/download/{fileId}")
+    public ResponseEntity<UrlResource> downloadFile(@PathVariable Long fileId) {
+        try {
+            UrlResource file = bomService.getAttachmentById(fileId);
+
+            if (file == null || !file.exists()) {
+                throw new ResourceNotFoundException("File not found with ID: " + fileId);
+            }
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getFilename() + "\"")
+                    .body(file);
+        } catch (ResourceNotFoundException ex) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (MalformedURLException ex) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        }
+    }
+
+    @DeleteMapping("/delete/{fileId}")
+    public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
+        try {
+            logger.info("Attempting to delete file with ID: {}", fileId);
+
+            bomService.deleteAttachment(fileId);
+
+            logger.info("File successfully deleted with ID: {}", fileId);
+            return ResponseEntity.ok("File deleted successfully!");
+
+        } catch (ResourceNotFoundException e) {
+            logger.warn("File not found for deletion with ID: {}", fileId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("File not found: " + e.getMessage());
+
+        } catch (IOException e) {
+            logger.error("Error deleting file with ID: {}. Message: {}", fileId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting file: " + e.getMessage());
+
+        } catch (Exception e) {
+            logger.error("Unexpected error while deleting file with ID: {}. Message: {}", fileId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Unexpected error occurred.");
+        }
+    }
+
+
 }

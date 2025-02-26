@@ -88,6 +88,13 @@
 			<artifactId>swagger-annotations</artifactId>
 			<version>2.2.16</version>
 		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.codice.ddf.spatial/spatial-ogc-urlresourcereader -->
+		<dependency>
+			<groupId>org.codice.ddf.spatial</groupId>
+			<artifactId>spatial-ogc-urlresourcereader</artifactId>
+			<version>3.0.1</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>
