@@ -29,6 +29,16 @@
 	<properties>
 		<java.version>17</java.version>
 	</properties>
+<repositories>
+    <repository>
+        <id>codice-releases</id>
+        <url>https://artifacts.codice.org/content/repositories/releases/</url>
+    </repository>
+    <repository>
+        <id>codice-snapshots</id>
+        <url>https://artifacts.codice.org/content/repositories/snapshots/</url>
+    </repository>
+</repositories>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -88,12 +98,14 @@
 			<artifactId>swagger-annotations</artifactId>
 			<version>2.2.16</version>
 		</dependency>
-		<!-- https://mvnrepository.com/artifact/org.codice.ddf.spatial/spatial-ogc-urlresourcereader -->
-		<dependency>
-			<groupId>org.codice.ddf.spatial</groupId>
-			<artifactId>spatial-ogc-urlresourcereader</artifactId>
-			<version>3.0.1</version>
-		</dependency>
+<!-- https://mvnrepository.com/artifact/ddf.catalog.core/catalog-core-standardframework -->
+<dependency>
+    <groupId>ddf.catalog.core</groupId>
+    <artifactId>catalog-core-standardframework</artifactId>
+    <version>3.0.1</version>
+</dependency>
+
+
 
 	</dependencies>
 
