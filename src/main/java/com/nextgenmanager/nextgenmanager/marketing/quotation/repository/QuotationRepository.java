@@ -35,8 +35,8 @@ public interface QuotationRepository extends JpaRepository<Quotation,Integer> {
     WHERE 
         (:companyName IS NULL OR c.companyName = :companyName)
         AND (:qtnNo IS NULL OR q.qtnNo = :qtnNo)
-        AND (:qtnDate IS NULL OR q.qtnDate = :qtnDate)
-        AND (:enqDate IS NULL OR e.enqDate = :enqDate)
+        AND (CAST(:qtnDate AS DATE) IS NULL OR q.qtnDate = CAST(:qtnDate AS DATE) ) 
+        AND (CAST(:enqDate AS DATE) IS NULL OR e.enqDate = CAST(:enqDate AS DATE) ) 
         AND (:enqNo IS NULL OR e.enqNo = :enqNo)
         AND (:netAmount IS NULL OR q.netAmount = :netAmount)
         AND (:totalAmount IS NULL OR q.totalAmount = :totalAmount)

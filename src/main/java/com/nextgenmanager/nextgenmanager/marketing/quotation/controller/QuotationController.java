@@ -17,7 +17,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/quotations")
+@RequestMapping("/api/quotation")
+@CrossOrigin(origins = "http://localhost:3000")
 public class QuotationController {
 
     @Autowired
