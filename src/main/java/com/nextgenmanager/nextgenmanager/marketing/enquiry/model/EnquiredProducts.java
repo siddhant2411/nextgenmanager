@@ -15,8 +15,8 @@ public class EnquiredProducts {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private int id;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Lazy load the associated Contact
-    @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId") // Foreign key mapping
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId", nullable = true)
     private InventoryItem inventoryItem;
 
     private String productNameRequired;
@@ -24,6 +24,10 @@ public class EnquiredProducts {
     private double qty;
 
     private String specialInstruction;
+
+
+    private Double pricePerUnit = 0.0;
+
 
     @ManyToOne
     @JoinColumn(name = "enquiry_id", referencedColumnName = "id")

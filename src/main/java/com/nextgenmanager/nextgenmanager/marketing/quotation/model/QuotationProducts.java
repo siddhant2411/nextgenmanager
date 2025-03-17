@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.marketing.quotation.model;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -23,15 +24,19 @@ public class QuotationProducts {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private int id;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Lazy load the associated Contact
-    @JoinColumn(name = "inventory_instance_id", referencedColumnName = "id") // Foreign key mapping
-    private InventoryInstance inventoryInstance;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId", nullable = true)
+    private InventoryItem inventoryItem;
+
+    private String productNameRequired;
+
+    private double pricePerUnit;
 
     private double qty;
 
     private double discountPercentage;
 
-    private String description;
+    private String specialInstruction;
 
     private BigDecimal unitPriceAfterDiscount;
 

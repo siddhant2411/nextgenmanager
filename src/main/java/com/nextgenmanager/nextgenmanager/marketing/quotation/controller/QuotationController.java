@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.marketing.quotation.controller;
 
+import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.dto.QuotationDisplayDTO;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.service.QuotationService;
@@ -26,12 +27,14 @@ public class QuotationController {
 
     Logger logger = LoggerFactory.getLogger(QuotationController.class);
     @GetMapping("/{id}")
-    public ResponseEntity<Quotation> getQuotationById(@PathVariable String id) {
+    public ResponseEntity<?> getQuotationById(@PathVariable String id) {
         try {
             Quotation quotation = quotationService.getQuotationById(Integer.parseInt(id));
             return ResponseEntity.ok(quotation);
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        } catch (Exception e){
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
 

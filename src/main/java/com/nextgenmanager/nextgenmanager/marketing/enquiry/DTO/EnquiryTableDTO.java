@@ -1,4 +1,4 @@
-package com.nextgenmanager.nextgenmanager.marketing.enquiry;
+package com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

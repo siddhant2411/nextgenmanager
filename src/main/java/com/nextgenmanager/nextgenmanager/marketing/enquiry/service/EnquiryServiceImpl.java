@@ -1,13 +1,16 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
-import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
-import com.nextgenmanager.nextgenmanager.marketing.enquiry.EnquiryTableDTO;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiredProducts;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryConversationRecord;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
-import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
+import jakarta.persistence.EntityNotFoundException;
 import org.hibernate.service.spi.ServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +24,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 public class EnquiryServiceImpl implements EnquiryService{
@@ -30,6 +32,14 @@ public class EnquiryServiceImpl implements EnquiryService{
 
     @Autowired
     EnquiryRepository enquiryRepository;
+
+    @Autowired
+    InventoryItemRepository inventoryItemRepository;
+
+    @Autowired
+    InventoryInstanceRepository inventoryInstanceRepository;
+
+
     @Override
     public Enquiry getEnquiry(int id) {
         logger.info("Fetching Enquiry with ID: {}", id);
@@ -105,6 +115,8 @@ public class EnquiryServiceImpl implements EnquiryService{
         try {
             updateBasicFields(existingEnquiry, updatedEnquiry);
             updateConversationRecords(existingEnquiry, updatedEnquiry.getEnquiryConversationRecords());
+
+            // Update enquiredProducts properly
             updateEnquiredProducts(existingEnquiry, updatedEnquiry.getEnquiredProducts());
 
             return enquiryRepository.save(existingEnquiry);
@@ -151,15 +163,13 @@ public class EnquiryServiceImpl implements EnquiryService{
     }
 
     private void updateEnquiredProducts(Enquiry existingEnquiry, List<EnquiredProducts> updatedProducts) {
-        // Get current products to maintain
         Set<Integer> updatedProductIds = updatedProducts.stream()
                 .map(EnquiredProducts::getId)
                 .filter(id -> id > 0)
                 .collect(Collectors.toSet());
 
         // Remove products that are no longer present
-        existingEnquiry.getEnquiredProducts()
-                .removeIf(product -> !updatedProductIds.contains(product.getId()));
+        existingEnquiry.getEnquiredProducts().removeIf(product -> !updatedProductIds.contains(product.getId()));
 
         // Update existing and add new products
         if (updatedProducts != null) {
@@ -169,14 +179,27 @@ public class EnquiryServiceImpl implements EnquiryService{
                             .filter(p -> p.getId() == product.getId())
                             .findFirst()
                             .ifPresent(existingProduct -> {
-                                existingProduct.setInventoryItem(product.getInventoryItem());
+                                //  Only update InventoryItem if it's not null
+                                if (product.getInventoryItem() != null && product.getInventoryItem().getInventoryItemId() >= 0) {
+                                    InventoryItem managedInventoryItem = inventoryItemRepository
+                                            .findById(product.getInventoryItem().getInventoryItemId())
+                                            .orElseThrow(() -> new ResourceNotFoundException("InventoryItem not found"));
+                                    existingProduct.setInventoryItem(managedInventoryItem);
+                                }
                                 existingProduct.setQty(product.getQty());
                                 existingProduct.setSpecialInstruction(product.getSpecialInstruction());
                             });
 
                 } else {
-                    // Add new product
-                    product.setEnquiry(existingEnquiry);
+                    //  Only set InventoryItem if it is provided and exists
+                    if (product.getInventoryItem() != null && product.getInventoryItem().getInventoryItemId() > 0) {
+                        InventoryItem managedInventoryItem = inventoryItemRepository
+                                .findById(product.getInventoryItem().getInventoryItemId())
+                                .orElseThrow(() -> new ResourceNotFoundException("InventoryItem not found"));
+                        product.setInventoryItem(managedInventoryItem);
+                    }else {
+                        product.setInventoryItem(null);
+                    }
                     existingEnquiry.getEnquiredProducts().add(product);
                 }
             }
@@ -187,6 +210,12 @@ public class EnquiryServiceImpl implements EnquiryService{
     @Override
     public Enquiry createEnquiry(Enquiry newEnquiry) {
         try {
+
+            for(EnquiredProducts enquiredProduct: newEnquiry.getEnquiredProducts()){
+                if(enquiredProduct.getInventoryItem()!=null&& enquiredProduct.getInventoryItem().getInventoryItemId()<=0){
+                    enquiredProduct.setInventoryItem(null);
+                }
+            }
             return enquiryRepository.save(newEnquiry);
         }catch (Exception e){
             logger.error("Error creating quotation: {}", e.getMessage(), e);
@@ -232,6 +261,45 @@ public class EnquiryServiceImpl implements EnquiryService{
             logger.error("Error while closing enquiry with id: {}", id);
             throw new RuntimeException(e);
         }
+
+    }
+
+    @Override
+    public Enquiry getEnquiryByEnquiryNo(String enqNo) {
+        logger.info("Fetching Enquiry with enqNo: {}", enqNo);
+        try{
+            return enquiryRepository.findByEnqNo(enqNo).
+                      orElseThrow(() -> new EntityNotFoundException("Enquiry not found"));
+        }
+        catch (EntityNotFoundException e){
+            logger.error("Enquiry with enqNo {} not found",enqNo);
+            throw e;
+        } catch (Exception e) {
+            logger.error("Error while fetching Enquiry with enqNo {}: {}", enqNo, e.getMessage());
+            throw new RuntimeException("Failed to fetch Enquiry", e);
+        }
+
+    }
+
+
+
+
+    @Override
+     public Enquiry getEnquiryWithProductPrice(int id){
+        Enquiry enquiry = getEnquiry(id);
+        List<EnquiredProducts> enquiredProducts = enquiry.getEnquiredProducts();
+        for(EnquiredProducts product: enquiredProducts){
+            if(product.getInventoryItem()!=null){
+                int inventoryItemId = product.getInventoryItem().getInventoryItemId();
+                if(inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId)!=null){
+                    product.setPricePerUnit(inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId).getSellPricePerUnit());
+                }
+                
+
+            }
+        }
+        return enquiry;
+
 
     }
 }

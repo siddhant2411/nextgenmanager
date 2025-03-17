@@ -1,6 +1,6 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.controller;
 
-import com.nextgenmanager.nextgenmanager.marketing.enquiry.EnquiryTableDTO;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.service.EnquiryService;
 import org.slf4j.Logger;
@@ -12,7 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/enquiry")
@@ -36,12 +35,24 @@ public class EnquiryController {
     @GetMapping("/{id}")
     public ResponseEntity<Enquiry> getEnquiryById(@PathVariable int id) {
         try {
-            Enquiry enquiry = enquiryService.getEnquiry(id);
+            Enquiry enquiry = enquiryService.getEnquiryWithProductPrice(id);
             return ResponseEntity.ok(enquiry);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
         }
     }
+
+//    @GetMapping("/{id}")
+//    public ResponseEntity<Enquiry> getEnquiryById(@PathVariable int id) {
+//        try {
+//            Enquiry enquiry = enquiryService.getEnquiry(id);
+//            return ResponseEntity.ok(enquiry);
+//        } catch (RuntimeException e) {
+//            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+//        }
+//    }
+
+
 
     @GetMapping("/all")
     public ResponseEntity<?> getAllEnquiry(
@@ -96,6 +107,19 @@ public class EnquiryController {
                  companyName,lastContactedDate,enqDate,closedDate,daysForNextFollowup,lastContactedDateComp,enqDateComp,
                  closedDateComp);
          return ResponseEntity.ok(allEnquiries) ;
+        }catch (Exception e){
+            logger.error("Error while giving response for active enquiry",e);
+            throw  new RuntimeException(e);
+        }
+    }
+
+    @GetMapping("/enquiryWithNo")
+    public ResponseEntity<?> getEnquiryWithNo(
+            @RequestParam(required = true) String enqNo
+    ){
+        try {
+            Enquiry enquiry = enquiryService.getEnquiryByEnquiryNo(enqNo);
+            return ResponseEntity.ok(enquiry) ;
         }catch (Exception e){
             logger.error("Error while giving response for active enquiry",e);
             throw  new RuntimeException(e);

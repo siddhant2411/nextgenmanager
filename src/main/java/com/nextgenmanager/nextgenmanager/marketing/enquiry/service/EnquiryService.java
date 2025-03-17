@@ -1,12 +1,10 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
-import com.nextgenmanager.nextgenmanager.marketing.enquiry.EnquiryTableDTO;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
-import java.util.List;
 
 public interface EnquiryService {
 
@@ -26,5 +24,9 @@ public interface EnquiryService {
     public void deleteEnquiry(int id);
 
     public void closeEnquiry(int id, String closeReason);
+
+    public Enquiry getEnquiryByEnquiryNo(String enquiryNo);
+
+    public Enquiry getEnquiryWithProductPrice(int id);
 
 }

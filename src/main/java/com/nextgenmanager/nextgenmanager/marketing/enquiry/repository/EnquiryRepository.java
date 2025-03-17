@@ -12,6 +12,7 @@ import javax.swing.text.html.Option;
 import java.time.LocalDate;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 public interface EnquiryRepository extends JpaRepository<Enquiry,Integer> {
 
@@ -64,4 +65,5 @@ public interface EnquiryRepository extends JpaRepository<Enquiry,Integer> {
             @Param("dateComparisonTypeClosedDate") String dateComparisonTypeClosedDate
     );
 
+    public Optional<Enquiry> findByEnqNo(String enqNo);
 }
