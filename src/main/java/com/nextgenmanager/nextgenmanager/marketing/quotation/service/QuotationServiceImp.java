@@ -1,6 +1,10 @@
 package com.nextgenmanager.nextgenmanager.marketing.quotation.service;
 
+import com.itextpdf.html2pdf.HtmlConverter;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
+import com.nextgenmanager.nextgenmanager.contact.model.Contact;
+import com.nextgenmanager.nextgenmanager.contact.model.ContactPersonDetail;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.dto.QuotationDisplayDTO;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProducts;
@@ -13,13 +17,20 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.thymeleaf.context.Context;
+import org.thymeleaf.spring5.SpringTemplateEngine;
+import org.thymeleaf.templatemode.TemplateMode;
+import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 
+//import javax.naming.Context;
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 @Service
 public class QuotationServiceImp implements QuotationService{
@@ -87,6 +98,83 @@ public class QuotationServiceImp implements QuotationService{
                 throw new RuntimeException("Data mapping error", e);
             }
         });
+    }
+
+    @Override
+    public byte[] generateQuotationPdf(String html) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        HtmlConverter.convertToPdf(html, output);
+        return output.toByteArray();
+    }
+
+    private String parseQuotationTemplate(int id) {
+        try {
+            // Initialize template resolver
+            ClassLoaderTemplateResolver templateResolver = new ClassLoaderTemplateResolver();
+            templateResolver.setTemplateMode(TemplateMode.HTML);
+            templateResolver.setSuffix(".html");
+
+            // Fetch quotation object
+            Quotation quotation = getQuotationById(id);
+            if (quotation == null) {
+                throw new IllegalArgumentException("Quotation with ID 253 not found.");
+            }
+
+            // Extract data safely with null checks
+            String companyName = (quotation.getEnquiry() != null && quotation.getEnquiry().getContact() != null) ?
+                    quotation.getEnquiry().getContact().getCompanyName() : "Unknown Company";
+
+            ContactPersonDetail contactInfo = (quotation.getEnquiry() != null && quotation.getEnquiry().getContact() != null &&
+                    !quotation.getEnquiry().getContact().getPersonDetails().isEmpty()) ?
+                    quotation.getEnquiry().getContact().getPersonDetails().get(0) : null;
+
+            Enquiry enquiryInfo = (quotation.getEnquiry() != null) ? quotation.getEnquiry() : null;
+            List<QuotationProducts> quotationProducts = (quotation.getQuotationProducts() != null) ?
+                    quotation.getQuotationProducts() : Collections.emptyList();
+
+            // Set context variables
+            Context context = new Context();
+            Map<String, Object> templateVariables = new HashMap<>();
+            templateVariables.put("companyName", companyName);
+            templateVariables.put("contactInfo", contactInfo);
+            templateVariables.put("quotationInfo", quotation);
+            templateVariables.put("enquiryInfo", enquiryInfo);
+            templateVariables.put("quotationProducts", quotationProducts);
+            context.setVariables(templateVariables);
+
+            // Initialize template engine
+            SpringTemplateEngine templateEngine = new SpringTemplateEngine();
+            templateEngine.setTemplateResolver(templateResolver);
+
+            // Process template
+            return templateEngine.process("templates/quotation/quotation", context);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "<h3>Error generating quotation template</h3><p>" + e.getMessage() + "</p>";
+        }
+    }
+
+
+    @Override
+    public ResponseEntity<byte[]> downloadQuotationPdf(int id) {
+        String subscriptionPdfHtml = parseQuotationTemplate(id);
+        String qtnNo =  getQuotationById(id).getQtnNo();
+        String fileName = "Quotation_"+qtnNo+".pdf";
+        byte[] pdf = generateQuotationPdf(subscriptionPdfHtml);
+
+        HttpHeaders header = new HttpHeaders();
+        header.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename="+fileName);
+        header.add("Cache-Control", "no-cache, no-store, must-revalidate");
+        header.add("Pragma", "no-cache");
+        header.add("Expires", "0");
+
+        return ResponseEntity.ok()
+                .headers(header)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+
+
     }
 
 

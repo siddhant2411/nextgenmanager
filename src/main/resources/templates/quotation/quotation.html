@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Quotation</title>
+    <style>
+        /* Ensure the entire page takes up full space */
+        @page {
+            size: A4;
+            margin: 0;
+        }
+
+        html,
+        body {
+
+            margin: 0;
+            padding: 0;
+            width: 210mm;
+            height: 297mm;
+            padding: 0;
+            border: none;
+            overflow: hidden;
+            font-family: 'Times New Roman', Times, serif;
+
+        }
+
+        /* Ensure the border covers the entire body */
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        /* Header styling */
+
+
+        /* Logo on the left */
+        .logo {
+            position: absolute;
+            width: 150px;
+            /* Adjust as needed */
+            height: auto;
+            top: 5mm;
+            left: 5mm;
+        }
+
+        /* Header image on the right */
+        .header-right {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 175px;
+            /* Adjust as needed */
+            height: auto;
+        }
+
+        .content {
+            margin-top: 0;
+            padding: 10mm;
+            padding-top: 0;
+        }
+
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            /* Ensures items go to extreme ends */
+            align-items: center;
+            width: 100%;
+            /* Ensure full width */
+        }
+
+        .gstNumber {
+            flex: 1;
+            /* Pushes "Quotation" to the right */
+            text-align: left;
+        }
+
+        .fileheader {
+            flex: 1;
+            /* Ensures it aligns to the right */
+            text-align: right;
+        }
+
+        .header-text {
+            margin-top: 15mm;
+            /* Adjust based on image height */
+            padding: 12mm;
+            padding-bottom: 0px;
+            width: 600px;
+            color: #0097d9;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .footer-image {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .footer {
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            width: 100%;
+            height: 10mm;
+        }
+
+        .footer-text {
+            position: absolute;
+            bottom: 2px;
+            /* Adjust as needed */
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            /* Adjust based on your image */
+            font-size: 15px;
+            /* Adjust as needed */
+            font-weight: bold;
+            text-align: center;
+            padding-left: 15px;
+            padding-top: 5px
+        }
+
+        .details {
+            margin-top: 3mm;
+
+        }
+
+        .file-details {
+            display: flex;
+            justify-content: space-between;
+            /* Ensures items go to extreme ends */
+            align-items: center;
+            width: 100%;
+        }
+
+        .company-details {
+            flex: 1;
+            text-align: left;
+            border: 1px solid black;
+            height: 25mm;
+            width: 50%;
+            padding: 3mm;
+            padding-bottom: 0px;
+            /* Adds padding inside the box */
+            box-sizing: border-box;
+
+
+        }
+
+        .document-details {
+            flex: 1;
+            text-align: right;
+            /* border: 3px solid red; */
+            height: 25mm;
+            width: 50%;
+            padding: 3mm;
+            padding-top: 0mm;
+            padding-right: 0mm;
+            margin-left: 20mm;
+            /* Adds padding inside the box */
+            box-sizing: border-box;
+            padding-bottom: 0px;
+
+        }
+
+        table {
+            border: 1px solid black;
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border: 1px solid black;
+            text-align: left;
+        }
+
+        .enquiry-details {
+            margin-top: 2mm;
+        }
+
+        .product-table {
+            margin-top: 5mm;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <img th:src="@{classpath:/static/images/logo.png}" alt="Logo" class="logo">
+
+        <img th:src="@{classpath:/static/images/header_right.png}" alt="Header Right" class="header-right">
+
+        <div class="header-text">
+            <div style="width: 270px;">
+                B-22 Maruti Ind. Estate – GIDC Phase 1, Vatva, Ahmedabad - 380008
+            </div>
+            <div style="width: 160px;">
+                Mo: +91-9427068316
+                <a href="mailto:info@procequip.com" style="text-decoration: none; color: inherit;">
+                    Email: info@procequip.com
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+    <div class="content">
+        <div class="header-container">
+            <div class="gstNumber">
+                <h3>GST No: ARJPM1513G1ZT</h3>
+            </div>
+            <div class="fileheader">
+                <u>
+                    <h2>Quotation</h2>
+                </u>
+            </div>
+        </div>
+
+        <div class="details">
+            <div class="file-details">
+                <div class="company-details">
+                    <div th:text="${contactInfo.personName}"></div>
+                    <div th:text="${companyName}"></div>
+                    <div th:text="${contactInfo.phoneNumber}"></div>
+                    <div th:text="${contactInfo.emailId}"></div>
+                </div>
+                <div class="document-details">
+                    <div class="quotation-details">
+                        <table style="border: 1px solid black; width: 100%;">
+                            <tr>
+                                <td style="width: 30%; padding-left: 3px;">Qtn No</td>
+                                <td th:text="${quotationInfo.qtnNo}"></td>
+                            </tr>
+                            <tr>
+                                <td style="width: 30%; padding-left: 3px;">Qtn Date</td>
+                                <td th:text="${quotationInfo.qtnDate}"></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="enquiry-details">
+                        <table style="border: 1px solid black; width: 100%;">
+                            <tr>
+                                <td style="width: 30%; padding-left: 3px;">Enq No</td>
+                                <td th:text="${enquiryInfo.enqNo}"></td>
+                            </tr>
+                            <tr>
+                                <td style="width: 30%; padding-left: 3px;">Enq Date</td>
+                                <td th:text="${enquiryInfo.enqDate}"></td>
+                            </tr>
+                        </table>
+                    </div>
+
+                </div>
+            </div>
+
+            <div style="margin-top: 3mm;">
+                We thank you for your enquiry and are pleased to submit our quotation as below.
+            </div>
+
+            <div class="product-table">
+                <table style="border-collapse: collapse; width: 100%; border: 1px solid black;">
+                    <!-- Table Header -->
+                    <thead>
+                        <tr style="background-color: #5fcfff; text-align: center; border-bottom: 2px solid black;">
+                            <th style="text-align: center; height: 10mm;">No.</th>
+                            <th style="width: 60%; text-align: center; height: 10mm;">Description</th>
+                            <th style="text-align: center; height: 10mm;">Qty No.</th>
+                            <th style="text-align: center; height: 10mm;">Rate Rs.</th>
+                            <th style="text-align: center; height: 10mm;">Per</th>
+                            <th style="text-align: center; height: 10mm;">Amount Rs.</th>
+                        </tr>
+
+                    </thead>
+
+                    <!-- Table Body -->
+                    <tbody>
+                        <!-- Iterate over "quotationProducts" list -->
+                        <tr th:each="product, iterStat : ${quotationProducts}" style="border: none; ">
+                            <td style="text-align: center; border-top: none; border-bottom: none;"
+                                th:text="${iterStat.index + 1}"></td>
+                            <td style="text-align: left; border-top: none; border-bottom: none; padding-top: 5mm; padding-left: 3mm;"
+                                th:utext="${product.specialInstruction != null ? product.productNameRequired + '<br>' + product.specialInstruction : product.productNameRequired}">
+                            </td>
+
+                            <td style="text-align: center; border-top: none; border-bottom: none; padding-top: 5mm;"
+                                th:text="${product.qty}"></td>
+                            <td style="text-align: right; border-top: none; border-bottom: none; padding-top: 5mm;"
+                                th:text="${product.unitPriceAfterDiscount}"></td>
+                            <td
+                                style="text-align: center; border-top: none; border-bottom: none; padding-top: 5mm; width: 8%;">
+                                Each</td>
+                            <td style="text-align: right; border-top: none; border-bottom: none; padding-top: 5mm;"
+                                th:text="${product.totalAmountOfProduct}">%</td>
+                        </tr>
+
+
+
+                    </tbody>
+
+
+
+                </table>
+
+                <table>
+                    <tbody>
+                        <td style="width: 15%; border-left: none;border-right: none;"></td>
+                        <td style="width: 35%; "></td>
+                        <td style="text-align: right;border-left: none; width: 30%; padding-right: 5mm;">
+                            Total
+                        </td>
+                        <td style="border-left: none;border-right: none;">
+
+                        </td>
+                        <td style="text-align: right;border-right: none;" th:text="${quotationInfo.netAmount}">
+
+                        </td>
+                        <tr>
+                            <td style="padding-left: 2mm;">
+                                Validity
+                            </td>
+                            <td style="padding-left: 2mm;">
+                                30 days from above date
+                            </td>
+                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
+                                Discount%
+                            </td>
+                            <td style="width: 7.9%; text-align: right;"
+                                th:text="${#numbers.formatDecimal(quotationInfo.discountPercentage, 1, 1)} + '%'">
+                            </td>
+                            <td style="text-align: right;" th:text="${quotationInfo.discountAmount}">
+                            </td>
+
+                        <tr>
+                            <td style="padding-left: 2mm;">
+                                Prices
+                            </td>
+                            <td style="padding-left: 2mm;">
+                                Unpacked, Vatva,Ahmedabad,basis
+                            </td>
+                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
+                                P & F charges
+                            </td>
+                            <td style="width: 7.9%; text-align: right;">
+                            </td>
+                            <td style="text-align: right;" th:text="${quotationInfo.pandfcharges}">
+                            </td>
+
+                        <tr>
+                            <td style="padding-left: 2mm;">
+                                Terms:
+                            </td>
+                            <td style="padding-left: 2mm;">
+                                30% advance, Balance Against PI
+                            </td>
+                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
+                                Taxable Amount
+                            </td>
+                            <td style="width: 7.9%; text-align: right;">
+                            </td>
+                            <td style="text-align: right;"
+                                th:text="${#numbers.formatDecimal(quotationInfo.netAmount - quotationInfo.discountAmount + quotationInfo.pandfcharges, 1, 2)}">
+                            </td>
+
+                        </tr>
+                        <tr>
+                            <td style="padding-left: 2mm;">
+                                Delivery Date
+                            </td>
+                            <td style="padding-left: 2mm;">
+                                6/8 weeks
+                            </td>
+                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
+                                GST%
+                            </td>
+                            <td style="width: 7.9%; text-align: right;"
+                                th:text="${#numbers.formatDecimal(quotationInfo.gstPercentage, 1, 1)} + '%'">
+                            </td>
+                            <td style="text-align: right;" th:text="${quotationInfo.gstAmount}">
+                            </td>
+
+                        </tr>
+
+                        <tr>
+                            <td style="padding-left: 2mm;">
+                                Inspection :
+                            </td>
+                            <td style="padding-left: 2mm;">
+                                At our works
+                            </td>
+                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
+                                Round off
+                            </td>
+                            <td style="width: 7.9%; text-align: right;">
+                            </td>
+                            <td style="text-align: right;" th:text="${quotationInfo.roundOff}">
+                            </td>
+
+                        </tr>
+                        <tr>
+                            <td style="padding-left: 2mm;">
+
+                            </td>
+                            <td style="padding-left: 2mm;">
+
+                            </td>
+                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
+                                Total Amount
+                            </td>
+                            <td style="width: 7.9%; text-align: right;">
+                            </td>
+                            <td style="text-align: right;" th:text="${quotationInfo.totalAmount}">
+                            </td>
+
+                        </tr>
+                        <tr></tr>
+                    </tbody>
+                </table>
+
+                <table style="margin-top: 10mm;">
+                    <tbody>
+                        <tr>
+                            <td style="width: 50%; border-bottom:none ;">BANK DETAIL -CANARA BANK</td>
+                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none">Process Equipment Corporation
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="width: 50%;border-bottom:none; border-top: none;">Maninagar Branch, Ahmedabad-380 008, India</td>
+                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none"></td>
+                        </tr>
+                        <tr>
+                            <td style="width: 50%; border-bottom:none; border-top: none">A/c. No-0282261051265</td>
+                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none">Prafull Mavani</td>
+                        </tr>
+                        <tr>
+                            <td style="width: 50%; border-bottom:none; border-top: none">IFSC Code-CNRB0000282</td>
+                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none">+919427068316</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+
+            </div>
+
+
+
+        </div>
+    </div>
+
+
+
+    <div class="footer">
+        <img th:src="@{classpath:/static/images/footer.png}" alt="Logo" class="footer-image">
+        <a href="https://procequip.com/" class="footer-text">www.procequip.com</a>
+    </div>
+
+</body>
+
+</html>

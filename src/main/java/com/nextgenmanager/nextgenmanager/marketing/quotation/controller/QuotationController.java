@@ -102,4 +102,9 @@ public class QuotationController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Quotation not found.");
         }
     }
+
+    @GetMapping("/pdf/{id}")
+    public ResponseEntity<byte[]> downloadSubscriptionReceipt(@PathVariable String id) {
+        return quotationService.downloadQuotationPdf(Integer.parseInt(id));
+    }
 }
