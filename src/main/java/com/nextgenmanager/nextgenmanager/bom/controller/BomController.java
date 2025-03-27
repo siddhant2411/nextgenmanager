@@ -30,7 +30,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/bom")
-@CrossOrigin(origins = {"http://localhost:3000","http://ec2-13-201-223-35.ap-south-1.compute.amazonaws.com"})
+@CrossOrigin(origins = "*")
 public class BomController {
 
     private static final Logger logger = LoggerFactory.getLogger(BomController.class);

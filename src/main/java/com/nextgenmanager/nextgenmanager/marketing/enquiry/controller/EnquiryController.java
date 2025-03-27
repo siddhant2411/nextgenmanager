@@ -15,7 +15,7 @@ import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/enquiry")
-@CrossOrigin(origins = {"http://localhost:3000","http://ec2-13-201-223-35.ap-south-1.compute.amazonaws.com"})
+@CrossOrigin(origins = "*")
 public class EnquiryController {
 
     @Autowired
