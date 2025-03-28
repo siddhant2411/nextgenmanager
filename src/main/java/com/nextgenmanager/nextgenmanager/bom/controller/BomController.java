@@ -30,7 +30,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/bom")
-@CrossOrigin(origins = "*")
+
 public class BomController {
 
     private static final Logger logger = LoggerFactory.getLogger(BomController.class);

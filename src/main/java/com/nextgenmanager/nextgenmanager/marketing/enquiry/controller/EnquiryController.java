@@ -15,7 +15,7 @@ import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/enquiry")
-@CrossOrigin(origins = "*")
+
 public class EnquiryController {
 
     @Autowired

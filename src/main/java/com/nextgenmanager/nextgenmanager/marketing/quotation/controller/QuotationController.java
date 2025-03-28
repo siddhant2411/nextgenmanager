@@ -19,7 +19,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/quotation")
-@CrossOrigin(origins = "*")
+
 public class QuotationController {
 
     @Autowired

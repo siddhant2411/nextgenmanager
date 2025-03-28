@@ -27,7 +27,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/inventory_item")
-@CrossOrigin(origins = "*")
+
 public class InventoryItemController {
 
     @Autowired

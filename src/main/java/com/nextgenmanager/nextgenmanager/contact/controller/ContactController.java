@@ -16,7 +16,7 @@ import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/contact")
-@CrossOrigin(origins = "*")
+
 public class ContactController {
 
     @Autowired
