@@ -7,8 +7,6 @@ import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
@@ -20,8 +18,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -30,7 +26,6 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -217,13 +212,13 @@ public class BomServiceImpl implements BomService {
                 }
 
                 // Update BOM positions
+                bom.setBomAttachmentList(getBom(bom.getId()).getBomAttachmentList());
                 bomPositionRepository.saveAll(bom.getChildInventoryItems());
             }
 
             // Save the updated BOM
             Bom updatedBom = bomRepository.save(bom);
             logger.info("Successfully updated BOM with ID: {}", updatedBom.getId());
-
             return updatedBom;
 
         } catch (Exception e) {

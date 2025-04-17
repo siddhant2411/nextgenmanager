@@ -211,5 +211,10 @@ public class InventoryItemController {
         }
     }
 
+    @GetMapping("/getItemCode")
+    public ResponseEntity<String> generateCode(){
+        return ResponseEntity.ok(inventoryItemService.generateUniqueCode());
+    }
+
 
 }

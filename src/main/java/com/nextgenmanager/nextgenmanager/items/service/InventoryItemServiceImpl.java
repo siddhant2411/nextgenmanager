@@ -1,7 +1,9 @@
 package com.nextgenmanager.nextgenmanager.items.service;
 
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ItemCode;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.ItemCodeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Year;
 import java.util.Date;
 import java.util.List;
 
@@ -21,6 +24,9 @@ public class InventoryItemServiceImpl implements InventoryItemService{
 
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
+
+    @Autowired
+    private ItemCodeRepository itemCodeRepository;
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItem.class);
 
@@ -149,5 +155,23 @@ public class InventoryItemServiceImpl implements InventoryItemService{
     public Page<InventoryItem> searchInventoryItems(String query, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         return inventoryItemRepository.searchActiveInventoryItems(query, pageable);
+    }
+
+    @Override
+    public String generateUniqueCode() {
+        int year = Year.now().getValue();
+        Integer latestSeq = itemCodeRepository.findMaxSequenceForYear(year);
+        int newSeq = (latestSeq != null ? latestSeq + 1 : 1);
+
+        String code = String.format("PEC%d%04d", year, newSeq);  // e.g. PEC20250001
+
+        // Save to database
+        ItemCode newEntry = new ItemCode();
+        newEntry.setYear(year);
+        newEntry.setSequenceNumber(newSeq);
+        newEntry.setCode(code);
+        itemCodeRepository.save(newEntry);
+
+        return code;
     }
 }

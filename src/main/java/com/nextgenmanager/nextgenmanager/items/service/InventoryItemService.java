@@ -27,5 +27,8 @@ public interface InventoryItemService {
 
     public Page<InventoryItem> searchInventoryItems(String query,int page, int size);
 
+    public String generateUniqueCode();
+
+
 
 }

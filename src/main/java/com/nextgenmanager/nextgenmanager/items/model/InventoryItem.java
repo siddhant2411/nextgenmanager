@@ -38,9 +38,9 @@ public class InventoryItem {
 
     private String dimension;
 
-    private String size1;
+    private String size;
 
-    private String size2;
+    private String weight;
 
     @Column(nullable = false)
     private byte revision;
