@@ -44,6 +44,12 @@ public class WorkOrderProductionTemplate {
     private BigDecimal estimatedCostOfBom;
 
     @Column(precision = 10, scale = 2)
+    private BigDecimal overheadCostPercentage;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal overheadCostValue;
+
+    @Column(precision = 10, scale = 2)
     private BigDecimal totalCostOfWorkOrder;
 
     private String details;
