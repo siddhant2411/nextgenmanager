@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.util.Date;
@@ -18,6 +19,7 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@DynamicUpdate
 @Table(name = "inventoryInstance")
 public class InventoryInstance {
     @Id
@@ -43,6 +45,16 @@ public class InventoryInstance {
 
     @Temporal(TemporalType.TIMESTAMP)
     private Date consumeDate;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "bookedDate")
+    private Date bookedDate;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date requestedDate;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date deliveryDate;
 
 
     private Double costPerUnit;

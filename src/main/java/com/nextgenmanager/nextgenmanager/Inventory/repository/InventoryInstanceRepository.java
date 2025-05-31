@@ -3,9 +3,11 @@ package com.nextgenmanager.nextgenmanager.Inventory.repository;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
+import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -23,12 +25,20 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     public InventoryInstance findLatestInventoryInstance(@Param("inventoryItemId") int inventoryItemId);
 
 
-    @Query(value = "SELECT COUNT(*) FROM inventoryInstance i WHERE i.deletedDate IS NULL AND i.inventoryItemRef = :inventoryItemId AND i.quantity>0", nativeQuery = true)
+    @Query(value = "SELECT COUNT(*) FROM inventoryInstance i WHERE i.deletedDate IS NULL AND i.bookedDate is NULL AND i.inventoryItemRef = :inventoryItemId AND i.quantity>0", nativeQuery = true)
     public int countAvailableInInventory(@Param("inventoryItemId") int inventoryItemId);
 
 
     @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :inventoryItemId ORDER BY i.entryDate ASC LIMIT :consumedQty", nativeQuery = true)
     public List<InventoryInstance> getItemsToConsume(@Param("inventoryItemId") int inventoryItemId, @Param("consumedQty") int consumedQty);
+
+
+    @Transactional
+    @Query(value = "UPDATE inventoryInstance SET bookedDate = :bookedDate WHERE id = :id", nativeQuery = true)
+    public void updateBookedDate(@Param("id") Long id, @Param("bookedDate") Date bookedDate);
+
+    @Query(value = "SELECT * FROM InventoryInstance i  WHERE i.inventoryItemRef = :inventoryItemId AND i.bookedDate IS NULL AND i.isConsumed = false ORDER BY i.entryDate ASC",nativeQuery = true)
+    public List<InventoryInstance> getItemsToBook(@Param("inventoryItemId") int inventoryItemId, Pageable pageable);
 
     @Query(value = "SELECT " +
             "   i.inventoryItemRef AS inventoryItemRef, " +
@@ -97,4 +107,7 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             @Param("filterType") String filterType,
             @Param("uom") Integer uom,
             @Param("itemTypeValue") Integer itemTypeValue);
+
+    @Query(value = "SELECT COALESCE(SUM(i.quantity), 0) FROM inventoryInstance i WHERE i.deletedDate IS NULL AND bookedDate IS NULL AND i.inventoryItemRef = :inventoryItemId", nativeQuery = true)
+    public  double getTotalQuantityForNonNOSItem(@Param("inventoryItemId") int inventoryItemId);
 }

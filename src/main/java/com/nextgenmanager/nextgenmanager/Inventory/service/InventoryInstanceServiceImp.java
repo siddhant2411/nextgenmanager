@@ -11,6 +11,9 @@ import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import io.swagger.models.auth.In;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,12 +21,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+
 
 @Service
 public class InventoryInstanceServiceImp implements InventoryInstanceService {
@@ -33,6 +39,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     private InventoryInstanceRepository inventoryInstanceRepository;
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Override
     @Transactional
@@ -77,6 +86,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 logger.info("Created single inventory instance for item ID: {} with quantity: {}",
                         inventoryItem.getInventoryItemId(), qty);
             }
+            updateInventoryItemCount(inventoryItem.getInventoryItemId());
         } catch (Exception e) {
             logger.error("Error creating inventory instances: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to create inventory instances", e);
@@ -141,6 +151,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
 //                    changing for returning consumed item details
                     consumedItem.setQuantity(consumedQty);
+                    updateInventoryItemCount(inventoryItem.getInventoryItemId());
                     return List.of(consumedItem);
                 } else {
                     logger.warn("No suitable inventory instance found for consumption");
@@ -152,6 +163,120 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             throw new RuntimeException("Failed to consume inventory instances", e);
         }
     }
+
+    @Override
+    public List<InventoryInstance> bookInventoryInstance(InventoryItem inventoryItem, double bookedQty) {
+        try {
+            logger.info("Starting booking of {} units for item ID: {}", bookedQty,
+                    inventoryItem.getInventoryItemId());
+
+            if (inventoryItem.getInventoryItemId()<0) {
+                logger.error("Inventory item is null");
+                throw new IllegalArgumentException("Inventory item cannot be null");
+            }
+
+            InventoryItem savedInventoryItem = inventoryItemRepository.findByActiveId(inventoryItem.getInventoryItemId());
+            if (savedInventoryItem == null) {
+                logger.error("Inventory item not found or inactive for ID: {}", inventoryItem.getInventoryItemId());
+                throw new IllegalArgumentException("Invalid inventory item ID");
+            }
+
+            if (savedInventoryItem.getUom() == UOM.NOS) {
+                int currentCount = inventoryInstanceRepository.countAvailableInInventory(savedInventoryItem.getInventoryItemId());
+                logger.info("Current count of inventory for item ID {}: {}", savedInventoryItem.getInventoryItemId(), currentCount);
+
+
+                List<InventoryInstance> bookedItems = new ArrayList<>();
+                Pageable limit = PageRequest.of(0, (int) bookedQty);
+                List<InventoryInstance> itemsToBook = inventoryInstanceRepository.getItemsToBook(savedInventoryItem.getInventoryItemId(), limit);
+
+                for (InventoryInstance item : itemsToBook) {
+//
+                    item.setBookedDate(new Date());
+                    bookedItems.add(inventoryInstanceRepository.save(item));
+                }
+
+
+                logger.info("Booked {} inventory instances for item ID: {}", bookedItems.size(),
+                        savedInventoryItem.getInventoryItemId());
+
+                List<InventoryInstance> itemsWithBookedCount = new ArrayList<>();
+                for (InventoryInstance item : bookedItems) {
+                    itemsWithBookedCount.add(item); // Add to the new list after modification
+                }
+                updateInventoryItemCount(inventoryItem.getInventoryItemId());
+                return inventoryInstanceRepository.saveAll(itemsWithBookedCount);
+
+            } else {
+                InventoryInstance itemsToBook = inventoryInstanceRepository.findLatestInventoryInstance(
+                        savedInventoryItem.getInventoryItemId(), bookedQty);
+                if (itemsToBook != null) {
+                    itemsToBook.setBookedDate(new Date());
+                    InventoryInstance bookedItem = inventoryInstanceRepository.save(itemsToBook);
+                    logger.info("Booked inventory for item ID: {}. Remaining quantity: {}",
+                            savedInventoryItem.getInventoryItemId(), itemsToBook.getQuantity());
+
+//                    changing for returning consumed item details
+                    bookedItem.setQuantity(bookedQty);
+                    updateInventoryItemCount(inventoryItem.getInventoryItemId());
+                    return List.of(bookedItem);
+                } else {
+                    return new ArrayList<>();
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error consuming inventory instances: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to consume inventory instances", e);
+        }
+    }
+
+    @Override
+    @Transactional
+    public List<InventoryInstance> requestInstance(InventoryItem inventoryItem, double requestedQty) {
+        try {
+            if (inventoryItem == null || inventoryItem.getInventoryItemId() < 0) {
+                logger.error("Invalid inventory item provided");
+                throw new IllegalArgumentException("Inventory item cannot be null or invalid");
+            }
+
+            logger.info("Starting request of {} units for item ID: {}", requestedQty, inventoryItem.getInventoryItemId());
+
+            Date now = new Date();
+
+            if (inventoryItem.getUom() == UOM.NOS) {
+                List<InventoryInstance> instances = new ArrayList<>();
+                for (int i = 0; i < (int) requestedQty; i++) {
+                    InventoryInstance newInstance = new InventoryInstance();
+                    newInstance.setInventoryItem(inventoryItem);
+                    newInstance.setEntryDate(now);
+                    newInstance.setRequestedDate(now);
+                    newInstance.setBookedDate(now);
+                    newInstance.setQuantity(1);
+                    instances.add(newInstance);
+                }
+                List<InventoryInstance> savedInstances = inventoryInstanceRepository.saveAll(instances);
+                logger.info("Requested {} inventory instances for item ID: {}", savedInstances.size(), inventoryItem.getInventoryItemId());
+                updateInventoryItemCount(inventoryItem.getInventoryItemId());
+                return savedInstances;
+            } else {
+                InventoryInstance newInstance = new InventoryInstance();
+                newInstance.setInventoryItem(inventoryItem);
+                newInstance.setEntryDate(now);
+                newInstance.setRequestedDate(now);
+                newInstance.setBookedDate(now);
+                newInstance.setQuantity(requestedQty);
+                InventoryInstance savedInventoryInstance = inventoryInstanceRepository.save(newInstance);
+                logger.info("Requested single inventory instance for item ID: {} with quantity: {}", inventoryItem.getInventoryItemId(), savedInventoryInstance.getQuantity());
+                updateInventoryItemCount(inventoryItem.getInventoryItemId());
+                return List.of(savedInventoryInstance);
+            }
+        } catch (Exception e) {
+            logger.error("Error requesting inventory instances: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to request inventory instances", e);
+        }
+    }
+
+
 
     @Override
     @Transactional
@@ -199,6 +324,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
             logger.info("Updated inventory instance for item ID: {}",
                     inventoryItem.getInventoryItemId());
+            updateInventoryItemCount(inventoryItem.getInventoryItemId());
             return existingInstance;
         } catch (Exception e) {
             logger.error("Error updating inventory instances: {}", e.getMessage(), e);
@@ -220,7 +346,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             // Save the updated BOM
             inventoryInstanceRepository.save(inventoryInstance);
             logger.info("Successfully soft-deleted BOM with ID: {}", id);
-
+            updateInventoryItemCount(inventoryInstance.getInventoryItem().getInventoryItemId());
 
         } catch (ResourceNotFoundException e) {
             throw e;
@@ -316,4 +442,26 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 });
 
     }
+
+
+    private void updateInventoryItemCount(int id) {
+        InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(id);
+
+        if (inventoryItem == null) {
+            throw new EntityNotFoundException("InventoryItem not found with id: " + id);
+        }
+
+        double currentCount = 0;
+
+        if (inventoryItem.getUom() == UOM.NOS) {
+            currentCount = inventoryInstanceRepository.countAvailableInInventory(id);
+        } else {
+            currentCount = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(id);
+        }
+
+        inventoryItem.setAvailableQuantity(currentCount);
+        inventoryItemRepository.save(inventoryItem);
+    }
+
 }
+

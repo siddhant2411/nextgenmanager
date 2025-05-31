@@ -7,7 +7,9 @@ import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -385,5 +387,13 @@ public class BomServiceImpl implements BomService {
         throw new IllegalArgumentException("Invalid file name format: " + fileName);
     }
 
+
+    public List<Bom> getBomByParentInventoryItem(int id){
+        return bomRepository.findBomByParentInventoryItemId(id);
+    }
+
+    public WorkOrderProductionTemplate getBomWOTemplateByBomId(int id){
+        return bomRepository.findWOTemplateByBomId(id);
+    }
 
 }

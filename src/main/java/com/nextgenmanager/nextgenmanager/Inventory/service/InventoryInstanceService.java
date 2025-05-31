@@ -24,6 +24,10 @@ public interface InventoryInstanceService  {
 
     public List<InventoryInstance> consumeInventoryInstance(InventoryItem inventoryItem, double consumedQty);
 
+    public List<InventoryInstance> bookInventoryInstance(InventoryItem inventoryItem, double bookedQty);
+
+    public List<InventoryInstance> requestInstance(InventoryItem inventoryItem, double requestedQty);
+
     public InventoryInstance updateInventoryInstance(InventoryInstance inventoryInstance);
 
     public void deleteInventoryInstance(long id);

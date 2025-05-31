@@ -58,6 +58,10 @@ public class InventoryItem {
 
     private Date deletedDate;
 
+    private double availableQuantity;
+
+    private double orderedQuantity;
+
     @OneToMany(mappedBy = "inventoryItem", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference
     private List<InventoryItemAttachment> inventoryItemAttachmentList;
