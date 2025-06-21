@@ -130,7 +130,7 @@ public class InventoryItemController {
     @GetMapping("/search")
     public Page<InventoryItem> searchInventoryItems(
             @RequestParam String query,
-            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "5"
             ) int size) {
         return inventoryItemService.searchInventoryItems(query, page, size);

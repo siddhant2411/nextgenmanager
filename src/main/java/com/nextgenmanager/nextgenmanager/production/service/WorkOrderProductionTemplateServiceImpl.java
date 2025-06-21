@@ -13,6 +13,7 @@ import com.nextgenmanager.nextgenmanager.production.model.WorkOrderJobList;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import com.nextgenmanager.nextgenmanager.production.repository.ProductionJobRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionTemplateRepository;
+import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,7 +53,15 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
                     logger.error("workOrderProductionTemplate not found for ID: {}", id);
                     return new RuntimeException("workOrderProductionTemplate not found for ID: " + id);
                 });
-    };
+    }
+
+    @Override
+    public WorkOrderProductionTemplate getWorkOrderProductionTemplateByBomId(int bomId) {
+        return workOrderProductionTemplateRepository.findByBomId(bomId)
+                .orElseThrow(() -> new EntityNotFoundException("Template not found for BOM ID " + bomId));
+    }
+
+    ;
 
     public List<WorkOrderProductionTemplate> getWorkOrderProductionTemplateList(){
 
@@ -88,14 +97,14 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         for (BomPosition bomPosition : bomPositionList) {
             int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
             InventoryInstance inventoryInstance = inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId);
-            if (inventoryInstance == null) {
-                logger.error("Item id {} does not exist in inventory", bomPosition.getChildInventoryItem().getInventoryItemId());
-                throw new RuntimeException("Please make sure all the BOM items are present in inventory with actual cost");
+            if (inventoryInstance != null) {
+                BigDecimal itemCost = BigDecimal.valueOf(inventoryInstance.getCostPerUnit())
+                        .multiply(BigDecimal.valueOf(bomPosition.getQuantity()));
+                totalBomCost = totalBomCost.add(itemCost);
             }
 
-            BigDecimal itemCost = BigDecimal.valueOf(inventoryInstance.getCostPerUnit())
-                    .multiply(BigDecimal.valueOf(bomPosition.getQuantity()));
-            totalBomCost = totalBomCost.add(itemCost);
+
+
         }
         workOrderProductionTemplate.setEstimatedCostOfBom(totalBomCost);
 

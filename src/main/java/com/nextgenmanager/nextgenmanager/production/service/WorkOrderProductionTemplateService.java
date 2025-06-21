@@ -9,6 +9,8 @@ public interface WorkOrderProductionTemplateService {
 
     public WorkOrderProductionTemplate getWorkOrderProductionTemplate(int id);
 
+    public WorkOrderProductionTemplate getWorkOrderProductionTemplateByBomId(int id);
+
     public List<WorkOrderProductionTemplate> getWorkOrderProductionTemplateList();
 
     public WorkOrderProductionTemplate createWorkOrderProductionTemplate(WorkOrderProductionTemplate workOrderProductionTemplate);

@@ -28,7 +28,7 @@ public class WorkOrderProduction {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private int id;
 
-    @ManyToOne(cascade = CascadeType.DETACH, optional = false)
+    @ManyToOne(cascade = CascadeType.DETACH, optional = true)
     private SalesOrder salesOrder;
 
     @ManyToOne(cascade = CascadeType.DETACH)
@@ -39,6 +39,10 @@ public class WorkOrderProduction {
 
     @Enumerated(EnumType.STRING)  // Use STRING instead of ORDINAL for safety
     private WorkOrderStatus workOrderStatus;
+
+    private  double quantity;
+
+    private boolean isCreateChildItems=true;
 
     @Column(precision = 10, scale = 1)
     private BigDecimal actualWorkHours;

@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.model;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 
 import jakarta.persistence.*;
@@ -34,6 +35,10 @@ public class WorkOrderInventoryInstanceList {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId",nullable = true) // Foreign key mapping
     private InventoryItem  inventoryItem;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bom_id", referencedColumnName = "id",nullable = true) // Foreign key mapping
+    private Bom bom;
 
     @Enumerated(EnumType.STRING)
     private InventoryStatus inventoryStatus;

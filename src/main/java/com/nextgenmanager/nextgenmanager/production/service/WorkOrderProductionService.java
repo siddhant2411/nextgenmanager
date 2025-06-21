@@ -1,19 +1,19 @@
 package com.nextgenmanager.nextgenmanager.production.service;
 
 import com.nextgenmanager.nextgenmanager.production.DTO.WorkOrderProductionDTO;
+import com.nextgenmanager.nextgenmanager.production.DTO.WorkOrderProductionRequestMapper;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProduction;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderStatus;
 import org.springframework.data.domain.Page;
-import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.math.BigDecimal;
-import java.util.Date;
+import java.util.Optional;
 
 public interface WorkOrderProductionService {
 
-    public WorkOrderProduction getWorkOrderProductionJobById(int id);
+    public Optional<WorkOrderProduction> getWorkOrderProductionJobById(int id);
 
-    public Page<WorkOrderProductionDTO> getWorkOrderProductionList(WorkOrderProductionDTO workOrderProductionDTOFilter);
+    public Page<WorkOrderProductionDTO> getWorkOrderProductionList(WorkOrderProductionDTO workOrderProductionDTOFilter,  int page, int size, String sortBy, String sorDir);
 
     public WorkOrderProductionDTO createWorkOrderProduction(WorkOrderProduction newWorkOrderProduction);
+
+    public WorkOrderProduction mapWorkOrderProductionRequest(WorkOrderProductionRequestMapper workOrderProductionRequestMapper);
 }

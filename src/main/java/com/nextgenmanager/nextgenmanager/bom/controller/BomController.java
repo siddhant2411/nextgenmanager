@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -100,6 +101,20 @@ public class BomController {
         }
     }
 
+    @GetMapping("/get-by-item/{itemId}")
+    public ResponseEntity<?> getBomByItem(@PathVariable String itemId){
+        logger.debug("Received request to get BOM with item: {}", itemId);
+        try {
+            List<Bom> bom = bomService.getBomByParentInventoryItem(Integer.parseInt(itemId));
+            return ResponseEntity.ok(bom);
+        } catch (Exception e) {
+            logger.error("Error deleting BOM: {}", e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Failed to delete BOM: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
     @GetMapping("/all")
     public ResponseEntity<?> getAllBoms(
             @RequestParam(defaultValue = "0") int page,
@@ -148,6 +163,7 @@ public class BomController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
+
 
     @DeleteMapping("/delete/{fileId}")
     public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
