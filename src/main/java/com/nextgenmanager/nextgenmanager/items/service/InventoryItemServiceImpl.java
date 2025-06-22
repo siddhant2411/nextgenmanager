@@ -1,3 +1,5 @@
+// Updated InventoryItemServiceImpl.java
+
 package com.nextgenmanager.nextgenmanager.items.service;
 
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -15,9 +17,10 @@ import org.springframework.stereotype.Service;
 import java.time.Year;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 @Service
-public class InventoryItemServiceImpl implements InventoryItemService{
+public class InventoryItemServiceImpl implements InventoryItemService {
 
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
@@ -25,46 +28,53 @@ public class InventoryItemServiceImpl implements InventoryItemService{
     @Autowired
     private ItemCodeRepository itemCodeRepository;
 
+    @Autowired
+    private InventoryItemCodeGenerator codeGenerator;
+
     private static final Logger logger = LoggerFactory.getLogger(InventoryItem.class);
 
     @Override
     public InventoryItem addInventoryItem(InventoryItem inventoryItem) {
-
-        logger.debug("Adding inventory item: {}", inventoryItem.toString());
+        logger.debug("Adding inventory item: {}", inventoryItem);
         try {
+            // Optionally generate item code here using helper
+            if(Objects.equals(inventoryItem.getItemCode(), "")) {
+                String generatedCode = codeGenerator.generateItemCode(inventoryItem);
+                inventoryItem.setItemCode(generatedCode);
+            }
             InventoryItem savedInventoryItem = inventoryItemRepository.save(inventoryItem);
-            logger.info("Item Successfully added with inventory item id: {}",savedInventoryItem.getInventoryItemId());
+            logger.info("Item Successfully added with inventory item id: {}", savedInventoryItem.getInventoryItemId());
             return savedInventoryItem;
-        }
-        catch (Exception e){
-            logger.error("Error while adding new inventory item: {} ",e.getMessage());
+        } catch (Exception e) {
+            logger.error("Error while adding new inventory item: {}", e.getMessage());
             throw new RuntimeException(e);
         }
-
     }
 
     @Override
     public InventoryItem getInventoryItem(int itemId) {
-        logger.debug("Fetching data for id: {}",itemId);
-        try{
+        logger.debug("Fetching data for id: {}", itemId);
+        try {
             InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(itemId);
-            if(inventoryItem == null){
-                logger.warn("No inventory item with id: {}",itemId);
+            if (inventoryItem == null) {
+                logger.warn("No inventory item with id: {}", itemId);
                 throw new IllegalAccessException("Item does not exist");
             }
             return inventoryItem;
-        }catch (Exception e){
-            logger.error("Error fetching inventory item with id: {}",itemId);
+        } catch (Exception e) {
+            logger.error("Error fetching inventory item with id: {}", itemId);
             throw new RuntimeException(e);
         }
     }
+
     @Override
-    public Page<InventoryItem> getAllInventoryItems(int page, int size, String sortBy, String sortDir,String query) {
+    public Page<InventoryItem> getAllInventoryItems(int page, int size, String sortBy, String sortDir, String query) {
         logger.debug("Fetching all active inventory items with pagination and sorting");
         try {
-            Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
-            Pageable pageable = PageRequest.of(page, size,sort);
-            Page<InventoryItem> activeItems = inventoryItemRepository.findAllActiveCategory(query.toLowerCase(),pageable);
+            Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name())
+                    ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
+            Pageable pageable = PageRequest.of(page, size, sort);
+            Page<InventoryItem> activeItems = inventoryItemRepository.findAllActiveCategory(query.toLowerCase(), pageable);
             if (activeItems.isEmpty()) {
                 logger.warn("No active inventory items found");
             } else {
@@ -103,26 +113,38 @@ public class InventoryItemServiceImpl implements InventoryItemService{
                         logger.warn("No inventory item found with id: {}", itemId);
                         return new IllegalArgumentException("Item does not exist");
                     });
-
             inventoryItem.setDeletedDate(new Date());
             inventoryItemRepository.save(inventoryItem);
-
             logger.info("Inventory item with id: {} successfully marked as deleted", itemId);
         } catch (Exception e) {
             logger.error("Error while deleting inventory item with id: {}: {}", itemId, e.getMessage());
             throw new RuntimeException(e);
         }
     }
-//    TODO: remove from the DB
+
     @Override
     public void deleteInventoryItemDb(int itemId) {
-
+        logger.debug("Permanently removing inventory item with id: {}", itemId);
+        try {
+            inventoryItemRepository.deleteById(itemId);
+            logger.info("Inventory item with id: {} permanently deleted", itemId);
+        } catch (Exception e) {
+            logger.error("Error while permanently deleting inventory item: {}", e.getMessage());
+            throw new RuntimeException(e);
+        }
     }
 
-    // TODO:   remove all the data which has deleted data
     @Override
     public void removeDeletedInventoryItemDb() {
-
+        logger.debug("Removing all soft-deleted inventory items from database");
+        try {
+            List<InventoryItem> deletedItems = inventoryItemRepository.findByDeletedDateIsNotNull();
+            inventoryItemRepository.deleteAll(deletedItems);
+            logger.info("Deleted {} soft-deleted inventory items", deletedItems.size());
+        } catch (Exception e) {
+            logger.error("Error while removing deleted inventory items: {}", e.getMessage());
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -135,10 +157,9 @@ public class InventoryItemServiceImpl implements InventoryItemService{
                         return new IllegalArgumentException("Item does not exist");
                     });
 
-
-
             updatedItem.setInventoryItemId(itemId);
-            updatedItem.setItemCode(existingItem.getItemCode());
+            updatedItem.setItemCode(existingItem.getItemCode()); // preserve original code
+
             InventoryItem newItem = inventoryItemRepository.save(updatedItem);
             logger.info("Inventory item with id: {} successfully updated", itemId);
             return newItem;

@@ -8,7 +8,6 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.util.Date;
 import java.util.List;
-
 @Entity
 @Getter
 @Setter
@@ -42,12 +41,39 @@ public class InventoryItem {
 
     private String weight;
 
-    @Column(nullable = false)
     private byte revision;
 
     private String remarks;
 
     private String basicMaterial;
+
+
+    private String processType;
+
+    private String leadTime;
+
+    private String standardCost;
+
+    private String sellingPrice;
+
+    private String reorderLevel;
+
+    private String minStock;
+
+    private String maxStock;
+
+    private String taxCategory;
+
+    private boolean isBatchTracked;
+
+    private boolean isSerialTracked;
+
+    private boolean purchased;
+
+    private boolean manufactured;
+
+    @Column(nullable = true)
+    private String itemGroupCode;
 
     @CreationTimestamp
     @Column(updatable = false)
@@ -65,5 +91,4 @@ public class InventoryItem {
     @OneToMany(mappedBy = "inventoryItem", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference
     private List<InventoryItemAttachment> inventoryItemAttachmentList;
-
 }

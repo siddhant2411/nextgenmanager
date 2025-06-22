@@ -14,6 +14,9 @@ import java.util.List;
 @Repository
 public interface InventoryItemRepository extends JpaRepository<InventoryItem,Integer> {
 
+    // This method finds all items where itemCode starts with the given prefix
+    List<InventoryItem> findByItemCodeStartingWith(String prefix);
+
     @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NULL AND (LOWER(i.name) LIKE %:search% OR LOWER(i.itemCode) LIKE %:search% OR LOWER(i.hsnCode) LIKE %:search%)", nativeQuery = true)
     Page<InventoryItem> findAllActiveCategory(@Param("search") String search, Pageable pageable);
 
@@ -39,4 +42,7 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
                     "i.deletedDate IS NULL",
             nativeQuery = true)
     Page<InventoryItem> searchActiveInventoryItems(@Param("query") String query, Pageable pageable);
+
+    @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NOT NULL", nativeQuery = true)
+    List<InventoryItem> findByDeletedDateIsNotNull();
 }

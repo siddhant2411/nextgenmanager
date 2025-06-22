@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/machine_details")
+@RequestMapping("/api/machine-details")
 public class MachineDetailsController {
 
     @Autowired

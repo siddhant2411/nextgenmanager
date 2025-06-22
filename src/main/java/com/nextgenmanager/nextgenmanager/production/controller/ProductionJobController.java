@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/production/production_job")
+@RequestMapping("/api/production/production-job")
 public class ProductionJobController {
 
     @Autowired
@@ -45,7 +45,7 @@ public class ProductionJobController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ProductionJob> updateJob(@RequestParam String id, @RequestBody ProductionJob productionJob){
+    public ResponseEntity<ProductionJob> updateJob(@PathVariable String id, @RequestBody ProductionJob productionJob) {
         try {
             ProductionJob updateProductionJob = productionJobService.updateProductionJob(Integer.parseInt(id),productionJob);
             return ResponseEntity.ok(updateProductionJob);
