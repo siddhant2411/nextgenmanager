@@ -326,8 +326,8 @@
                             <td style="padding-left: 2mm;">
                                 Validity
                             </td>
-                            <td style="padding-left: 2mm;">
-                                30 days from above date
+                            <td style="padding-left: 2mm;"    th:text="${quotationInfo.validTill}">
+
                             </td>
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
                                 Discount%
@@ -342,8 +342,7 @@
                             <td style="padding-left: 2mm;">
                                 Prices
                             </td>
-                            <td style="padding-left: 2mm;">
-                                Unpacked, Vatva,Ahmedabad,basis
+                            <td style="text-align: right;" th:text="${quotationInfo.pricesTerms}">
                             </td>
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
                                 P & F charges
@@ -357,8 +356,8 @@
                             <td style="padding-left: 2mm;">
                                 Terms:
                             </td>
-                            <td style="padding-left: 2mm;">
-                                30% advance, Balance Against PI
+                            <td style="padding-left: 2mm;" th:text="${quotationInfo.paymentTerms}">
+
                             </td>
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
                                 Taxable Amount
@@ -374,8 +373,8 @@
                             <td style="padding-left: 2mm;">
                                 Delivery Date
                             </td>
-                            <td style="padding-left: 2mm;">
-                                6/8 weeks
+                            <td style="padding-left: 2mm;"  th:text="${quotationInfo.deliveryTerms}">
+
                             </td>
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
                                 GST%
@@ -392,8 +391,8 @@
                             <td style="padding-left: 2mm;">
                                 Inspection :
                             </td>
-                            <td style="padding-left: 2mm;">
-                                At our works
+                            <td style="padding-left: 2mm;" th:text="${quotationInfo.inspectionTerms}">
+
                             </td>
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
                                 Round off
@@ -406,9 +405,9 @@
                         </tr>
                         <tr>
                             <td style="padding-left: 2mm;">
-
+                                Notes :
                             </td>
-                            <td style="padding-left: 2mm;">
+                            <td style="padding-left: 2mm;" th:text="${quotationInfo.notes}">
 
                             </td>
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
