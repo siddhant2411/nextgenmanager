@@ -9,12 +9,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 public interface QuotationRepository extends JpaRepository<Quotation,Integer> {
 
     @Query(value = "select * from quotation q where q.id=:id AND q.deletedDate IS NULL", nativeQuery = true)
     public Quotation findByActiveId(int id);
 
+
+    List<Quotation> findByEnquiryId(int enquiryId);
 
     @Query(nativeQuery = true, value = """
     SELECT 
@@ -34,12 +37,13 @@ public interface QuotationRepository extends JpaRepository<Quotation,Integer> {
         contact c ON e.contact_id = c.id
     WHERE 
         (:companyName IS NULL OR c.companyName = :companyName)
-        AND (:qtnNo IS NULL OR q.qtnNo = :qtnNo)
+        AND (:qtnNo IS NULL OR q.qtnNo ILIKE CONCAT('%', CAST(:qtnNo AS TEXT), '%'))
         AND (CAST(:qtnDate AS DATE) IS NULL OR q.qtnDate = CAST(:qtnDate AS DATE) ) 
         AND (CAST(:enqDate AS DATE) IS NULL OR e.enqDate = CAST(:enqDate AS DATE) ) 
         AND (:enqNo IS NULL OR e.enqNo = :enqNo)
         AND (:netAmount IS NULL OR q.netAmount = :netAmount)
         AND (:totalAmount IS NULL OR q.totalAmount = :totalAmount)
+        AND q.deletedDate IS NULL
     """)
     Page<Object[]> getActiveQuotation(
             Pageable pageable,

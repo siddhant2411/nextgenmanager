@@ -226,9 +226,11 @@
 
         <div class="details">
             <div class="file-details">
-                <div class="company-details">
+                <div class="company-details" style="font-size:12px">
+
+                    <div th:text="'M/s.'+ ${companyName}"></div>
+                    <div th:text="${companyAddress}"></div>
                     <div th:text="${contactInfo.personName}"></div>
-                    <div th:text="${companyName}"></div>
                     <div th:text="${contactInfo.phoneNumber}"></div>
                     <div th:text="${contactInfo.emailId}"></div>
                 </div>
@@ -265,8 +267,8 @@
                 We thank you for your enquiry and are pleased to submit our quotation as below.
             </div>
 
-            <div class="product-table">
-                <table style="border-collapse: collapse; width: 100%; border: 1px solid black;">
+            <div class="product-table" >
+                <table style="border-collapse: collapse; width: 100%; border: 1px solid black; min-height:120mm;">
                     <!-- Table Header -->
                     <thead>
                         <tr style="background-color: #5fcfff; text-align: center; border-bottom: 2px solid black;">
@@ -283,8 +285,8 @@
                     <!-- Table Body -->
                     <tbody>
                         <!-- Iterate over "quotationProducts" list -->
-                        <tr th:each="product, iterStat : ${quotationProducts}" style="border: none; ">
-                            <td style="text-align: center; border-top: none; border-bottom: none;"
+                        <tr th:each="product, iterStat : ${quotationProducts}" style="border: none; vertical-align:top; ">
+                            <td style="text-align: center; border-top: none; border-bottom: none;  padding-top: 5mm;"
                                 th:text="${iterStat.index + 1}"></td>
                             <td style="text-align: left; border-top: none; border-bottom: none; padding-top: 5mm; padding-left: 3mm;"
                                 th:utext="${product.specialInstruction != null ? product.productNameRequired + '<br>' + product.specialInstruction : product.productNameRequired}">
@@ -342,12 +344,12 @@
                             <td style="padding-left: 2mm;">
                                 Prices
                             </td>
-                            <td style="text-align: right;" th:text="${quotationInfo.pricesTerms}">
+                            <td style="padding-left: 2mm;"   th:text="${quotationInfo.pricesTerms}">
                             </td>
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
-                                P & F charges
+                                P & F charges %
                             </td>
-                            <td style="width: 7.9%; text-align: right;">
+                            <td style="width: 7.9%; text-align: right;"  th:text="${quotationInfo.pandfchargesPercentage}+'%'">
                             </td>
                             <td style="text-align: right;" th:text="${quotationInfo.pandfcharges}">
                             </td>

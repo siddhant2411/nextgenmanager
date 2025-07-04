@@ -35,7 +35,7 @@ public class EnquiryController {
     @GetMapping("/{id}")
     public ResponseEntity<Enquiry> getEnquiryById(@PathVariable int id) {
         try {
-            Enquiry enquiry = enquiryService.getEnquiryWithProductPrice(id);
+            Enquiry enquiry = enquiryService.getEnquiry(id);
             return ResponseEntity.ok(enquiry);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);

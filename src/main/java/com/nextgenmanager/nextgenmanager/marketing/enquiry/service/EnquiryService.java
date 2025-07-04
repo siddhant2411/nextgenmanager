@@ -27,6 +27,6 @@ public interface EnquiryService {
 
     public Enquiry getEnquiryByEnquiryNo(String enquiryNo);
 
-    public Enquiry getEnquiryWithProductPrice(int id);
+//    public Enquiry getEnquiryWithProductPrice(int id);
 
 }

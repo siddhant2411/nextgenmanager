@@ -15,9 +15,9 @@ public interface QuotationService {
 
     public List<Quotation>  getQuotationList();
 
-    public Quotation createQuotation(Quotation quotation);
+    public Quotation createQuotation(Quotation quotation) throws Exception;
 
-    public Quotation updateQuotation(Quotation updatedQuotation,int id);
+    public Quotation updateQuotation(Quotation updatedQuotation,int id) throws Exception;
 
     public void deleteQuotation(int id);
 
@@ -29,5 +29,7 @@ public interface QuotationService {
     public byte[] generateQuotationPdf(String html);
 
     public ResponseEntity<byte[]> downloadQuotationPdf(int qtnId);
+
+    public List<Quotation> getQuotationsByEnquiryId(int enquiryId);
 
 }

@@ -1,11 +1,15 @@
 package com.nextgenmanager.nextgenmanager.bom.controller;
 
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMTemplateMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProduction;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
+import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionTemplateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,10 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/bom")
@@ -37,81 +38,152 @@ public class BomController {
     private static final Logger logger = LoggerFactory.getLogger(BomController.class);
 
     @Autowired
+    private WorkOrderProductionTemplateService workOrderProductionTemplateService;
+
+    @Autowired
     private BomService bomService;
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getBom(@PathVariable String id) {
+    public ResponseEntity<?> getBom(@PathVariable Integer id) {
         logger.info("Received request to fetch BOM with id: {}", id);
         try {
-            Bom bom = bomService.getBom(Integer.parseInt(id));
-            return ResponseEntity.ok(bom);
+            Bom bom = bomService.getBom(id);
+            if (bom == null) {
+                logger.warn("BOM not found for ID: {}", id);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "BOM not found with ID: " + id));
+            }
+
+            WorkOrderProductionTemplate workOrderProductionTemplate = bomService.getBomWOTemplateByBomId(bom.getId());
+            if (workOrderProductionTemplate == null) {
+                logger.warn("WorkOrderProductionTemplate not found for BOM ID: {}", id);
+            }
+
+            BOMTemplateMapper bomTemplateMapper = new BOMTemplateMapper();
+            bomTemplateMapper.setBom(bom);
+            bomTemplateMapper.setWorkOrderProductionTemplate(workOrderProductionTemplate);
+
+            logger.info("Successfully fetched BOM and template for ID: {}", id);
+            return ResponseEntity.ok(bomTemplateMapper);
+
         } catch (ResourceNotFoundException e) {
-            logger.error("BOM not found or invalid: {}", e.getMessage());
-            Map<String, String> response = new HashMap<>();
-            response.put("error", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            logger.error("Resource not found: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            logger.error("Error processing request: {}", e.getMessage());
-            Map<String, String> response = new HashMap<>();
-            response.put("error", "Internal server error occurred");
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            logger.error("Internal error while fetching BOM ID {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Internal server error occurred"));
         }
     }
+
 
     @PostMapping
-    public ResponseEntity<?> addBom(@RequestBody Bom bom) {
+    public ResponseEntity<?> addBom(@RequestBody BOMTemplateMapper bomTemplateMapper) {
         logger.info("Received request to add new BOM");
+
         try {
-            Bom savedBom = bomService.addBom(bom);
-            return ResponseEntity.status(HttpStatus.CREATED).body(savedBom);
+            // Save BOM first
+            Bom savedBom = bomService.addBom(bomTemplateMapper.getBom());
+            logger.debug("BOM saved with ID: {}", savedBom.getId());
+
+            // Create associated WorkOrderProductionTemplate
+            WorkOrderProductionTemplate inputTemplate = bomTemplateMapper.getWorkOrderProductionTemplate();
+            inputTemplate.setBom(savedBom); // Ensure linkage
+            WorkOrderProductionTemplate savedTemplate =
+                    workOrderProductionTemplateService.createWorkOrderProductionTemplate(inputTemplate);
+
+            logger.debug("WorkOrderProductionTemplate saved with ID: {}", savedTemplate.getId());
+
+            // Prepare response
+            BOMTemplateMapper newBomTemplateMapper = new BOMTemplateMapper();
+            newBomTemplateMapper.setBom(savedBom);
+            newBomTemplateMapper.setWorkOrderProductionTemplate(savedTemplate);
+
+            logger.info("Successfully created BOM and WorkOrderProductionTemplate with BOM ID: {}", savedBom.getId());
+            return ResponseEntity.status(HttpStatus.CREATED).body(newBomTemplateMapper);
+
         } catch (Exception e) {
-            logger.error("Error creating BOM: {}", e.getMessage());
-            Map<String, String> response = new HashMap<>();
-            response.put("error", "Failed to create BOM: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            logger.error("Failed to create BOM: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to create BOM: " + e.getMessage()));
         }
     }
 
+
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateBom(@PathVariable String id, @RequestBody Bom bom) {
+    public ResponseEntity<?> updateBom(@PathVariable Integer id, @RequestBody BOMTemplateMapper bomTemplateMapper) {
         logger.info("Received request to update BOM with id: {}", id);
         try {
-            bom.setId(Integer.parseInt(id));
-            Bom updatedBom = bomService.editBom(bom);
-            return ResponseEntity.ok(updatedBom);
+            Bom bomToUpdate = bomTemplateMapper.getBom();
+            bomToUpdate.setId(id);
+            Bom updatedBom = bomService.editBom(bomToUpdate);
+
+            WorkOrderProductionTemplate template = bomTemplateMapper.getWorkOrderProductionTemplate();
+            template.setBom(updatedBom);
+            BOMTemplateMapper responseMapper = new BOMTemplateMapper();
+            responseMapper.setBom(updatedBom);
+            if(template.getId()>0) {
+                WorkOrderProductionTemplate updatedTemplate = workOrderProductionTemplateService.updateWorkOrderProductionTemplate(template.getId(), template);
+                responseMapper.setWorkOrderProductionTemplate(updatedTemplate);
+            }else {
+                WorkOrderProductionTemplate workOrderProductionTemplate = workOrderProductionTemplateService.createWorkOrderProductionTemplate(template);
+                responseMapper.setWorkOrderProductionTemplate(workOrderProductionTemplate);
+            }
+
+
+            logger.info("Successfully updated BOM and Template for ID: {}", id);
+            return ResponseEntity.ok(responseMapper);
+
         } catch (Exception e) {
-            logger.error("Error updating BOM: {}", e.getMessage());
-            Map<String, String> response = new HashMap<>();
-            response.put("error", "Failed to update BOM: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            logger.error("Failed to update BOM with ID {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to update BOM: " + e.getMessage()));
         }
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteBom(@PathVariable String id) {
+    public ResponseEntity<?> deleteBom(@PathVariable Integer id) {
         logger.info("Received request to delete BOM with id: {}", id);
         try {
-            Bom deletedBom = bomService.deleteBom(Integer.parseInt(id));
-            return ResponseEntity.ok(deletedBom);
+            Bom deletedBom = bomService.deleteBom(id);
+
+            BOMTemplateMapper responseMapper = new BOMTemplateMapper();
+            responseMapper.setBom(deletedBom);
+
+            logger.info("Successfully deleted BOM ID: {}", id);
+            return ResponseEntity.status(HttpStatus.OK).body("Bom with id: "+id+" is deleted");
         } catch (Exception e) {
-            logger.error("Error deleting BOM: {}", e.getMessage());
-            Map<String, String> response = new HashMap<>();
-            response.put("error", "Failed to delete BOM: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            logger.error("Failed to delete BOM ID {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to delete BOM: " + e.getMessage()));
         }
     }
 
     @GetMapping("/get-by-item/{itemId}")
-    public ResponseEntity<?> getBomByItem(@PathVariable String itemId){
-        logger.debug("Received request to get BOM with item: {}", itemId);
+    public ResponseEntity<?> getBomByItem(@PathVariable Integer itemId) {
+        logger.debug("Received request to get BOMs by item ID: {}", itemId);
         try {
-            List<Bom> bom = bomService.getBomByParentInventoryItem(Integer.parseInt(itemId));
-            return ResponseEntity.ok(bom);
+            List<Bom> boms = bomService.getBomByParentInventoryItem(itemId);
+            List<BOMTemplateMapper> responseList = new ArrayList<>();
+
+            for (Bom bom : boms) {
+                WorkOrderProductionTemplate template = bomService.getBomWOTemplateByBomId(bom.getId());
+
+                BOMTemplateMapper mapper = new BOMTemplateMapper();
+                mapper.setBom(bom);
+                mapper.setWorkOrderProductionTemplate(template);
+
+                responseList.add(mapper);
+            }
+
+            logger.info("Returning {} BOM(s) for item ID: {}", responseList.size(), itemId);
+            return ResponseEntity.ok(responseList);
+
         } catch (Exception e) {
-            logger.error("Error deleting BOM: {}", e.getMessage());
-            Map<String, String> response = new HashMap<>();
-            response.put("error", "Failed to delete BOM: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            logger.error("Failed to fetch BOMs by item ID {}: {}", itemId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to fetch BOMs: " + e.getMessage()));
         }
     }
 

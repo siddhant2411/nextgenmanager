@@ -11,17 +11,16 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-
 @Entity
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "quotationProducts")
+@Table(name = "quotation_products")
 public class QuotationProducts {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -30,17 +29,22 @@ public class QuotationProducts {
 
     private String productNameRequired;
 
-    private double pricePerUnit;
+    @Column(precision = 10, scale = 2)
+    private BigDecimal pricePerUnit;
 
-    private double qty;
+    @Column(precision = 10, scale = 2)
+    private BigDecimal qty;
 
-    private double discountPercentage;
+    @Column(precision = 5, scale = 2)
+    private BigDecimal discountPercentage;
 
     private String specialInstruction;
 
+    @Column(precision = 10, scale = 2)
     private BigDecimal unitPriceAfterDiscount;
 
-    private BigDecimal  totalAmountOfProduct;
+    @Column(precision = 12, scale = 2)
+    private BigDecimal totalAmountOfProduct;
 
     @ManyToOne
     @JoinColumn(name = "quotation_id", referencedColumnName = "id")
@@ -50,9 +54,8 @@ public class QuotationProducts {
 
     @PrePersist
     public void prePersist() {
-        if (discountPercentage == 0) {
-            discountPercentage = 0;
+        if (discountPercentage == null) {
+            discountPercentage = BigDecimal.ZERO;
         }
     }
-
 }

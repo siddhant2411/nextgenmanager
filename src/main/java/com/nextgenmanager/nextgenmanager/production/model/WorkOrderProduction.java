@@ -44,6 +44,9 @@ public class WorkOrderProduction {
 
     private boolean isCreateChildItems=true;
 
+    @Column(unique = true, nullable = false)
+    private String workOrderNumber;
+
     @Column(precision = 10, scale = 1)
     private BigDecimal actualWorkHours;
 
@@ -60,6 +63,21 @@ public class WorkOrderProduction {
     @JsonManagedReference
     private List<WorkOrderInventoryInstanceList> workOrderInventoryInstanceLists;
 
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal estimatedCostOfLabour;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal estimatedCostOfBom;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal overheadCostPercentage;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal totalEstimatedCostOfWorkOrder;
+
+    @Enumerated(EnumType.STRING)
+    private WorkOrderSourceType sourceType;
 
     private String remarks;
 

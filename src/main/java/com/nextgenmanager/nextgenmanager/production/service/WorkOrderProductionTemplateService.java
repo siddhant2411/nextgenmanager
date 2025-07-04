@@ -18,4 +18,5 @@ public interface WorkOrderProductionTemplateService {
     public WorkOrderProductionTemplate updateWorkOrderProductionTemplate(int id,WorkOrderProductionTemplate workOrderProductionTemplate);
 
     public void deleteWorkOrderProductionTemplate(int id);
+
 }

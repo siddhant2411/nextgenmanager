@@ -30,43 +30,60 @@ public class Quotation {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private int id;
 
-    @Column(unique = true, nullable = false)
-    private String qtnNo=generateShortUUID();
+    @Column(unique = true)
+    private String qtnNo;
 
     private LocalDate qtnDate;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Lazy load the associated Contact
-    @JoinColumn(name = "enquiry_id", referencedColumnName = "id") // Foreign key mapping
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "enquiry_id", referencedColumnName = "id")
     private Enquiry enquiry;
-
 
     @OneToMany(mappedBy = "quotation", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference
     private List<QuotationProducts> quotationProducts;
 
+    @Column(precision = 10, scale = 2)
     private BigDecimal netAmount;
 
+    @Column(precision = 10, scale = 2)
     private BigDecimal pandfcharges;
 
+    @Min(0)
+    @Column(precision = 5, scale = 2)
+    private BigDecimal pandfchargesPercentage;
 
     @Min(0)
+    @Column(precision = 5, scale = 2)
     private BigDecimal gstPercentage;
 
-
     @Min(0)
+    @Column(precision = 5, scale = 2)
     private BigDecimal discountPercentage;
 
-    private BigDecimal  gstAmount;
+    @Column(precision = 10, scale = 2)
+    private BigDecimal gstAmount;
 
+    @Column(precision = 10, scale = 2)
+    private BigDecimal discountAmount;
 
-    private BigDecimal  discountAmount;
+    @Column(precision = 10, scale = 2)
+    private BigDecimal roundOff;
 
+    @Column(precision = 12, scale = 2)
+    private BigDecimal totalAmount;
 
+    @Enumerated(EnumType.STRING)
+    private QuotationStatus quotationStatus = QuotationStatus.DRAFT;
 
-
-    private BigDecimal  roundOff;
-
-    private BigDecimal  totalAmount;
+    private String validTill;
+    private String paymentTerms;
+    private String deliveryTerms;
+    private String inspectionTerms;
+    private String pricesTerms;
+    private String notes;
+    private String createdBy;
+    private String updatedBy;
 
     @CreationTimestamp
     @Column(updatable = false)
@@ -76,18 +93,4 @@ public class Quotation {
     private Date updatedDate;
 
     private Date deletedDate;
-
-
-    @PrePersist
-    public void prePersist() {
-        if (this.qtnNo == null) {  // Only set if not already assigned
-            this.qtnNo = generateShortUUID();
-        }
-    }
-
-    private static String generateShortUUID() {
-        return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-    }
-
-
 }

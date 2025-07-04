@@ -5,9 +5,11 @@ package com.nextgenmanager.nextgenmanager.production.service;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.model.ProductionJob;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderJobList;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
@@ -40,6 +42,9 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
 
     @Autowired
     private BomService bomService;
+
+    @Autowired
+    private InventoryItemService inventoryItemService;
 
     @Autowired
     private InventoryInstanceService inventoryInstanceService;
@@ -91,18 +96,16 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         workOrderProductionTemplate.setEstimatedCostOfLabour(totalLabourCost);
         workOrderProductionTemplate.setEstimatedHours(totalLabourHour);
         int bomId = workOrderProductionTemplate.getBom().getId();
+        Bom existingBom = bomService.getBom(bomId);  // Returns a managed entity
+        workOrderProductionTemplate.setBom(existingBom);
         // 2. Calculate total BOM cost
         List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
         BigDecimal totalBomCost = BigDecimal.ZERO;
         for (BomPosition bomPosition : bomPositionList) {
-            int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
-            InventoryInstance inventoryInstance = inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId);
-            if (inventoryInstance != null) {
-                BigDecimal itemCost = BigDecimal.valueOf(inventoryInstance.getCostPerUnit())
-                        .multiply(BigDecimal.valueOf(bomPosition.getQuantity()));
-                totalBomCost = totalBomCost.add(itemCost);
-            }
+             int inventoryItemId  = bomPosition.getChildInventoryItem().getInventoryItemId();
 
+            BigDecimal itemCost =BigDecimal.valueOf(inventoryItemService.getInventoryItem(inventoryItemId).getStandardCost());
+            totalBomCost.add(itemCost);
 
 
         }
@@ -151,17 +154,15 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         BigDecimal totalBomCost = BigDecimal.ZERO;
         for (BomPosition bomPosition : bomPositionList) {
             int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
-            InventoryInstance inventoryInstance = inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId);
-            if (inventoryInstance == null) {
-                logger.error("Item id {} does not exist in inventory", inventoryItemId);
-                throw new RuntimeException("Please make sure all the BOM items are present in inventory with actual cost");
-            }
+            double standardCost = inventoryItemService.getInventoryItem(inventoryItemId).getStandardCost();
+            BigDecimal itemCost = BigDecimal.valueOf(standardCost);
 
-            BigDecimal itemCost = BigDecimal.valueOf(inventoryInstance.getCostPerUnit())
-                    .multiply(BigDecimal.valueOf(bomPosition.getQuantity()));
-            totalBomCost = totalBomCost.add(itemCost);
+            BigDecimal quantity = BigDecimal.valueOf(bomPosition.getQuantity());  // quantity from BOM
+            totalBomCost = totalBomCost.add(itemCost.multiply(quantity));  // sum (unitCost * quantity)
         }
         workOrderProductionTemplate.setEstimatedCostOfBom(totalBomCost);
+
+
 
         // 3. Calculate overhead cost and total cost
         BigDecimal totalCostBeforeOverhead = totalLabourCost.add(totalBomCost);

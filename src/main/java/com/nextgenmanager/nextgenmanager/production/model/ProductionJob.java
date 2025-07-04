@@ -19,7 +19,7 @@ import java.util.Date;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "production_job")
+@Table(name = "productionJob")
 public class ProductionJob {
 
     @Id

@@ -6,6 +6,7 @@ import com.nextgenmanager.nextgenmanager.production.DTO.WorkOrderProductionDTO;
 import com.nextgenmanager.nextgenmanager.production.DTO.WorkOrderProductionRequestMapper;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProduction;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,14 @@ public class WorkOrderProductionController {
 
 
 
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<WorkOrderProductionDTO> patchStatus(
+            @PathVariable int id,
+            @RequestParam WorkOrderStatus newStatus) {
+        WorkOrderProductionDTO updated = workOrderProductionService.updateWorkOrderStatus(id, newStatus);
+        return ResponseEntity.ok(updated);
+    }
+
     @PostMapping("/get-list")
     public ResponseEntity<?> getWorkOrderList(@RequestBody WorkOrderListRequest paramObject) {
         try {
@@ -58,15 +67,34 @@ public class WorkOrderProductionController {
     }
 
     @GetMapping
-    public ResponseEntity<?> getWorkOrder(@RequestParam String id){
-        try{
-            Optional<WorkOrderProduction> workOrderProduction = workOrderProductionService.getWorkOrderProductionJobById(Integer.parseInt(id));
-            return ResponseEntity.status(HttpStatus.OK).body(workOrderProduction);
-        }
-        catch (RuntimeException e){
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Error while fetching work order : " + e.getMessage());
+    public ResponseEntity<?> getWorkOrder(@RequestParam String id) {
+        try {
+            Optional<WorkOrderProduction> workOrderProduction =
+                    workOrderProductionService.getWorkOrderProductionJobById(Integer.parseInt(id));
+
+            return workOrderProduction
+                    .<ResponseEntity<?>>map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                            .body("Work order not found with ID: " + id));
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body("Invalid ID format: " + id);
         }
     }
 
+
+    @ExceptionHandler({ IllegalArgumentException.class })
+    public ResponseEntity<?> handleIllegalArgument(Exception e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid input: " + e.getMessage());
+    }
+
+    @PostMapping("/{id}/revert")
+    public ResponseEntity<?> revertWorkOrder(@PathVariable int id) {
+        try {
+            workOrderProductionService.revertInventoryForWorkOrder(id);
+            return ResponseEntity.ok("Reverted successfully");
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
 
 }

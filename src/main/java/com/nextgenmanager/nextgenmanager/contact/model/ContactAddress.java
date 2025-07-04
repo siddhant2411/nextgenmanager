@@ -8,6 +8,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 @Entity
 @Getter
 @Setter
@@ -33,4 +37,19 @@ public class ContactAddress {
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     @JsonBackReference
     private Contact contact;
+
+
+    @Override
+    public String toString() {
+        return Stream.of(street1, street2, state, country)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
+    }
+
+    // or, if you want a separate method:
+    public String toFormattedString() {
+        return Stream.of(street1, street2, state, country)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
+    }
 }

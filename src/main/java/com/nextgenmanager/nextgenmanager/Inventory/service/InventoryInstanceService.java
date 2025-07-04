@@ -20,9 +20,11 @@ public interface InventoryInstanceService  {
 
     public List<InventoryInstance> getInventoryInstanceByItemId(int inventoryItemId,int page, int size, String sortBy, String sortDir, String query);
 
-    public void createInventoryInstances(InventoryInstance inventoryInstance, double qty);
+    public List<InventoryInstance> createInstances(InventoryItem item, double qty, InventoryInstance template);
 
     public List<InventoryInstance> consumeInventoryInstance(InventoryItem inventoryItem, double consumedQty);
+
+    public void consumeInventoryInstance(List<InventoryInstance> instances);
 
     public List<InventoryInstance> bookInventoryInstance(InventoryItem inventoryItem, double bookedQty);
 
@@ -33,4 +35,8 @@ public interface InventoryInstanceService  {
     public void deleteInventoryInstance(long id);
 
     public InventoryInstance getInventoryInstanceById(long id);
+
+    public void updateItemAvailability(int itemId);
+
+    public void revertInventoryInstances(List<InventoryInstance> instances);
 }

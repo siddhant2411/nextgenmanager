@@ -52,9 +52,9 @@ public class InventoryItem {
 
     private String leadTime;
 
-    private String standardCost;
+    private Double standardCost;
 
-    private String sellingPrice;
+    private Double sellingPrice;
 
     private String reorderLevel;
 

@@ -33,29 +33,38 @@ public class InventoryInstanceController {
 
     @PostMapping("/add")
     public ResponseEntity<?> addInventoryInstance(
-            @RequestBody InventoryInstance inventoryInstance, @RequestParam("qty") double qty) {
+            @RequestBody InventoryInstance inventoryInstance,
+            @RequestParam("qty") double qty) {
+
         logger.info("Received request to add inventory instance: {}, qty: {}", inventoryInstance, qty);
+
         try {
             // Validate inventory item
-            if (inventoryInstance.getInventoryItem() == null) {
-                logger.warn("Inventory item is missing in the request.");
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body("Inventory item must be provided.");
+            if (inventoryInstance.getInventoryItem() == null ||
+                inventoryInstance.getInventoryItem().getInventoryItemId() <= 0) {
+                logger.warn("Inventory item is missing or invalid in the request.");
+                return ResponseEntity.badRequest().body("Valid inventory item must be provided.");
             }
 
-            // Call the service to create instances
-            inventoryInstanceService.createInventoryInstances(inventoryInstance, qty);
-            logger.info("Inventory instances successfully created for item ID: {} with quantity: {}",
-                    inventoryInstance.getInventoryItem().getInventoryItemId(), qty);
-            return ResponseEntity.status(HttpStatus.CREATED).body("Inventory instances created successfully.");
+            // Fetch full item details
+            InventoryItem item = inventoryInstance.getInventoryItem();
+
+            // Use the new createInstances method
+            List<InventoryInstance> createdInstances =
+                    inventoryInstanceService.createInstances(item, qty, inventoryInstance);
+
+            logger.info("Successfully created {} inventory instance(s) for item ID: {}",
+                    createdInstances.size(), item.getInventoryItemId());
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(createdInstances);
+
         } catch (NumberFormatException e) {
-            logger.error("Invalid quantity provided: {}", qty, e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("Invalid quantity provided.");
+            logger.error("Invalid quantity format: {}", qty, e);
+            return ResponseEntity.badRequest().body("Invalid quantity format.");
         } catch (Exception e) {
-            logger.error("An error occurred while creating inventory instances.", e);
+            logger.error("Error creating inventory instances: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("An error occurred while creating inventory instances: " + e.getMessage());
+                    .body("Error creating inventory instances: " + e.getMessage());
         }
     }
 

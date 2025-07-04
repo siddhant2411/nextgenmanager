@@ -7,6 +7,7 @@ import com.nextgenmanager.nextgenmanager.production.service.ProductionJobService
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -34,13 +35,20 @@ public class ProductionJobController {
     }
 
     @GetMapping
-    public ResponseEntity<List<ProductionJob>> getAllJobs(){
+    public ResponseEntity<Page<ProductionJob>> getAllJobs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "jobName") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir,
+            @RequestParam(required = false) String search
+    ) {
         try {
-            logger.debug("Fetching all production jobs");
-            List<ProductionJob> productionJobs = productionJobService.getProductionJobList();
+            logger.debug("Fetching paginated production jobs");
+            Page<ProductionJob> productionJobs = productionJobService.getProductionJobList(page, size, sortBy, sortDir, search);
             return ResponseEntity.ok(productionJobs);
-        } catch (Exception e){
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } catch (Exception e) {
+            logger.error("Error fetching production jobs", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
     }
 

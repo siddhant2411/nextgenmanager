@@ -26,8 +26,8 @@ public class WorkOrderProductionTemplate {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private int id;
 
-    @OneToOne(fetch = FetchType.LAZY) // Lazy load the associated bom
-    @JoinColumn(name = "bom_id", referencedColumnName = "id") // Foreign key mapping
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bom_id", referencedColumnName = "id")
     private Bom bom;
 
     @OneToMany(mappedBy = "workOrderProductionTemplate", cascade = CascadeType.ALL, orphanRemoval = true)

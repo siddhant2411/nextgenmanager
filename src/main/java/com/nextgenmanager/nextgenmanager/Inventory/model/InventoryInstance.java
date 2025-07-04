@@ -20,7 +20,14 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @DynamicUpdate
-@Table(name = "inventoryInstance")
+@Table(name = "inventoryInstance",indexes = {
+        @Index(name = "idx_invinst_itemref", columnList = "inventoryItemRef"),
+        @Index(name = "idx_invinst_booked_date", columnList = "bookedDate"),
+        @Index(name = "idx_invinst_deleted_date", columnList = "deletedDate"),
+        @Index(name = "idx_invinst_is_consumed", columnList = "isConsumed"),
+        @Index(name = "idx_invinst_filter_combo", columnList = "inventoryItemRef, bookedDate, deletedDate")
+})
+
 public class InventoryInstance {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

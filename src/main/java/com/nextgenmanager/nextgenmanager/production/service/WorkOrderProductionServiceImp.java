@@ -26,6 +26,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.*;
 
 import jakarta.persistence.criteria.Predicate;
@@ -125,91 +126,82 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
     @Override
     @Transactional
     public WorkOrderProductionDTO createWorkOrderProduction(WorkOrderProduction newWorkOrderProduction) {
-        if (newWorkOrderProduction.getSalesOrder() == null && newWorkOrderProduction.getWorkOrderProductionTemplate() == null) {
-            logger.error("Not able to create work order due to missing SalesOrder or WorkOrderProductionTemplate.");
-            throw new IllegalArgumentException("Sales Order or Work Order Template must not be null");
-        }
+//        if (newWorkOrderProduction.getSalesOrder() == null && newWorkOrderProduction.getWorkOrderProductionTemplate() == null) {
+//            logger.error("Cannot create work order: Missing SalesOrder or WorkOrderProductionTemplate.");
+//            throw new IllegalArgumentException("Sales Order or Work Order Template must not be null");
+//        }
 
-        WorkOrderProductionTemplate workOrderProductionTemplate  = newWorkOrderProduction.getWorkOrderProductionTemplate();
-        List<WorkOrderInventoryInstanceList> workOrderInventoryInstanceList = new ArrayList<>();
-        List<WorkOrderInventoryInstanceList> pendingWorkOrderInventoryInstanceList = new ArrayList<>();
+        WorkOrderProductionTemplate template = newWorkOrderProduction.getWorkOrderProductionTemplate();
 
-        int bomId =  workOrderProductionTemplate.getBom().getId();
-        List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
-        workOrderProductionTemplate.setBom(bomService.getBom(workOrderProductionTemplate.getBom().getId()));
-        newWorkOrderProduction.setWorkOrderProductionTemplate(workOrderProductionTemplate);
-        for (BomPosition itemPosition : bomPositionList) {
-            InventoryItem inventoryItem = itemPosition.getChildInventoryItem();
-            logger.info("TESTTEST inventoryItemId: {}",inventoryItem.getInventoryItemId());
-            WorkOrderInventoryInstanceList instanceListItem = new WorkOrderInventoryInstanceList();
-            instanceListItem.setInventoryItem(inventoryItem);
-            instanceListItem.setWorkOrderProduction(newWorkOrderProduction);
-            logger.info("Processing inventory item ID: {} for quantity: {}", inventoryItem.getInventoryItemId(), itemPosition.getQuantity());
-            double totalAvailableItems = itemPosition.getQuantity();
-            if(newWorkOrderProduction.getQuantity()!=0){
-                totalAvailableItems*=newWorkOrderProduction.getQuantity();
-            }
+        String workOrderNumber = generateNextWorkOrderNumber();
+        newWorkOrderProduction.setWorkOrderNumber(workOrderNumber);
+
+        int bomId = template.getBom().getId();
+
+        Bom bom = bomService.getBom(bomId);
+        template.setBom(bom);
+        newWorkOrderProduction.setWorkOrderProductionTemplate(template);
+
+        newWorkOrderProduction.setEstimatedCostOfBom(template.getEstimatedCostOfBom());
+        newWorkOrderProduction.setEstimatedCostOfLabour(template.getEstimatedCostOfLabour());
+        newWorkOrderProduction.setTotalEstimatedCostOfWorkOrder(template.getTotalCostOfWorkOrder());
+
+        List<BomPosition> bomPositions = bom.getChildInventoryItems();
+        List<WorkOrderInventoryInstanceList> allInstanceLists = new ArrayList<>();
+        List<WorkOrderInventoryInstanceList> pendingInstanceLists = new ArrayList<>();
+
+        for (BomPosition bomPos : bomPositions) {
+            InventoryItem inventoryItem = bomPos.getChildInventoryItem();
+            double totalRequiredQty = bomPos.getQuantity() * (newWorkOrderProduction.getQuantity() != 0 ? newWorkOrderProduction.getQuantity() : 1);
+
+            WorkOrderInventoryInstanceList instanceListEntry = new WorkOrderInventoryInstanceList();
+            instanceListEntry.setInventoryItem(inventoryItem);
+            instanceListEntry.setWorkOrderProduction(newWorkOrderProduction);
+
             try {
-                if (inventoryItem.getAvailableQuantity() >= totalAvailableItems) {
-                    logger.info("Sufficient quantity available for inventory item ID: {}. Booking full quantity: {}",
-                            inventoryItem.getInventoryItemId(),totalAvailableItems);
+                double availableQty = inventoryItem.getAvailableQuantity();
+                List<InventoryInstance> bookedInstances = new ArrayList<>();
 
-                    List<InventoryInstance> bookedItems = inventoryInstanceService.bookInventoryInstance(inventoryItem, totalAvailableItems);
-                    instanceListItem.setInventoryInstanceList(bookedItems);
-                    instanceListItem.setInventoryStatus(InventoryStatus.AVAILABLE);
-
-
+                if (availableQty >= totalRequiredQty) {
+                    logger.info("Booking available quantity: {} for item ID: {}", totalRequiredQty, inventoryItem.getInventoryItemId());
+                    bookedInstances = inventoryInstanceService.bookInventoryInstance(inventoryItem, totalRequiredQty);
+                    instanceListEntry.setInventoryStatus(InventoryStatus.AVAILABLE);
+                    instanceListEntry.setInventoryInstanceList(bookedInstances);
                 } else {
-                    int availableQty = (int) inventoryItem.getAvailableQuantity();
-                    logger.warn("Insufficient quantity for inventory item ID: {}. Available: {}, Required: {}",
-                            inventoryItem.getInventoryItemId(), availableQty,totalAvailableItems);
-                    double remainingQty = totalAvailableItems - availableQty;
-                    logger.info("Requesting remaining quantity: {} for inventory item ID: {}", remainingQty, inventoryItem.getInventoryItemId());
-                    List<InventoryInstance> inventoryInstanceList = new ArrayList<>();
+                    logger.warn("Only {} available for item ID: {}, required: {}", availableQty, inventoryItem.getInventoryItemId(), totalRequiredQty);
 
-                    // Only add booked items to this list — not affecting pending list
+                    // Book what is available
                     if (availableQty > 0) {
-                        List<InventoryInstance> bookedItems = inventoryInstanceService.bookInventoryInstance(inventoryItem, availableQty);
-                        instanceListItem.setInventoryStatus(InventoryStatus.AVAILABLE);
-                        instanceListItem.setWorkOrderProduction(newWorkOrderProduction);
-                        inventoryInstanceList.addAll(bookedItems);
-
+                        bookedInstances = inventoryInstanceService.bookInventoryInstance(inventoryItem, availableQty);
                     }
 
-                    // Handle only requested items for pending
-                    if (remainingQty > 0) {
-                        List<InventoryInstance> requestedList = inventoryInstanceService.requestInstance(inventoryItem, remainingQty);
+                    // Request remaining
+                    double remainingQty = totalRequiredQty - availableQty;
+                    List<InventoryInstance> requestedInstances = inventoryInstanceService.requestInstance(inventoryItem, remainingQty);
 
-                        if (!requestedList.isEmpty()) {
-                            WorkOrderInventoryInstanceList instanceListItemList = new WorkOrderInventoryInstanceList();
-                            instanceListItem.setInventoryInstanceList(requestedList);
-                            instanceListItem.setInventoryStatus(InventoryStatus.PENDING);
-                            instanceListItem.setWorkOrderProduction(newWorkOrderProduction);
-                            instanceListItem.setInventoryItem(inventoryItem);
-                            pendingWorkOrderInventoryInstanceList.add(instanceListItem);
-                        }
-                    }
-
-
+                    bookedInstances.addAll(requestedInstances);
+                    instanceListEntry.setInventoryStatus(InventoryStatus.PENDING);
+                    pendingInstanceLists.add(instanceListEntry);
                 }
-                workOrderInventoryInstanceList.add(instanceListItem);
 
+                instanceListEntry.setInventoryInstanceList(bookedInstances);
+                allInstanceLists.add(instanceListEntry);
             } catch (Exception e) {
-                logger.error("Error booking/requesting inventory item ID: {} - {}", inventoryItem.getInventoryItemId(), e.getMessage(), e);
+                logger.error("Error while processing item ID {}: {}", inventoryItem.getInventoryItemId(), e.getMessage(), e);
                 throw e;
             }
         }
 
-        newWorkOrderProduction.setWorkOrderInventoryInstanceLists(workOrderInventoryInstanceList);
-        if (pendingWorkOrderInventoryInstanceList.isEmpty()){
+        newWorkOrderProduction.setWorkOrderInventoryInstanceLists(allInstanceLists);
+        if (pendingInstanceLists.isEmpty()) {
             newWorkOrderProduction.setWorkOrderStatus(WorkOrderStatus.READY);
         }
+
         WorkOrderProduction savedWorkOrder = workOrderProductionRepository.save(newWorkOrderProduction);
+        logger.info("Work order created with ID: {} and Number: {}", savedWorkOrder.getId(), savedWorkOrder.getWorkOrderNumber());
 
-        logger.info("Successfully created work order production job with ID: {}", savedWorkOrder.getId());
-
-        if (!pendingWorkOrderInventoryInstanceList.isEmpty() && savedWorkOrder.isCreateChildItems()) {
-            createChildWorkOrder(pendingWorkOrderInventoryInstanceList, savedWorkOrder, new HashSet<>(), 0);
+        if (!pendingInstanceLists.isEmpty() && savedWorkOrder.isCreateChildItems()) {
+            createChildWorkOrder(pendingInstanceLists, savedWorkOrder, new HashSet<>(), 0);
         }
 
         return convertToDTO(savedWorkOrder);
@@ -253,6 +245,8 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
             }
 
             WorkOrderProduction childWorkOrder = new WorkOrderProduction();
+            childWorkOrder.setQuantity(pendingItem.getInventoryInstanceList().size());
+            childWorkOrder.setDueDate(parentWorkOrder.getDueDate()); // optional
             childWorkOrder.setWorkOrderStatus(WorkOrderStatus.DRAFT);
             childWorkOrder.setSalesOrder(parentWorkOrder.getSalesOrder());
             childWorkOrder.setParentWorkOrderProduction(parentWorkOrder);
@@ -273,7 +267,9 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         List<BomPosition> bomPositionList = workOrderProduction.getWorkOrderProductionTemplate().getBom().getChildInventoryItems();
         WorkOrderProductionDTO dto = new WorkOrderProductionDTO();
         dto.setId(workOrderProduction.getId());
-        dto.setSalesOrderNumber(workOrderProduction.getSalesOrder().getSalesOrderNumber());
+        dto.setSalesOrderNumber(
+                workOrderProduction.getSalesOrder() != null ?
+                        workOrderProduction.getSalesOrder().getOrderNumber() : null);
         dto.setStatus(workOrderProduction.getWorkOrderStatus());
         dto.setBomName(bomPositionList.isEmpty() ? null : workOrderProduction.getWorkOrderProductionTemplate().getBom().getBomName());
         dto.setActualCost(workOrderProduction.getActualTotalCostOfWorkOrder() != null
@@ -283,6 +279,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         dto.setCreationDate(workOrderProduction.getCreationDate());
         return  dto;
     }
+
 
 
     @Override
@@ -302,5 +299,131 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         workOrderProduction.setCreateChildItems(workOrderProductionRequestMapper.isCreateChildItems());
         return workOrderProduction;
     }
+
+
+    @Transactional
+    @Override
+    public void consumeInventoryForWorkOrder(int workOrderId) {
+        WorkOrderProduction workOrder = workOrderProductionRepository.findById(workOrderId)
+                .orElseThrow(() -> new RuntimeException("WorkOrder not found"));
+
+        if (!workOrder.getWorkOrderStatus().equals(WorkOrderStatus.READY)) {
+            throw new IllegalStateException("WorkOrder must be in READY state to consume inventory");
+        }
+
+        for (WorkOrderInventoryInstanceList instanceList : workOrder.getWorkOrderInventoryInstanceLists()) {
+            if (instanceList.getInventoryStatus() == InventoryStatus.AVAILABLE) {
+                List<InventoryInstance> instancesToConsume = instanceList.getInventoryInstanceList();
+                inventoryInstanceService.consumeInventoryInstance(instancesToConsume);
+            }
+        }
+
+        workOrder.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
+        workOrderProductionRepository.save(workOrder);
+    }
+
+
+    @Override
+    @Transactional
+    public void revertInventoryForWorkOrder(int workOrderId) {
+        WorkOrderProduction workOrder = workOrderProductionRepository.findById(workOrderId)
+                .orElseThrow(() -> new RuntimeException("WorkOrder not found"));
+
+        if (workOrder.getWorkOrderStatus() != WorkOrderStatus.READY &&
+                workOrder.getWorkOrderStatus() != WorkOrderStatus.IN_PROGRESS) {
+            throw new IllegalStateException("Only READY or IN_PROGRESS work orders can be reverted");
+        }
+
+        for (WorkOrderInventoryInstanceList instanceList : workOrder.getWorkOrderInventoryInstanceLists()) {
+            if (instanceList.getInventoryStatus() == InventoryStatus.AVAILABLE) {
+                List<InventoryInstance> instancesToRevert = instanceList.getInventoryInstanceList();
+                inventoryInstanceService.revertInventoryInstances(instancesToRevert);
+            }
+        }
+
+        workOrder.setWorkOrderStatus(WorkOrderStatus.CANCELLED);
+        workOrderProductionRepository.save(workOrder);
+    }
+
+    @Transactional
+    @Override
+    public WorkOrderProductionDTO updateWorkOrderStatus(int id, WorkOrderStatus newStatus) {
+        WorkOrderProduction workOrder = workOrderProductionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("WorkOrder not found"));
+
+        WorkOrderStatus currentStatus = workOrder.getWorkOrderStatus();
+
+        // Prevent invalid transitions
+        if (!isValidStatusTransition(currentStatus, newStatus)) {
+            throw new IllegalStateException("Invalid status transition: " + currentStatus + " → " + newStatus);
+        }
+
+        // Trigger consumption
+        if (newStatus == WorkOrderStatus.IN_PROGRESS && currentStatus == WorkOrderStatus.READY) {
+            consumeInventoryForWorkOrder(id);
+        }
+
+        // Trigger revert
+        if (newStatus == WorkOrderStatus.CANCELLED &&
+                (currentStatus == WorkOrderStatus.READY || currentStatus == WorkOrderStatus.IN_PROGRESS)) {
+            revertInventoryForWorkOrder(id);
+        }
+
+        // (Optional) Log status change
+        logger.info("WorkOrder ID: {} status updated from {} → {}", id, currentStatus, newStatus);
+
+        workOrder.setWorkOrderStatus(newStatus);
+        WorkOrderProduction updated = workOrderProductionRepository.save(workOrder);
+
+        return convertToDTO(updated);
+    }
+
+    private boolean isValidStatusTransition(WorkOrderStatus current, WorkOrderStatus next) {
+        return switch (current) {
+            case DRAFT     -> next == WorkOrderStatus.READY || next == WorkOrderStatus.CANCELLED;
+            case READY     -> next == WorkOrderStatus.IN_PROGRESS || next == WorkOrderStatus.CANCELLED;
+            case IN_PROGRESS -> next == WorkOrderStatus.COMPLETED || next == WorkOrderStatus.CANCELLED;
+            default        -> false;
+        };
+    }
+
+
+    @Override
+    @Transactional
+    public WorkOrderProductionDTO updateWorkOrderProduction(WorkOrderProduction updatedWorkOrder) {
+
+        WorkOrderProduction existing = workOrderProductionRepository.findById(updatedWorkOrder.getId())
+                .orElseThrow(() -> new RuntimeException("Work order not found"));
+
+        if (existing.getWorkOrderStatus() == WorkOrderStatus.IN_PROGRESS || existing.getWorkOrderStatus() == WorkOrderStatus.COMPLETED) {
+            throw new IllegalStateException("Cannot update a work order that is already in progress or completed.");
+        }
+
+        // Update fields (you can expand this based on what is allowed to be updated)
+        existing.setQuantity(updatedWorkOrder.getQuantity());
+        existing.setDueDate(updatedWorkOrder.getDueDate());
+        existing.setSalesOrder(updatedWorkOrder.getSalesOrder());
+        existing.setWorkOrderProductionTemplate(updatedWorkOrder.getWorkOrderProductionTemplate());
+        existing.setParentWorkOrderProduction(updatedWorkOrder.getParentWorkOrderProduction());
+//        existing.setWorkOrderNumber(updatedWorkOrder.getWorkOrderNumber());
+
+        existing.setActualWorkHours(updatedWorkOrder.getActualWorkHours());
+        existing.setActualCostOfBom(updatedWorkOrder.getActualCostOfBom());
+        existing.setActualCostOfLabour(updatedWorkOrder.getActualCostOfLabour());
+        existing.setActualTotalCostOfWorkOrder(updatedWorkOrder.getActualTotalCostOfWorkOrder());
+        // Don’t update status or inventory lists here unless explicitly required
+
+        WorkOrderProduction saved = workOrderProductionRepository.save(existing);
+
+        logger.info("Work Order {} is updated ",existing.getWorkOrderNumber());
+        return convertToDTO(saved);
+    }
+
+    private String generateNextWorkOrderNumber() {
+        long count = workOrderProductionRepository.count() + 1;
+        String year = String.valueOf(LocalDate.now().getYear());
+        return "WO-" + year + "-" + String.format("%04d", count);
+    }
+
 
 }

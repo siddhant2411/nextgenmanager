@@ -80,6 +80,8 @@ public class QuotationController {
             return ResponseEntity.status(HttpStatus.CREATED).body(createdQuotation);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -90,6 +92,8 @@ public class QuotationController {
             return ResponseEntity.ok(updated);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 

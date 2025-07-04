@@ -26,7 +26,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-public class EnquiryServiceImpl implements EnquiryService{
+public class EnquiryServiceImpl implements EnquiryService {
 
     private static final Logger logger = LoggerFactory.getLogger(EnquiryServiceImpl.class);
 
@@ -36,51 +36,44 @@ public class EnquiryServiceImpl implements EnquiryService{
     @Autowired
     InventoryItemRepository inventoryItemRepository;
 
-    @Autowired
-    InventoryInstanceRepository inventoryInstanceRepository;
-
-
     @Override
     public Enquiry getEnquiry(int id) {
         logger.info("Fetching Enquiry with ID: {}", id);
-        try{
+        try {
             return enquiryRepository.getActiveEnquiryById(id);
-        }
-        catch (ResourceNotFoundException e){
-            logger.error("Enquiry with id {} not found",id);
+        } catch (ResourceNotFoundException e) {
+            logger.error("Enquiry with id {} not found", id);
             throw e;
         } catch (Exception e) {
             logger.error("Error while fetching Enquiry with ID {}: {}", id, e.getMessage());
             throw new RuntimeException("Failed to fetch Enquiry", e);
         }
-
     }
 
-
     @Override
-    public Page<EnquiryTableDTO> getAllActiveEnquiry(int page, int size,String sortBy, String sortDir, String enqNo, String companyName, LocalDate lastContactedDate,
-                                             LocalDate enqDate, LocalDate closedDate,Integer daysForNetFollowUp,
-                                             String dateComparisonTypeLastContacted,
-                                             String dateComparisonTypeEnqDate,
-                                             String dateComparisonTypeClosedDate) {
+    public Page<EnquiryTableDTO> getAllActiveEnquiry(int page, int size, String sortBy, String sortDir, String enqNo, String companyName, LocalDate lastContactedDate,
+                                                     LocalDate enqDate, LocalDate closedDate, Integer daysForNetFollowUp,
+                                                     String dateComparisonTypeLastContacted,
+                                                     String dateComparisonTypeEnqDate,
+                                                     String dateComparisonTypeClosedDate) {
         logger.info("Fetching all active Enquiries");
         Pageable pageable = PageRequest.of(page, size,
                 sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending());
 
-        Page<Object[]> allActiveEnquires= enquiryRepository.getActiveEnquiries(pageable,enqNo,companyName,lastContactedDate,daysForNetFollowUp,enqDate,
-                closedDate,dateComparisonTypeLastContacted,dateComparisonTypeEnqDate,dateComparisonTypeClosedDate);
+        Page<Object[]> allActiveEnquires = enquiryRepository.getActiveEnquiries(pageable, enqNo, companyName, lastContactedDate, daysForNetFollowUp, enqDate,
+                closedDate, dateComparisonTypeLastContacted, dateComparisonTypeEnqDate, dateComparisonTypeClosedDate);
 
-        Page<EnquiryTableDTO> enquiryTableDTOS = allActiveEnquires.map(record->{
+        return allActiveEnquires.map(record -> {
             try {
-                int enquiryId= (int)record[0];
+                int enquiryId = (int) record[0];
                 String fetchedEnqNo = record[1].toString();
                 LocalDate fetchedEnqDate = ((java.sql.Date) record[2]).toLocalDate();
                 String fetchedCompanyName = record[3].toString();
                 LocalDate fetchedLastContactedDate = ((java.sql.Date) record[4]).toLocalDate();
-                int fetchedDaysNextToContact = (int)record[5];
+                int fetchedDaysNextToContact = (int) record[5];
                 LocalDate fetchedClosedDate = null;
-                if(record[6] != null){
-                    fetchedClosedDate =  ((java.sql.Date) record[6]).toLocalDate();
+                if (record[6] != null) {
+                    fetchedClosedDate = ((java.sql.Date) record[6]).toLocalDate();
                 }
 
                 return new EnquiryTableDTO(
@@ -92,16 +85,15 @@ public class EnquiryServiceImpl implements EnquiryService{
                         fetchedDaysNextToContact,
                         fetchedClosedDate
                 );
-            }catch (Exception e){
-                logger.error("Error mapping enquiry data: {}",e.getMessage());
+            } catch (Exception e) {
+                logger.error("Error mapping enquiry data: {}", e.getMessage());
                 throw new RuntimeException(e);
             }
         });
-        return enquiryTableDTOS;
     }
 
     @Override
-    public Page<Enquiry> getAllEnquiry(int page, int size,String sortBy, String sortDir) {
+    public Page<Enquiry> getAllEnquiry(int page, int size, String sortBy, String sortDir) {
         Pageable pageable = PageRequest.of(page, size,
                 sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending());
 
@@ -115,8 +107,6 @@ public class EnquiryServiceImpl implements EnquiryService{
         try {
             updateBasicFields(existingEnquiry, updatedEnquiry);
             updateConversationRecords(existingEnquiry, updatedEnquiry.getEnquiryConversationRecords());
-
-            // Update enquiredProducts properly
             updateEnquiredProducts(existingEnquiry, updatedEnquiry.getEnquiredProducts());
 
             return enquiryRepository.save(existingEnquiry);
@@ -125,39 +115,29 @@ public class EnquiryServiceImpl implements EnquiryService{
             throw e;
         } catch (Exception e) {
             logger.error("Error while updating Enquiry with ID: {}", id, e);
-            throw new ServiceException("Failed to update Enquiry", e);
+            throw new RuntimeException("Failed to update Enquiry", e);
         }
     }
-
 
     private void updateBasicFields(Enquiry existingEnquiry, Enquiry updatedEnquiry) {
         existingEnquiry.setEnqDate(updatedEnquiry.getEnqDate());
         existingEnquiry.setContact(updatedEnquiry.getContact());
         existingEnquiry.setLastContactedDate(updatedEnquiry.getLastContactedDate());
         existingEnquiry.setDaysForNextFollowup(updatedEnquiry.getDaysForNextFollowup());
-        existingEnquiry.setEnquireTrough(updatedEnquiry.getEnquireTrough());
+        existingEnquiry.setEnquirySource(updatedEnquiry.getEnquirySource());
+        existingEnquiry.setStatus(updatedEnquiry.getStatus());
+        existingEnquiry.setOpportunityName(updatedEnquiry.getOpportunityName());
         existingEnquiry.setCloseReason(updatedEnquiry.getCloseReason());
         existingEnquiry.setClosedDate(updatedEnquiry.getClosedDate());
     }
 
     private void updateConversationRecords(Enquiry existingEnquiry, List<EnquiryConversationRecord> updatedRecords) {
-        // Clear and re-add to maintain the collection
         existingEnquiry.getEnquiryConversationRecords().clear();
 
         if (updatedRecords != null) {
             for (EnquiryConversationRecord record : updatedRecords) {
-                if (record.getId() > 0) {
-                    // Update existing record
-                    existingEnquiry.getEnquiryConversationRecords().stream()
-                            .filter(r -> r.getId() == record.getId())
-                            .findFirst()
-                            .ifPresent(existingRecord ->
-                                    existingRecord.setConversation(record.getConversation()));
-                } else {
-                    // Add new record
-                    record.setEnquiry(existingEnquiry);
-                    existingEnquiry.getEnquiryConversationRecords().add(record);
-                }
+                record.setEnquiry(existingEnquiry);
+                existingEnquiry.getEnquiryConversationRecords().add(record);
             }
         }
     }
@@ -168,10 +148,8 @@ public class EnquiryServiceImpl implements EnquiryService{
                 .filter(id -> id > 0)
                 .collect(Collectors.toSet());
 
-        // Remove products that are no longer present
         existingEnquiry.getEnquiredProducts().removeIf(product -> !updatedProductIds.contains(product.getId()));
 
-        // Update existing and add new products
         if (updatedProducts != null) {
             for (EnquiredProducts product : updatedProducts) {
                 if (product.getId() > 0) {
@@ -179,7 +157,6 @@ public class EnquiryServiceImpl implements EnquiryService{
                             .filter(p -> p.getId() == product.getId())
                             .findFirst()
                             .ifPresent(existingProduct -> {
-                                //  Only update InventoryItem if it's not null
                                 if (product.getInventoryItem() != null && product.getInventoryItem().getInventoryItemId() >= 0) {
                                     InventoryItem managedInventoryItem = inventoryItemRepository
                                             .findById(product.getInventoryItem().getInventoryItemId())
@@ -191,13 +168,12 @@ public class EnquiryServiceImpl implements EnquiryService{
                             });
 
                 } else {
-                    //  Only set InventoryItem if it is provided and exists
                     if (product.getInventoryItem() != null && product.getInventoryItem().getInventoryItemId() > 0) {
                         InventoryItem managedInventoryItem = inventoryItemRepository
                                 .findById(product.getInventoryItem().getInventoryItemId())
                                 .orElseThrow(() -> new ResourceNotFoundException("InventoryItem not found"));
                         product.setInventoryItem(managedInventoryItem);
-                    }else {
+                    } else {
                         product.setInventoryItem(null);
                     }
                     existingEnquiry.getEnquiredProducts().add(product);
@@ -206,100 +182,69 @@ public class EnquiryServiceImpl implements EnquiryService{
         }
     }
 
-
     @Override
     public Enquiry createEnquiry(Enquiry newEnquiry) {
         try {
-
-            for(EnquiredProducts enquiredProduct: newEnquiry.getEnquiredProducts()){
-                if(enquiredProduct.getInventoryItem()!=null&& enquiredProduct.getInventoryItem().getInventoryItemId()<=0){
+            for (EnquiredProducts enquiredProduct : newEnquiry.getEnquiredProducts()) {
+                if (enquiredProduct.getInventoryItem() != null && enquiredProduct.getInventoryItem().getInventoryItemId() <= 0) {
                     enquiredProduct.setInventoryItem(null);
                 }
             }
             return enquiryRepository.save(newEnquiry);
-        }catch (Exception e){
-            logger.error("Error creating quotation: {}", e.getMessage(), e);
+        } catch (Exception e) {
+            logger.error("Error creating enquiry: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to create enquiry.");
         }
     }
 
     @Override
     public void deleteEnquiry(int id) {
-        logger.info("deleting Inventory Instance with ID: {}", id);
+        logger.info("Deleting Enquiry with ID: {}", id);
         Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
         try {
-            if(enquiry==null){
-                throw new ResourceNotFoundException("Enquiry with id:"+id+"either already deleted or does not exists");
-            }else {
+            if (enquiry == null) {
+                throw new ResourceNotFoundException("Enquiry with id:" + id + " either already deleted or does not exist");
+            } else {
                 enquiry.setDeletedDate(new Date());
                 enquiryRepository.save(enquiry);
             }
-        }catch (Exception e){
+        } catch (Exception e) {
             logger.error("Error while deleting enquiry with id: {}", id);
             throw new RuntimeException(e);
         }
-
-
-
-
     }
 
     @Override
     public void closeEnquiry(int id, String closeReason) {
-
-        logger.info("Closing Inventory Instance with ID: {}", id);
+        logger.info("Closing Enquiry with ID: {}", id);
         Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
         try {
-            if(enquiry==null){
-                throw new ResourceNotFoundException("Enquiry with id:"+id+"either already deleted or does not exists");
-            }else {
-                enquiry.setClosedDate(new Date());
+            if (enquiry == null) {
+                throw new ResourceNotFoundException("Enquiry with id:" + id + " either already deleted or does not exist");
+            } else {
+                enquiry.setClosedDate(LocalDate.now());
                 enquiry.setCloseReason(closeReason);
                 enquiryRepository.save(enquiry);
             }
-        }catch (Exception e){
+        } catch (Exception e) {
             logger.error("Error while closing enquiry with id: {}", id);
             throw new RuntimeException(e);
         }
-
     }
 
     @Override
     public Enquiry getEnquiryByEnquiryNo(String enqNo) {
         logger.info("Fetching Enquiry with enqNo: {}", enqNo);
-        try{
-            return enquiryRepository.findByEnqNo(enqNo).
-                      orElseThrow(() -> new EntityNotFoundException("Enquiry not found"));
-        }
-        catch (EntityNotFoundException e){
-            logger.error("Enquiry with enqNo {} not found",enqNo);
+        try {
+            return enquiryRepository.findByEnqNo(enqNo)
+                    .orElseThrow(() -> new EntityNotFoundException("Enquiry not found"));
+        } catch (EntityNotFoundException e) {
+            logger.error("Enquiry with enqNo {} not found", enqNo);
             throw e;
         } catch (Exception e) {
             logger.error("Error while fetching Enquiry with enqNo {}: {}", enqNo, e.getMessage());
             throw new RuntimeException("Failed to fetch Enquiry", e);
         }
-
-    }
-
-
-
-
-    @Override
-     public Enquiry getEnquiryWithProductPrice(int id){
-        Enquiry enquiry = getEnquiry(id);
-        List<EnquiredProducts> enquiredProducts = enquiry.getEnquiredProducts();
-        for(EnquiredProducts product: enquiredProducts){
-            if(product.getInventoryItem()!=null){
-                int inventoryItemId = product.getInventoryItem().getInventoryItemId();
-                if(inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId)!=null){
-                    product.setPricePerUnit(inventoryInstanceRepository.findLatestInventoryInstance(inventoryItemId).getSellPricePerUnit());
-                }
-                
-
-            }
-        }
-        return enquiry;
-
-
     }
 }
+

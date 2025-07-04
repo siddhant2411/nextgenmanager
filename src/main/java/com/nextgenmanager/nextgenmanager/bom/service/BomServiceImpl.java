@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMTemplateMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
@@ -9,7 +10,11 @@ import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
+import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionTemplateRepository;
+import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionTemplateService;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -24,6 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,6 +53,12 @@ public class BomServiceImpl implements BomService {
 
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
+
+    @Autowired
+    private InventoryItemService inventoryItemService;
+
+    @Autowired
+    private WorkOrderProductionTemplateRepository workOrderProductionTemplateRepository;
 
     @Autowired
     private BomAttachmentRepository bomAttachmentRepository;
@@ -117,14 +130,22 @@ public class BomServiceImpl implements BomService {
     }
 
     private List<BomAttachment> getLatestAttachments(Bom bom) {
-        return bom.getBomAttachmentList().stream()
-                .filter(att -> extractVersion(att).isPresent()) // Consider only valid versions
-                .collect(Collectors.groupingBy(att -> extractBaseFileName(att.getFileName()))) // Group by base file name
+        List<BomAttachment> attachments = bom.getBomAttachmentList();
+        if (attachments == null || attachments.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return attachments.stream()
+                .filter(att -> att != null && extractVersion(att).isPresent()) // Ensure att is not null and version is present
+                .collect(Collectors.groupingBy(att -> extractBaseFileName(att.getFileName())))
                 .values().stream()
-                .map(list -> list.stream().max(Comparator.comparing(att -> extractVersion(att).orElse(0)))) // Pick latest
-                .flatMap(Optional::stream) // Convert Optional<BomAttachment> to BomAttachment
-                .collect(Collectors.toList()); // Collect as a list
+                .map(list -> list.stream()
+                        .filter(Objects::nonNull)
+                        .max(Comparator.comparing(att -> extractVersion(att).orElse(0))))
+                .flatMap(Optional::stream)
+                .collect(Collectors.toList());
     }
+
 
     @Override
     public Bom getBom(int id) {
@@ -395,5 +416,74 @@ public class BomServiceImpl implements BomService {
     public WorkOrderProductionTemplate getBomWOTemplateByBomId(int id){
         return bomRepository.findWOTemplateByBomId(id);
     }
+
+    public void recalculateAndUpdateCost(int bomId) {
+        try {
+            logger.info("Starting BOM cost recalculation for BOM ID: {}", bomId);
+
+            Bom bom = bomRepository.findById(bomId)
+                    .orElseThrow(() -> {
+                        logger.error("BOM not found for ID: {}", bomId);
+                        return new EntityNotFoundException("BOM not found for ID: " + bomId);
+                    });
+
+            WorkOrderProductionTemplate template = workOrderProductionTemplateRepository.findByBomId(bomId)
+                    .orElseThrow(() -> {
+                        logger.error("WorkOrderProductionTemplate not found for BOM ID: {}", bomId);
+                        return new EntityNotFoundException("Template not found for BOM ID: " + bomId);
+                    });
+
+            logger.debug("Fetched BOM: {}, Template ID: {}", bom.getBomName(), template.getId());
+
+            // Calculate estimated BOM cost
+            BigDecimal estimatedBomCost = bom.getChildInventoryItems().stream()
+                    .map(child -> {
+                        BigDecimal unitCost = BigDecimal.valueOf(
+                                inventoryItemService.getInventoryItem(
+                                        child.getChildInventoryItem().getInventoryItemId()
+                                ).getStandardCost()
+                        );
+                        return unitCost.multiply(BigDecimal.valueOf(child.getQuantity()));
+                    })
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            logger.debug("Calculated estimated BOM cost: {}", estimatedBomCost);
+
+            // Calculate labour cost
+            BigDecimal labourCost = template.getWorkOrderJobLists().stream()
+                    .map(job -> job.getProductionJob().getCostPerHour()
+                            .multiply(job.getNumberOfHours()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            logger.debug("Calculated estimated labour cost: {}", labourCost);
+
+            // Calculate overhead and total cost
+            BigDecimal overheadPct = template.getOverheadCostPercentage() != null ? template.getOverheadCostPercentage() : BigDecimal.ZERO;
+            BigDecimal overheadVal = (labourCost.add(estimatedBomCost))
+                    .multiply(overheadPct.divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+
+            BigDecimal total = labourCost.add(estimatedBomCost).add(overheadVal);
+
+            logger.debug("Calculated overhead: {}, Total estimated cost: {}", overheadVal, total);
+
+            // Update template
+            template.setEstimatedCostOfBom(estimatedBomCost);
+            template.setEstimatedCostOfLabour(labourCost);
+            template.setOverheadCostValue(overheadVal);
+            template.setTotalCostOfWorkOrder(total);
+
+            workOrderProductionTemplateRepository.save(template);
+
+            logger.info("Successfully updated WorkOrderProductionTemplate ID: {}", template.getId());
+        } catch (EntityNotFoundException e) {
+            logger.warn("Recalculation skipped: {}", e.getMessage());
+            throw e; // or handle gracefully
+        } catch (Exception e) {
+            logger.error("Error during BOM cost recalculation for BOM ID: {}", bomId, e);
+            throw new RuntimeException("Failed to recalculate BOM cost", e);
+        }
+    }
+
+
 
 }
