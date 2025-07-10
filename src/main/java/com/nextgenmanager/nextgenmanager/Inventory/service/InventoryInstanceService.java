@@ -1,8 +1,13 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.GroupedInventoryItem;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource;
+import com.nextgenmanager.nextgenmanager.Inventory.model.ProcurementDecision;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
@@ -10,25 +15,26 @@ import io.swagger.models.auth.In;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
+import java.util.Map;
 
-public interface InventoryInstanceService  {
+public interface InventoryInstanceService {
 
     public List<InventoryInstance> getAllInventoryInstances(int page, int size, String sortBy, String sortDir, String query);
 
     public Page<InventoryPresentDTO> getPresentInventoryInstances(int page, int size, String sortBy, String sortDir, String queryItemCode,
                                                                   String queryItemName, String queryHsnCode, Double totalQuantityCondition, String filterType, UOM queryUOM, ItemType itemType);
 
-    public List<InventoryInstance> getInventoryInstanceByItemId(int inventoryItemId,int page, int size, String sortBy, String sortDir, String query);
+    public List<InventoryInstance> getInventoryInstanceByItemId(int inventoryItemId, int page, int size, String sortBy, String sortDir, String query);
 
     public List<InventoryInstance> createInstances(InventoryItem item, double qty, InventoryInstance template);
 
     public List<InventoryInstance> consumeInventoryInstance(InventoryItem inventoryItem, double consumedQty);
 
-    public void consumeInventoryInstance(List<InventoryInstance> instances);
+    public List<InventoryInstance> consumeInventoryInstance(List<InventoryInstance> instances);
 
     public List<InventoryInstance> bookInventoryInstance(InventoryItem inventoryItem, double bookedQty);
 
-    public List<InventoryInstance> requestInstance(InventoryItem inventoryItem, double requestedQty);
+//    public List<InventoryInstance> requestInstance(InventoryItem inventoryItem, double requestedQty);
 
     public InventoryInstance updateInventoryInstance(InventoryInstance inventoryInstance);
 
@@ -39,4 +45,27 @@ public interface InventoryInstanceService  {
     public void updateItemAvailability(int itemId);
 
     public void revertInventoryInstances(List<InventoryInstance> instances);
+
+    public Page<GroupedInventoryItem> getGroupedInventoryInstances(int page, int size, String sortBy, String sortDir,
+                                                                   String queryItemCode, String queryItemName, String queryHsnCode,
+                                                                   Double totalQuantityCondition, String filterType, UOM queryUOM,
+                                                                   ItemType itemType,
+                                                                   InventoryApprovalStatus approvalStatusFilter,
+                                                                   ProcurementDecision procurementDecisionFilter);
+
+
+    public List<InventoryInstance> markRequestedInventoryAsArrived(List<Long> instanceIds);
+
+    public Map<String, Object> getInventorySummary();
+
+    public List<InventoryInstance> requestInstance(InventoryItem item, double qty, InventoryRequestSource source, Long sourceId);
+
+//    public List<InventoryInstance> approveInventoryRequest(List<Long> instanceIds, ProcurementDecision decision);
+
+    List<InventoryInstance> requestInstanceByItemId(int itemId, double qty, InventoryRequestSource source, Long sourceId);
+
+    public List<InventoryInstance> addInventory(AddInventoryRequest request);
+
+    public List<InventoryInstance> approveInventoryRequest(List<Long> instanceIds, InventoryRequestSource requestType, Long referenceId);
+
 }

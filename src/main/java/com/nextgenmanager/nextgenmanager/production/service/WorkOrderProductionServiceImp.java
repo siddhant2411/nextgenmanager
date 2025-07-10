@@ -125,7 +125,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
 
     @Override
     @Transactional
-    public WorkOrderProductionDTO createWorkOrderProduction(WorkOrderProduction newWorkOrderProduction) {
+    public WorkOrderProduction createWorkOrderProduction(WorkOrderProduction newWorkOrderProduction) {
 //        if (newWorkOrderProduction.getSalesOrder() == null && newWorkOrderProduction.getWorkOrderProductionTemplate() == null) {
 //            logger.error("Cannot create work order: Missing SalesOrder or WorkOrderProductionTemplate.");
 //            throw new IllegalArgumentException("Sales Order or Work Order Template must not be null");
@@ -145,6 +145,8 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         newWorkOrderProduction.setEstimatedCostOfBom(template.getEstimatedCostOfBom());
         newWorkOrderProduction.setEstimatedCostOfLabour(template.getEstimatedCostOfLabour());
         newWorkOrderProduction.setTotalEstimatedCostOfWorkOrder(template.getTotalCostOfWorkOrder());
+        newWorkOrderProduction.setOverheadCostPercentage(template.getOverheadCostPercentage());
+        newWorkOrderProduction.setOverheadCostValue(template.getOverheadCostValue());
 
         List<BomPosition> bomPositions = bom.getChildInventoryItems();
         List<WorkOrderInventoryInstanceList> allInstanceLists = new ArrayList<>();
@@ -177,9 +179,9 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
 
                     // Request remaining
                     double remainingQty = totalRequiredQty - availableQty;
-                    List<InventoryInstance> requestedInstances = inventoryInstanceService.requestInstance(inventoryItem, remainingQty);
-
-                    bookedInstances.addAll(requestedInstances);
+//                    List<InventoryInstance> requestedInstances = inventoryInstanceService.requestInstance(inventoryItem, remainingQty);
+//
+//                    bookedInstances.addAll(requestedInstances);
                     instanceListEntry.setInventoryStatus(InventoryStatus.PENDING);
                     pendingInstanceLists.add(instanceListEntry);
                 }
@@ -204,7 +206,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
             createChildWorkOrder(pendingInstanceLists, savedWorkOrder, new HashSet<>(), 0);
         }
 
-        return convertToDTO(savedWorkOrder);
+        return savedWorkOrder;
     }
 
 
@@ -254,7 +256,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
             logger.info("Creating child work order for inventory item ID: {} with BOM ID: {}", inventoryItemId, selectedBom.getId());
 
             // Save child work order
-            WorkOrderProductionDTO savedChild = createWorkOrderProduction(childWorkOrder);
+            WorkOrderProduction savedChild = createWorkOrderProduction(childWorkOrder);
 
 
         }
@@ -289,7 +291,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         workOrderProduction.setSalesOrder(workOrderProductionRequestMapper.getSalesOrder());
         workOrderProduction.setParentWorkOrderProduction(workOrderProductionRequestMapper.getParentWorkOrder());
         workOrderProduction.setParentWorkOrderProduction(workOrderProduction.getParentWorkOrderProduction());
-        workOrderProduction.setQuantity(workOrderProduction.getQuantity());
+        workOrderProduction.setQuantity(workOrderProductionRequestMapper.getQuantity());
         WorkOrderProductionTemplate workOrderProductionTemplate = bomService.getBomWOTemplateByBomId(workOrderProductionRequestMapper.getBom().getId());
         if(workOrderProductionTemplate==null){
             throw new RuntimeException("Work Order Details not available for BOM");
@@ -307,14 +309,16 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         WorkOrderProduction workOrder = workOrderProductionRepository.findById(workOrderId)
                 .orElseThrow(() -> new RuntimeException("WorkOrder not found"));
 
-        if (!workOrder.getWorkOrderStatus().equals(WorkOrderStatus.READY)) {
+        if (!workOrder.getWorkOrderStatus().equals(WorkOrderStatus.DRAFT)) {
             throw new IllegalStateException("WorkOrder must be in READY state to consume inventory");
         }
+
 
         for (WorkOrderInventoryInstanceList instanceList : workOrder.getWorkOrderInventoryInstanceLists()) {
             if (instanceList.getInventoryStatus() == InventoryStatus.AVAILABLE) {
                 List<InventoryInstance> instancesToConsume = instanceList.getInventoryInstanceList();
-                inventoryInstanceService.consumeInventoryInstance(instancesToConsume);
+                List<InventoryInstance> consumeInventoryInstance = inventoryInstanceService.consumeInventoryInstance(instancesToConsume);
+                instanceList.setInventoryInstanceList(consumeInventoryInstance);
             }
         }
 
@@ -359,7 +363,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         }
 
         // Trigger consumption
-        if (newStatus == WorkOrderStatus.IN_PROGRESS && currentStatus == WorkOrderStatus.READY) {
+        if (newStatus == WorkOrderStatus.IN_PROGRESS && currentStatus == WorkOrderStatus.DRAFT) {
             consumeInventoryForWorkOrder(id);
         }
 
@@ -380,9 +384,9 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
 
     private boolean isValidStatusTransition(WorkOrderStatus current, WorkOrderStatus next) {
         return switch (current) {
-            case DRAFT     -> next == WorkOrderStatus.READY || next == WorkOrderStatus.CANCELLED;
-            case READY     -> next == WorkOrderStatus.IN_PROGRESS || next == WorkOrderStatus.CANCELLED;
-            case IN_PROGRESS -> next == WorkOrderStatus.COMPLETED || next == WorkOrderStatus.CANCELLED;
+            case DRAFT     -> next == WorkOrderStatus.IN_PROGRESS || next == WorkOrderStatus.CANCELLED;
+            case READY     -> next == WorkOrderStatus.COMPLETED || next == WorkOrderStatus.CANCELLED;
+            case IN_PROGRESS -> next == WorkOrderStatus.READY || next == WorkOrderStatus.CANCELLED;
             default        -> false;
         };
     }
@@ -402,6 +406,8 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         // Update fields (you can expand this based on what is allowed to be updated)
         existing.setQuantity(updatedWorkOrder.getQuantity());
         existing.setDueDate(updatedWorkOrder.getDueDate());
+        existing.setStartDate(updatedWorkOrder.getStartDate());
+
         existing.setSalesOrder(updatedWorkOrder.getSalesOrder());
         existing.setWorkOrderProductionTemplate(updatedWorkOrder.getWorkOrderProductionTemplate());
         existing.setParentWorkOrderProduction(updatedWorkOrder.getParentWorkOrderProduction());
@@ -411,6 +417,8 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         existing.setActualCostOfBom(updatedWorkOrder.getActualCostOfBom());
         existing.setActualCostOfLabour(updatedWorkOrder.getActualCostOfLabour());
         existing.setActualTotalCostOfWorkOrder(updatedWorkOrder.getActualTotalCostOfWorkOrder());
+        existing.setOverheadCostPercentage(updatedWorkOrder.getOverheadCostPercentage());
+        existing.setOverheadCostValue(updatedWorkOrder.getOverheadCostValue());
         // Don’t update status or inventory lists here unless explicitly required
 
         WorkOrderProduction saved = workOrderProductionRepository.save(existing);

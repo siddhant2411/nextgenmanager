@@ -27,10 +27,10 @@ public class WorkOrderProductionController {
     Logger logger = LoggerFactory.getLogger(WorkOrderProductionController.class);
 
     @PostMapping
-    public ResponseEntity<?> createWorkOrder(@RequestBody WorkOrderProductionRequestMapper workOrderProductionRequestMapper) {
+    public ResponseEntity<?> createWorkOrder(@RequestBody WorkOrderProduction workOrderProduction) {
         try {
-            WorkOrderProduction workOrderProduction = workOrderProductionService.mapWorkOrderProductionRequest(workOrderProductionRequestMapper);
-            WorkOrderProductionDTO newWorkOrderProduction = workOrderProductionService.createWorkOrderProduction(workOrderProduction);
+//            WorkOrderProduction workOrderProduction = workOrderProductionService.mapWorkOrderProductionRequest(workOrderProductionRequestMapper);
+            WorkOrderProduction newWorkOrderProduction = workOrderProductionService.createWorkOrderProduction(workOrderProduction);
             return ResponseEntity.status(HttpStatus.CREATED).body(newWorkOrderProduction);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e);
@@ -38,7 +38,13 @@ public class WorkOrderProductionController {
     }
 
 
-
+    @PutMapping("/{id}")
+    public ResponseEntity<WorkOrderProductionDTO> updateWorkOrder(
+            @PathVariable int id,
+            @RequestBody WorkOrderProduction newWorkOrder) {
+        WorkOrderProductionDTO updated = workOrderProductionService.updateWorkOrderProduction(newWorkOrder);
+        return ResponseEntity.ok(updated);
+    }
 
     @PatchMapping("/{id}/status")
     public ResponseEntity<WorkOrderProductionDTO> patchStatus(

@@ -77,6 +77,24 @@ public class InventoryInstance {
 
     private Date deletedDate;
 
+    private InventoryInstanceStatus inventoryInstanceStatus = InventoryInstanceStatus.AVAILABLE;
+
+    @Enumerated(EnumType.STRING)
+    private InventoryRequestSource requestSource; // NEW
+
+    @Enumerated(EnumType.STRING)
+    private ProcurementDecision procurementDecision = ProcurementDecision.UNDECIDED; // NEW
+
+    private Long linkedSourceId; // Stores Work Order or Sales Order ID
+
+    private Long linkedOrderId;
+
+    @Column(name = "approvalStatus")
+    @Enumerated(EnumType.STRING)
+    private InventoryApprovalStatus approvalStatus = InventoryApprovalStatus.PENDING;
+
+
+
     private static String generateShortUUID() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }

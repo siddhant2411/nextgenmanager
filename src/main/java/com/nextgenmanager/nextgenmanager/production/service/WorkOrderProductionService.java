@@ -14,7 +14,7 @@ public interface WorkOrderProductionService {
 
     public Page<WorkOrderProductionDTO> getWorkOrderProductionList(WorkOrderProductionDTO workOrderProductionDTOFilter,  int page, int size, String sortBy, String sorDir);
 
-    public WorkOrderProductionDTO createWorkOrderProduction(WorkOrderProduction newWorkOrderProduction);
+    public WorkOrderProduction createWorkOrderProduction(WorkOrderProduction newWorkOrderProduction);
 
     public WorkOrderProduction mapWorkOrderProductionRequest(WorkOrderProductionRequestMapper workOrderProductionRequestMapper);
 

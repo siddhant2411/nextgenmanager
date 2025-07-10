@@ -1,7 +1,13 @@
 package com.nextgenmanager.nextgenmanager.Inventory.controller;
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.ApproveRequestDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.GroupedInventoryItem;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource;
+import com.nextgenmanager.nextgenmanager.Inventory.model.ProcurementDecision;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
@@ -9,12 +15,14 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import io.swagger.models.auth.In;
+import jakarta.validation.constraints.Min;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -23,7 +31,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/inventory")
-
+@Validated
 public class InventoryInstanceController {
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryInstanceController.class);
@@ -155,6 +163,27 @@ public class InventoryInstanceController {
         }
     }
 
+    @GetMapping("/grouped")
+    public Page<GroupedInventoryItem> getGroupedInventory(
+            @RequestParam int page,
+            @RequestParam int size,
+            @RequestParam(defaultValue = "inventoryItemId") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir,
+            @RequestParam(required = false) String itemCode,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String hsnCode,
+            @RequestParam(required = false) Double totalQuantityCondition,
+            @RequestParam(required = false) String filterType,
+            @RequestParam(required = false) UOM uom,
+            @RequestParam(required = false) ItemType itemType,
+            @RequestParam(required = false) InventoryApprovalStatus inventoryApprovalStatus,
+            @RequestParam(required = false) ProcurementDecision procurementDecisionFilter
+    ) {
+        return inventoryInstanceService.getGroupedInventoryInstances(
+                page, size, sortBy, sortDir, itemCode, name, hsnCode,
+                totalQuantityCondition, filterType, uom, itemType,inventoryApprovalStatus,procurementDecisionFilter
+        );
+    }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteInventoryInstance(@PathVariable String id) {
@@ -214,6 +243,59 @@ public class InventoryInstanceController {
             Map<String, String> response = new HashMap<>();
             response.put("error", "Failed to update Inventory Instance: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+
+    @PostMapping("/arrival")
+    public ResponseEntity<?> markInventoryAsArrived(@RequestBody List<Long> instanceIds) {
+        List<InventoryInstance> arrived = inventoryInstanceService.markRequestedInventoryAsArrived(instanceIds);
+        return ResponseEntity.ok(arrived);
+    }
+
+    @GetMapping("/summary")
+    public Map<String, Object> getInventorySummary() {
+
+        return inventoryInstanceService.getInventorySummary();
+    }
+
+    @GetMapping("/requests")
+    public ResponseEntity<List<InventoryInstance>> requestInventory(
+            @RequestParam("itemId") int itemId,
+            @RequestParam("quantity") @Min(1) double quantity,
+            @RequestParam(value = "source", defaultValue = "MANUAL") InventoryRequestSource source,
+            @RequestParam(value = "sourceId", required = false) Long sourceId
+    ) {
+        List<InventoryInstance> result = inventoryInstanceService.requestInstanceByItemId(itemId, quantity, source, sourceId);
+        return ResponseEntity.ok(result);
+    }
+
+    @PatchMapping("/requests/approve")
+    public ResponseEntity<List<InventoryInstance>> approveRequests(@RequestBody ApproveRequestDTO dto) {
+        List<InventoryInstance> approved = inventoryInstanceService.approveInventoryRequest(dto.getInstanceIds(), dto.getRequestSource(), dto.getOrderReferenceId());
+        return ResponseEntity.ok(approved);
+    }
+
+    @PostMapping("/add-instances")
+    public ResponseEntity<?> addInventory(@RequestBody AddInventoryRequest request) {
+        try {
+            List<InventoryInstance> savedInstances = inventoryInstanceService.addInventory(request);
+            return ResponseEntity.ok(savedInstances);
+
+        } catch (ResourceNotFoundException ex) {
+            // Custom exception for missing inventory item
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", ex.getMessage()));
+
+        } catch (IllegalArgumentException ex) {
+            // Bad input such as zero or negative quantity
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", ex.getMessage()));
+
+        } catch (Exception ex) {
+            // Any other unhandled server error
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to add inventory: " + ex.getMessage()));
         }
     }
 

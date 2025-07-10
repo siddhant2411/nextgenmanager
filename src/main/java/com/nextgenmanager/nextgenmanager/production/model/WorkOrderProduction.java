@@ -42,7 +42,7 @@ public class WorkOrderProduction {
 
     private  double quantity;
 
-    private boolean isCreateChildItems=true;
+    private boolean isCreateChildItems;
 
     @Column(unique = true, nullable = false)
     private String workOrderNumber;
@@ -74,6 +74,9 @@ public class WorkOrderProduction {
     private BigDecimal overheadCostPercentage;
 
     @Column(precision = 10, scale = 2)
+    private BigDecimal overheadCostValue;
+
+    @Column(precision = 10, scale = 2)
     private BigDecimal totalEstimatedCostOfWorkOrder;
 
     @Enumerated(EnumType.STRING)
@@ -82,6 +85,8 @@ public class WorkOrderProduction {
     private String remarks;
 
     private Date dueDate;
+
+    private Date startDate;
 
     @CreationTimestamp
     @Column(updatable = false)

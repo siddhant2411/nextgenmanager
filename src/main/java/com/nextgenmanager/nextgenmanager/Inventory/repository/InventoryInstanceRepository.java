@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.Inventory.repository;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstanceStatus;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
@@ -81,12 +82,12 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             "       item.itemType AS itemType, " +
             "       item.uom AS uom, " +
             "       SUM(i.quantity) AS totalQuantity, " +
-            "       COALESCE(AVG(i.costPerUnit), 0) AS averageCost " +
+            "       SUM(i.costPerUnit) AS totalCost " +
             "   FROM inventoryInstance i " +
             "   INNER JOIN inventoryItem item ON i.inventoryItemRef = item.inventoryItemId " +
             "   WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
             "   AND (:queryCode IS NULL OR LOWER(item.itemCode) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
-            "   AND (:queryName IS NULL OR LOWER(item.name) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
+            "   OR (:queryName IS NULL OR LOWER(item.name) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
             "   AND (:queryHsnCode IS NULL OR LOWER(item.hsnCode) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
             "   AND (:uom IS NULL OR item.uom = :uom) " +
             "   AND (:itemTypeValue IS NULL OR item.itemType = :itemTypeValue) " +
@@ -108,6 +109,67 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             @Param("uom") Integer uom,
             @Param("itemTypeValue") Integer itemTypeValue);
 
+
+    @Query(value = "WITH inventory_summary AS ( " +
+            "   SELECT * "+
+            "   FROM inventoryInstance i " +
+            "   INNER JOIN inventoryItem item ON i.inventoryItemRef = item.inventoryItemId " +
+            "   WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
+            "   AND (:queryCode IS NULL OR LOWER(item.itemCode) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
+            "   AND (:queryName IS NULL OR LOWER(item.name) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
+            "   AND (:queryHsnCode IS NULL OR LOWER(item.hsnCode) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
+            "   AND (:uom IS NULL OR item.uom = :uom) " +
+            "   AND (:itemTypeValue IS NULL OR item.itemType = :itemTypeValue) " +
+            "   HAVING (:filterType IS NULL) " +
+            "       OR (:filterType = '=' AND SUM(i.quantity) = :totalQuantityCondition) " +
+            "       OR (:filterType = '<' AND SUM(i.quantity) < :totalQuantityCondition) " +
+            "       OR (:filterType = '>' AND SUM(i.quantity) > :totalQuantityCondition) " +
+            ") " +
+            "SELECT * FROM inventory_summary",
+            nativeQuery = true)
+    Page<InventoryInstance> getActiveInstances(
+            Pageable pageable,
+            @Param("queryCode") String itemCode,
+            @Param("queryName") String itemName,
+            @Param("queryHsnCode") String hsnCode,
+            @Param("totalQuantityCondition") Double totalQuantityCondition,
+            @Param("filterType") String filterType,
+            @Param("uom") Integer uom,
+            @Param("itemTypeValue") Integer itemTypeValue);
+
     @Query(value = "SELECT COALESCE(SUM(i.quantity), 0) FROM inventoryInstance i WHERE i.deletedDate IS NULL AND bookedDate IS NULL AND i.inventoryItemRef = :inventoryItemId", nativeQuery = true)
     public  double getTotalQuantityForNonNOSItem(@Param("inventoryItemId") int inventoryItemId);
+
+    @Query(value = "SELECT i.* FROM inventoryInstance i " +
+            "JOIN inventoryItem item ON item.InventoryItemId = i.inventoryItemRef " +
+            "WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
+            "  AND (:queryCode IS NULL OR LOWER(item.itemCode::text) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
+            "  AND (:queryName IS NULL OR LOWER(item.name::text) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
+            "  AND (:queryHsnCode IS NULL OR LOWER(item.hsnCode::text) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
+            "  AND (:uom IS NULL OR item.uom = :uom) " +
+            "  AND (:itemTypeValue IS NULL OR item.itemType = :itemTypeValue) " +
+            "  AND (:approvalStatus IS NULL OR i.approvalStatus = :approvalStatus) " +
+            "  AND (:procurementDecision IS NULL OR i.procurementDecision = :procurementDecision)",
+            nativeQuery = true)
+    List<InventoryInstance> getAllActiveInstancesFiltered(
+            @Param("queryCode") String itemCode,
+            @Param("queryName") String itemName,
+            @Param("queryHsnCode") String hsnCode,
+            @Param("uom") Integer uom,
+            @Param("itemTypeValue") Integer itemTypeValue,
+            @Param("approvalStatus") String approvalStatus,
+            @Param("procurementDecision") String procurementDecision
+    );
+
+    @Query(value = "SELECT COUNT(*) FROM InventoryInstance i  WHERE  i.deletedDate IS NULL AND (:status IS NULL OR i.inventoryInstanceStatus = :status)",nativeQuery = true)
+    public Object countByInventoryInstanceStatus(InventoryInstanceStatus status);
+
+    @Query("SELECT SUM(i.costPerUnit) FROM InventoryInstance i " +
+            "WHERE i.deletedDate IS NULL " +
+            "AND (:status IS NULL OR i.inventoryInstanceStatus <> :status)")
+    Double countSumOfInventoryValue(InventoryInstanceStatus status);
+
+    @Query(value = "SELECT * FROM InventoryInstance i  WHERE  i.deletedDate IS NULL AND (:status IS NULL OR i.inventoryInstanceStatus <> :status)  LIMIT  :qty",nativeQuery = true)
+    public List<InventoryInstance> inventoryInstanceByStatus(InventoryInstanceStatus status, double qty);
+
 }
