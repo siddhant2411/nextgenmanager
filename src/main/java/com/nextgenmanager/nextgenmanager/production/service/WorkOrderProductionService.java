@@ -19,9 +19,9 @@ public interface WorkOrderProductionService {
     public WorkOrderProduction mapWorkOrderProductionRequest(WorkOrderProductionRequestMapper workOrderProductionRequestMapper);
 
 
-    public void consumeInventoryForWorkOrder(int workOrderId);
-
-    public void revertInventoryForWorkOrder(int workOrderId);
+//    public void consumeInventoryForWorkOrder(int workOrderId);
+//
+//    public void revertInventoryForWorkOrder(int workOrderId);
 
     public WorkOrderProductionDTO updateWorkOrderStatus(int id, WorkOrderStatus newStatus);
 

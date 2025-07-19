@@ -1,13 +1,7 @@
 package com.nextgenmanager.nextgenmanager.Inventory.controller;
 
-import com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.ApproveRequestDTO;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.GroupedInventoryItem;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus;
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource;
-import com.nextgenmanager.nextgenmanager.Inventory.model.ProcurementDecision;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.*;
+import com.nextgenmanager.nextgenmanager.Inventory.model.*;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
@@ -78,7 +72,7 @@ public class InventoryInstanceController {
 
     @PostMapping("/consume")
     public ResponseEntity<?> consumeQuantity(
-            @RequestBody InventoryItem inventoryItem, @RequestParam("qty") double consumeQty) {
+            @RequestBody InventoryItem inventoryItem, @RequestParam("qty") double consumeQty, Long requestId) {
         logger.info("Received request to consume inventory for item ID: {}, qty: {}", inventoryItem.getInventoryItemId(), consumeQty);
         try {
 
@@ -89,7 +83,7 @@ public class InventoryInstanceController {
             }
 
             // Call the service to consume inventory instances
-            List<InventoryInstance> consumedItems = inventoryInstanceService.consumeInventoryInstance(inventoryItem, consumeQty);
+            List<InventoryInstance> consumedItems = inventoryInstanceService.consumeInventoryInstance(inventoryItem, consumeQty,requestId);
             logger.info("Successfully consumed inventory instances for item ID: {} with quantity: {}", inventoryItem.getInventoryItemId(), consumeQty);
             return ResponseEntity.status(HttpStatus.OK).body(consumedItems);
         } catch (IllegalArgumentException e) {
@@ -247,11 +241,11 @@ public class InventoryInstanceController {
     }
 
 
-    @PostMapping("/arrival")
-    public ResponseEntity<?> markInventoryAsArrived(@RequestBody List<Long> instanceIds) {
-        List<InventoryInstance> arrived = inventoryInstanceService.markRequestedInventoryAsArrived(instanceIds);
-        return ResponseEntity.ok(arrived);
-    }
+//    @PostMapping("/arrival")
+//    public ResponseEntity<?> markInventoryAsArrived(@RequestBody List<Long> instanceIds) {
+//        List<InventoryInstance> arrived = inventoryInstanceService.markRequestedInventoryAsArrived(instanceIds);
+//        return ResponseEntity.ok(arrived);
+//    }
 
     @GetMapping("/summary")
     public Map<String, Object> getInventorySummary() {
@@ -259,20 +253,42 @@ public class InventoryInstanceController {
         return inventoryInstanceService.getInventorySummary();
     }
 
-    @GetMapping("/requests")
-    public ResponseEntity<List<InventoryInstance>> requestInventory(
+    @PostMapping("/requests")
+    public ResponseEntity<?> requestInventory(
             @RequestParam("itemId") int itemId,
             @RequestParam("quantity") @Min(1) double quantity,
             @RequestParam(value = "source", defaultValue = "MANUAL") InventoryRequestSource source,
-            @RequestParam(value = "sourceId", required = false) Long sourceId
+            @RequestParam(value = "sourceId", required = false) Long sourceId,
+            @RequestParam(value = "requestedBy") String requestedBy,
+            @RequestParam(value = "requestRemarks") String requestRemarks
     ) {
-        List<InventoryInstance> result = inventoryInstanceService.requestInstanceByItemId(itemId, quantity, source, sourceId);
-        return ResponseEntity.ok(result);
+        try {
+            InventoryRequest result = inventoryInstanceService.requestInstanceByItemId(itemId, quantity, source, sourceId,requestedBy,requestRemarks);
+            return ResponseEntity.ok(result);
+        }
+        catch (Exception e){
+            return ResponseEntity.badRequest().body("Something went wrong");
+        }
+
     }
 
-    @PatchMapping("/requests/approve")
-    public ResponseEntity<List<InventoryInstance>> approveRequests(@RequestBody ApproveRequestDTO dto) {
-        List<InventoryInstance> approved = inventoryInstanceService.approveInventoryRequest(dto.getInstanceIds(), dto.getRequestSource(), dto.getOrderReferenceId());
+    @PutMapping("/requests/approve")
+    public ResponseEntity<?> approveRequests(@RequestParam String requestId,  @RequestParam String approvedBy,  @RequestParam String approvalRemarks) {
+        try {
+            List<InventoryInstance> approved = inventoryInstanceService.approveInventoryRequest(Long.parseLong(requestId), approvedBy, approvalRemarks);
+            return ResponseEntity.ok(approved);
+        }
+        catch (IllegalStateException e){
+            return ResponseEntity.badRequest().body("Some Items are still Pending");
+        }
+        catch (Exception e){
+            return ResponseEntity.badRequest().body("Something went wrong");
+        }
+    }
+
+    @PutMapping("/requests/reject")
+    public ResponseEntity<List<InventoryInstance>> rejectRequest(@RequestParam String requestId,@RequestParam String approvedBy, @RequestParam String approvalRemarks) {
+        List<InventoryInstance> approved = inventoryInstanceService.rejectInventoryRequest(Long.parseLong(requestId),approvedBy,approvalRemarks);
         return ResponseEntity.ok(approved);
     }
 
@@ -298,5 +314,85 @@ public class InventoryInstanceController {
                     .body(Map.of("error", "Failed to add inventory: " + ex.getMessage()));
         }
     }
+
+
+    @GetMapping("/requests/grouped")
+    public ResponseEntity<Page<InventoryRequestGroupDTO>> getGroupedRequests(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String itemCode,
+            @RequestParam(required = false) String itemName,
+            @RequestParam(required = false) InventoryRequestSource source,
+            @RequestParam(required = false) InventoryApprovalStatus approvalStatus,
+            @RequestParam(required = false) Long referenceId
+    ) {
+        Page<InventoryRequestGroupDTO> groupedPage = inventoryInstanceService.getGroupedRequests(
+                page, size, itemCode, itemName, source, approvalStatus, referenceId
+        );
+        return ResponseEntity.ok(groupedPage);
+    }
+
+    @GetMapping("/requests/grouped/detail")
+    public ResponseEntity<List<InventoryInstance>> getGroupDetails(
+            @RequestParam Long referenceId
+    ) {
+        List<InventoryInstance> instances =
+                inventoryInstanceService.getRequestedInstancesByReferenceAndItem(referenceId);
+
+        return ResponseEntity.ok(instances);
+    }
+
+    @PutMapping("/inventory-procurement/{id}/status")
+    public ResponseEntity<Void> changeProcurementStatus(@PathVariable Long id,
+                                                        @RequestParam InventoryProcurementStatus status) {
+        inventoryInstanceService.updateProcurementStatus(id, status);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/inventory-procurement-orders")
+    public Page<InventoryProcurementOrderDTO> getProcurementOrders(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) InventoryProcurementStatus status,
+            @RequestParam(required = false) Long inventoryItemId,
+            @RequestParam(required = false) String createdBy
+    ) {
+        return inventoryInstanceService.getProcurementOrders(page, size, status, inventoryItemId, createdBy);
+    }
+
+    /**
+     * Add inventory to an existing procurement order.
+     *
+     * @param procurementOrderId ID of the existing procurement order
+     * @param request            AddInventoryRequest containing itemId, quantity, costPerUnit, referenceId, createdBy, etc.
+     * @return List of InventoryInstance added (updated + new)
+     */
+    @PostMapping("/procurement/{procurementOrderId}/add")
+    public ResponseEntity<List<InventoryInstance>> addInventoryToExistingProcurement(
+            @PathVariable("procurementOrderId") long procurementOrderId,
+            @RequestBody AddInventoryRequest request) {
+
+        List<InventoryInstance> updatedInstances =
+                inventoryInstanceService.addInventoryToExistingProcurement(request, procurementOrderId);
+
+        return ResponseEntity.ok(updatedInstances);
+    }
+
+    @PutMapping("/inventory-procurement-orders/{orderId}/complete")
+    public ResponseEntity<?> completeProcurementOrder(
+            @PathVariable Long orderId,
+            @RequestParam(defaultValue = "system") String completedBy) {
+        try {
+            InventoryProcurementOrderDTO dto = inventoryInstanceService.completeProcurementOrder(orderId, completedBy);
+            return ResponseEntity.ok(dto);
+        } catch (ResourceNotFoundException ex) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Unexpected error: " + ex.getMessage());
+        }
+    }
+
 
 }

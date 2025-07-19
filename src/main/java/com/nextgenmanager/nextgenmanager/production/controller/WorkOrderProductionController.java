@@ -93,14 +93,14 @@ public class WorkOrderProductionController {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid input: " + e.getMessage());
     }
 
-    @PostMapping("/{id}/revert")
-    public ResponseEntity<?> revertWorkOrder(@PathVariable int id) {
-        try {
-            workOrderProductionService.revertInventoryForWorkOrder(id);
-            return ResponseEntity.ok("Reverted successfully");
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        }
-    }
+//    @PostMapping("/{id}/revert")
+//    public ResponseEntity<?> revertWorkOrder(@PathVariable int id) {
+//        try {
+//            workOrderProductionService.revertInventoryForWorkOrder(id);
+//            return ResponseEntity.ok("Reverted successfully");
+//        } catch (RuntimeException e) {
+//            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+//        }
+//    }
 
 }

@@ -17,4 +17,6 @@ public class AddInventoryRequest {
     private double quantity;
 
     private double costPerUnit;
+
+    private String createdBy;
 }

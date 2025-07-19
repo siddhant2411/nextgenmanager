@@ -305,52 +305,6 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
 
     @Transactional
     @Override
-    public void consumeInventoryForWorkOrder(int workOrderId) {
-        WorkOrderProduction workOrder = workOrderProductionRepository.findById(workOrderId)
-                .orElseThrow(() -> new RuntimeException("WorkOrder not found"));
-
-        if (!workOrder.getWorkOrderStatus().equals(WorkOrderStatus.DRAFT)) {
-            throw new IllegalStateException("WorkOrder must be in READY state to consume inventory");
-        }
-
-
-        for (WorkOrderInventoryInstanceList instanceList : workOrder.getWorkOrderInventoryInstanceLists()) {
-            if (instanceList.getInventoryStatus() == InventoryStatus.AVAILABLE) {
-                List<InventoryInstance> instancesToConsume = instanceList.getInventoryInstanceList();
-                List<InventoryInstance> consumeInventoryInstance = inventoryInstanceService.consumeInventoryInstance(instancesToConsume);
-                instanceList.setInventoryInstanceList(consumeInventoryInstance);
-            }
-        }
-
-        workOrder.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
-        workOrderProductionRepository.save(workOrder);
-    }
-
-
-    @Override
-    @Transactional
-    public void revertInventoryForWorkOrder(int workOrderId) {
-        WorkOrderProduction workOrder = workOrderProductionRepository.findById(workOrderId)
-                .orElseThrow(() -> new RuntimeException("WorkOrder not found"));
-
-        if (workOrder.getWorkOrderStatus() != WorkOrderStatus.READY &&
-                workOrder.getWorkOrderStatus() != WorkOrderStatus.IN_PROGRESS) {
-            throw new IllegalStateException("Only READY or IN_PROGRESS work orders can be reverted");
-        }
-
-        for (WorkOrderInventoryInstanceList instanceList : workOrder.getWorkOrderInventoryInstanceLists()) {
-            if (instanceList.getInventoryStatus() == InventoryStatus.AVAILABLE) {
-                List<InventoryInstance> instancesToRevert = instanceList.getInventoryInstanceList();
-                inventoryInstanceService.revertInventoryInstances(instancesToRevert);
-            }
-        }
-
-        workOrder.setWorkOrderStatus(WorkOrderStatus.CANCELLED);
-        workOrderProductionRepository.save(workOrder);
-    }
-
-    @Transactional
-    @Override
     public WorkOrderProductionDTO updateWorkOrderStatus(int id, WorkOrderStatus newStatus) {
         WorkOrderProduction workOrder = workOrderProductionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("WorkOrder not found"));
@@ -363,15 +317,15 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         }
 
         // Trigger consumption
-        if (newStatus == WorkOrderStatus.IN_PROGRESS && currentStatus == WorkOrderStatus.DRAFT) {
-            consumeInventoryForWorkOrder(id);
-        }
-
-        // Trigger revert
-        if (newStatus == WorkOrderStatus.CANCELLED &&
-                (currentStatus == WorkOrderStatus.READY || currentStatus == WorkOrderStatus.IN_PROGRESS)) {
-            revertInventoryForWorkOrder(id);
-        }
+//        if (newStatus == WorkOrderStatus.IN_PROGRESS && currentStatus == WorkOrderStatus.DRAFT) {
+//            consumeInventoryForWorkOrder(id);
+//        }
+//
+//        // Trigger revert
+//        if (newStatus == WorkOrderStatus.CANCELLED &&
+//                (currentStatus == WorkOrderStatus.READY || currentStatus == WorkOrderStatus.IN_PROGRESS)) {
+//            revertInventoryForWorkOrder(id);
+//        }
 
         // (Optional) Log status change
         logger.info("WorkOrder ID: {} status updated from {} → {}", id, currentStatus, newStatus);

@@ -1,10 +1,11 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
-import com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.GroupedInventoryItem;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryPresentDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.*;
 import com.nextgenmanager.nextgenmanager.Inventory.model.*;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryBookingApprovalRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryProcurementOrderRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRepository;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
@@ -38,6 +39,14 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
 
+    @Autowired
+    private InventoryRequestRepository inventoryRequestRepository;
+
+    @Autowired
+    private InventoryBookingApprovalRepository inventoryBookingApprovalRepository;
+
+    @Autowired
+    private InventoryProcurementOrderRepository inventoryProcurementOrderRepository;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -56,7 +65,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         double availableQty;
 
         if (item.getUom() == UOM.NOS) {
-            availableQty = inventoryInstanceRepository.countAvailableInInventory(itemId);
+            availableQty = inventoryInstanceRepository.countAvailableInInventory(itemId,InventoryInstanceStatus.AVAILABLE.name());
         } else {
             availableQty = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(itemId);
         }
@@ -65,6 +74,22 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         inventoryItemRepository.save(item);
 
         logger.info("Updated available quantity for item ID {}: {}", itemId, availableQty);
+    }
+
+    @Override
+    public void revertInventoryInstances(List<InventoryInstance> instances) {
+
+        List<InventoryInstance> inventoryInstanceList = new ArrayList<>();
+        for(InventoryInstance instance: instances){
+            InventoryInstance inst  = inventoryInstanceRepository.getReferenceById(instance.getId());
+            inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+            inst.setConsumed(false);
+            inst.setBookedDate(null);
+            inst.setConsumeDate(null);
+            inventoryInstanceList.add(inst);
+        }
+
+        inventoryInstanceRepository.saveAll(inventoryInstanceList);
     }
 
     @Override
@@ -88,7 +113,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 inst.setSellPricePerUnit(
                         template.getSellPricePerUnit()  != null ?
                                 template.getSellPricePerUnit() : item.getSellingPrice());
+                inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
                 instances.add(inst);
+
             }
         } else {
             InventoryInstance inst = new InventoryInstance();
@@ -101,6 +128,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             inst.setSellPricePerUnit(
                     template.getSellPricePerUnit()  != null ?
                             template.getSellPricePerUnit() : item.getSellingPrice());
+            inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
             instances.add(inst);
         }
         List<InventoryInstance> saved = inventoryInstanceRepository.saveAll(instances);
@@ -158,7 +186,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Override
     @Transactional
-    public List<InventoryInstance> consumeInventoryInstance(InventoryItem item, double qty) {
+    public List<InventoryInstance> consumeInventoryInstance(InventoryItem item, double qty, Long requestId) {
         logger.info("Consuming {} unit(s) for inventory item ID: {}", qty, item.getInventoryItemId());
 
         InventoryItem dbItem = inventoryItemRepository.findByActiveId(item.getInventoryItemId());
@@ -167,36 +195,59 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             throw new ResourceNotFoundException("Inventory item not found");
         }
 
+        InventoryRequest request = inventoryRequestRepository.getReferenceById(requestId);
+
+        if (request.getRequestedInstances() == null || request.getRequestedInstances().isEmpty()) {
+            throw new IllegalArgumentException("Invalid inventory request or no instances provided.");
+        }
+
         List<InventoryInstance> consumed = new ArrayList<>();
         Date now = new Date();
 
         if (isUnitByNos(dbItem)) {
             logger.debug("Item ID: {} is UOM.NOS. Fetching up to {} available instances.", dbItem.getInventoryItemId(), (int) qty);
-            List<InventoryInstance> available = inventoryInstanceRepository.getItemsToConsume(dbItem.getInventoryItemId(), (int) qty);
-
+            List<InventoryInstance> available = request.getRequestedInstances();
+            int count =0;
             for (InventoryInstance inst : available) {
-                inst.setConsumed(true);
-                inst.setConsumeDate(now);
-                inst.setQuantity(0);
-                consumed.add(inst);
+                if(count>=qty){
+                    break;
+                }
+                if(inst.getInventoryItem().equals(dbItem)){
+                    inst.setConsumed(true);
+                    inst.setConsumeDate(now);
+                    inst.setQuantity(0);
+                    inst.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                    consumed.add(inst);
+                    count++;
+                }
+
             }
 
             logger.info("Consumed {} NOS instance(s) for item ID: {}", consumed.size(), dbItem.getInventoryItemId());
         } else {
             logger.debug("Item ID: {} is bulk. Attempting to consume quantity: {}", dbItem.getInventoryItemId(), qty);
-            InventoryInstance inst = inventoryInstanceRepository.findLatestInventoryInstance(dbItem.getInventoryItemId(), qty);
+            List<InventoryInstance> instanceList = request.getRequestedInstances();
+            for (InventoryInstance instance : instanceList) {
+                if (!instance.getInventoryItem().equals(dbItem)) continue;
+                if (qty <= 0) break;
 
-            if (inst != null) {
-                inst.setConsumeDate(now);
-                inst.setQuantity(inst.getQuantity() - qty);
-                inst.setConsumed(inst.getQuantity() <= 0);
-                inst.setQuantity(qty); // for tracking consumed qty
-                consumed.add(inst);
+                double availableQty = instance.getQuantity();
+                double toConsume = Math.min(qty, availableQty);
 
-                logger.info("Consumed bulk instance ID: {} with quantity: {} for item ID: {}", inst.getId(), qty, dbItem.getInventoryItemId());
-            } else {
-                logger.warn("No suitable bulk inventory instance found for item ID: {} and quantity: {}", dbItem.getInventoryItemId(), qty);
+                instance.setConsumeDate(now);
+                instance.setQuantity(availableQty - toConsume);
+                instance.setConsumed(instance.getQuantity() == 0);
+                if (instance.getQuantity() == 0) {
+                    instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                }
+                consumed.add(instance);
+
+                qty -= toConsume;
+
+
             }
+
+
         }
 
         inventoryInstanceRepository.saveAll(consumed);
@@ -205,81 +256,76 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     }
 
 
-    @Override
-    public List<InventoryInstance> consumeInventoryInstance(List<InventoryInstance> instances) {
-        Date now = new Date();
-        List<InventoryInstance> inventoryInstanceList = new ArrayList<>();
-        for (InventoryInstance instance : instances) {
-            instance.setConsumeDate(now);
-            instance.setConsumed(true); // optional
-            instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
-            inventoryInstanceList.add(inventoryInstanceRepository.save(instance));
-        }
-
-        return inventoryInstanceList;
-    }
-
-    @Override
-    public void revertInventoryInstances(List<InventoryInstance> instances) {
-        for (InventoryInstance instance : instances) {
-            if (instance.isConsumed()) {
-                throw new IllegalStateException("Cannot revert already consumed instance: " + instance.getId());
-            }
-            instance.setConsumed(false); // or reset to initial state
-            instance.setBookedDate(null);
-            instance.setConsumeDate(null);
-            instance.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
-            inventoryInstanceRepository.save(instance);
-        }
-    }
 
     @Override
     @Transactional
-    public List<InventoryInstance> requestInstance(InventoryItem item, double qty, InventoryRequestSource source, Long sourceId) {
+    public InventoryRequest requestInstance(
+            InventoryItem item,
+            double qty,
+            InventoryRequestSource source,
+            Long sourceId,
+            String requestedBy,
+            String requestRemarks) {
+
         logger.info("Requesting {} unit(s) for InventoryItem ID: {}", qty, item.getInventoryItemId());
 
+        // ✅ Step 0: Validate and fetch item
         InventoryItem dbItem = inventoryItemRepository.findByActiveId(item.getInventoryItemId());
         if (dbItem == null) {
             logger.error("Inventory item with ID {} not found", item.getInventoryItemId());
             throw new ResourceNotFoundException("Inventory item not found");
         }
 
-        List<InventoryInstance> resultInstances = new ArrayList<>();
+        if (qty <= 0) {
+            throw new IllegalArgumentException("Requested quantity must be greater than zero.");
+        }
+
         Date now = new Date();
+        List<InventoryInstance> resultInstances = new ArrayList<>();
 
-        // 1. Fetch available stock
-        List<InventoryInstance> availableInstances = inventoryInstanceRepository.inventoryInstanceByStatus(InventoryInstanceStatus.CONSUMED,qty);
+        // ✅ Step 1: Create and save the request entity
+        InventoryRequest request = new InventoryRequest();
+        request.setRequestSource(source);
+        request.setSourceId(sourceId);
+        request.setRequestedDate(now);
+        request.setRequestedBy(requestedBy);
+        request.setRequestRemarks(requestRemarks);
+        request.setApprovalStatus(InventoryApprovalStatus.PENDING);
+        request.setReferenceNumber("REQ-" + UUID.randomUUID().toString().substring(0, 8));
+        request.setInventoryItem(dbItem);
+        request = inventoryRequestRepository.save(request);
 
+        // ✅ Step 2: Fetch available instances
+        List<InventoryInstance> availableInstances =
+                inventoryInstanceRepository.inventoryInstanceByStatus(
+                        dbItem.getInventoryItemId(),
+                        InventoryInstanceStatus.AVAILABLE.name(),
+                        qty);
+
+        // ✅ Step 3: Process by unit type
         if (isUnitByNos(dbItem)) {
             int requestedUnits = (int) qty;
             int fulfilled = 0;
 
-            // 2. Book from available
+            // Fill from available
             for (InventoryInstance inst : availableInstances) {
                 if (fulfilled >= requestedUnits) break;
-
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
                 inst.setBookedDate(now);
-                inst.setApprovalStatus(InventoryApprovalStatus.PENDING);
-                inst.setRequestSource(source);
-                inst.setLinkedSourceId(sourceId);
+                inst.setInventoryRequest(request);
                 resultInstances.add(inst);
                 fulfilled++;
             }
 
-            // 3. Request remaining
+            // Create pending instances if shortfall
             int remaining = requestedUnits - fulfilled;
             for (int i = 0; i < remaining; i++) {
                 InventoryInstance inst = new InventoryInstance();
                 inst.setInventoryItem(dbItem);
                 inst.setEntryDate(now);
-                inst.setRequestedDate(now);
                 inst.setQuantity(1);
-                inst.setRequestSource(source);
-                inst.setLinkedSourceId(sourceId);
-                inst.setApprovalStatus(InventoryApprovalStatus.PENDING);
-                inst.setProcurementDecision(ProcurementDecision.UNDECIDED);
-                inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
+                inst.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
+                inst.setInventoryRequest(request);
                 resultInstances.add(inst);
             }
 
@@ -289,57 +335,71 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     .sum();
 
             if (availableQty >= qty) {
-                // Fulfill entirely from existing
+                // enough available, just mark as requested
                 double qtyToBook = qty;
                 for (InventoryInstance inst : availableInstances) {
                     if (qtyToBook <= 0) break;
-
                     double instQty = inst.getQuantity();
                     double usedQty = Math.min(instQty, qtyToBook);
-                    inst.setQuantity(usedQty); // Use full or partial
-                    inst.setInventoryInstanceStatus(InventoryInstanceStatus.BOOKED);
+
+                    inst.setQuantity(usedQty);
+                    inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
                     inst.setBookedDate(now);
-                    inst.setApprovalStatus(InventoryApprovalStatus.PENDING);
-                    inst.setRequestSource(source);
-                    inst.setLinkedSourceId(sourceId);
+                    inst.setInventoryRequest(request);
                     resultInstances.add(inst);
 
                     qtyToBook -= usedQty;
                 }
-
             } else {
-                // Partial fulfill + create request
-                double qtyToBook = availableQty;
+                // not enough available, book what you can and create pending
                 double qtyToRequest = qty - availableQty;
 
                 for (InventoryInstance inst : availableInstances) {
-                    inst.setInventoryInstanceStatus(InventoryInstanceStatus.BOOKED);
+                    inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
                     inst.setBookedDate(now);
-                    inst.setApprovalStatus(InventoryApprovalStatus.APPROVED);
-                    inst.setRequestSource(source);
-                    inst.setLinkedSourceId(sourceId);
+                    inst.setInventoryRequest(request);
                     resultInstances.add(inst);
                 }
 
                 InventoryInstance inst = new InventoryInstance();
                 inst.setInventoryItem(dbItem);
                 inst.setEntryDate(now);
-                inst.setRequestedDate(now);
                 inst.setQuantity(qtyToRequest);
-                inst.setRequestSource(source);
-                inst.setLinkedSourceId(sourceId);
-                inst.setApprovalStatus(InventoryApprovalStatus.PENDING);
-                inst.setProcurementDecision(ProcurementDecision.UNDECIDED);
-                inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
+                inst.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
+                inst.setInventoryRequest(request);
                 resultInstances.add(inst);
             }
         }
 
-        List<InventoryInstance> saved = inventoryInstanceRepository.saveAll(resultInstances);
-        updateItemAvailability(dbItem.getInventoryItemId());
-        logger.info("Request processed: {} instance(s) affected for InventoryItem ID: {}", saved.size(), dbItem.getInventoryItemId());
+        // ✅ Step 4: Persist instances and update request
+        List<InventoryInstance> savedInstances = inventoryInstanceRepository.saveAll(resultInstances);
+        request.setRequestedInstances(savedInstances);
+        InventoryRequest savedRequest = inventoryRequestRepository.save(request);
 
-        return saved;
+        // ✅ Step 5: Update availability
+        updateItemAvailability(dbItem.getInventoryItemId());
+
+        // ✅ Step 6: Create procurement order if there are pending instances
+        List<InventoryInstance> pendingInstances = savedInstances.stream()
+                .filter(inst -> inst.getInventoryInstanceStatus() == InventoryInstanceStatus.PENDING)
+                .toList();
+
+        if (!pendingInstances.isEmpty()) {
+            InventoryProcurementOrder procurementOrder = new InventoryProcurementOrder();
+            procurementOrder.setInventoryRequest(savedRequest);
+            procurementOrder.setPendingInventoryList(pendingInstances);
+            procurementOrder.setCreatedBy(requestedBy);
+            procurementOrder.setInventoryItem(dbItem);
+            procurementOrder.setInventoryProcurementStatus(InventoryProcurementStatus.CREATED);
+            inventoryProcurementOrderRepository.save(procurementOrder);
+            logger.info("Created procurement order for {} pending instance(s)", pendingInstances.size());
+        }
+
+        logger.info("Request processed: {} instance(s) affected for InventoryItem ID: {}",
+                savedInstances.size(), dbItem.getInventoryItemId());
+
+        updateItemAvailability(dbItem.getInventoryItemId());
+        return savedRequest;
     }
 
 
@@ -410,7 +470,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             // Save the updated BOM
             inventoryInstanceRepository.save(inventoryInstance);
             logger.info("Successfully soft-deleted BOM with ID: {}", id);
-            updateInventoryItemCount(inventoryInstance.getInventoryItem().getInventoryItemId());
+            updateItemAvailability(inventoryInstance.getInventoryItem().getInventoryItemId());
 
         } catch (ResourceNotFoundException e) {
             throw e;
@@ -499,7 +559,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             String procurementDecisionStr = (procurementDecisionFilter != null) ? procurementDecisionFilter.name() : null;
 
             List<InventoryInstance> allInstances = inventoryInstanceRepository.getAllActiveInstancesFiltered(
-                    queryItemCode, queryItemName, queryHsnCode, uom, itemTypeValue, approvalStatusStr, procurementDecisionStr);
+                    queryItemCode, queryItemName, queryHsnCode, uom, itemTypeValue);
 
 
             // Group by inventory item
@@ -567,49 +627,13 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         double currentCount = 0;
 
         if (inventoryItem.getUom() == UOM.NOS) {
-            currentCount = inventoryInstanceRepository.countAvailableInInventory(id);
+            currentCount = inventoryInstanceRepository.countAvailableInInventory(id,InventoryInstanceStatus.AVAILABLE.name());
         } else {
             currentCount = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(id);
         }
 
         inventoryItem.setAvailableQuantity(currentCount);
         inventoryItemRepository.save(inventoryItem);
-    }
-
-    @Override
-    @Transactional
-    public List<InventoryInstance> markRequestedInventoryAsArrived(List<Long> instanceIds) {
-        logger.info("Marking requested inventory instances as arrived: {}", instanceIds);
-
-        List<InventoryInstance> updatedInstances = new ArrayList<>();
-        Date now = new Date();
-
-        for (Long id : instanceIds) {
-            InventoryInstance instance = inventoryInstanceRepository.findById(id)
-                    .orElseThrow(() -> new ResourceNotFoundException("Inventory Instance not found with ID: " + id));
-
-            if (!InventoryInstanceStatus.REQUESTED.equals(instance.getInventoryInstanceStatus())) {
-                logger.warn("Skipping instance ID {} as it is not in REQUESTED state.", id);
-                continue;
-            }
-
-            instance.setEntryDate(now); // optional if not already set
-            instance.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
-            instance.setRequestedDate(null); // clear the requested date if needed
-
-            updatedInstances.add(instance);
-        }
-
-        List<InventoryInstance> saved = inventoryInstanceRepository.saveAll(updatedInstances);
-        logger.info("Successfully marked {} inventory instance(s) as arrived.", saved.size());
-
-        // Update availability count for related items
-        Set<Integer> affectedItemIds = saved.stream()
-                .map(inst -> inst.getInventoryItem().getInventoryItemId())
-                .collect(Collectors.toSet());
-        affectedItemIds.forEach(this::updateItemAvailability);
-
-        return saved;
     }
 
     public Map<String, Object> getInventorySummary(){
@@ -622,10 +646,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 .filter(i -> i.getInventoryInstanceStatus() == InventoryInstanceStatus.AVAILABLE)
                 .mapToDouble(InventoryInstance::getQuantity).sum());
 
-        summary.put("requested", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED));
-        summary.put("booked", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.BOOKED));
-        summary.put("consumed", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED));
-        summary.put("totalInventoryValue", inventoryInstanceRepository.countSumOfInventoryValue(InventoryInstanceStatus.CONSUMED));
+        summary.put("requested", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED.name()));
+        summary.put("booked", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.BOOKED.name()));
+        summary.put("consumed", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED.name()));
+        summary.put("totalInventoryValue", inventoryInstanceRepository.countSumOfInventoryValue());
         return summary;
     }
 
@@ -633,39 +657,126 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Transactional
     @Override
-    public List<InventoryInstance> approveInventoryRequest(List<Long> instanceIds, InventoryRequestSource requestType, Long linkedOrderId) {
-        List<InventoryInstance> updated = new ArrayList<>();
-        Date now = new Date();
+    public List<InventoryInstance> approveInventoryRequest(Long requestId, String approvedBy,String approveRemarks) {
+        InventoryRequest request = inventoryRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory Request not found with ID: " + requestId));
 
-        for (Long id : instanceIds) {
-            InventoryInstance instance = inventoryInstanceRepository.findById(id)
-                    .orElseThrow(() -> new ResourceNotFoundException("Inventory Instance not found with ID: " + id));
+        List<InventoryInstance> instances = request.getRequestedInstances();
 
-            if (instance.getApprovalStatus() != InventoryApprovalStatus.PENDING) continue;
+        // Check that all instances are still REQUESTED
+        boolean pendingItem = instances.stream()
+                .anyMatch(i -> i.getInventoryInstanceStatus() == InventoryInstanceStatus.PENDING);
 
-            instance.setApprovalStatus(InventoryApprovalStatus.APPROVED);
-            instance.setRequestSource(requestType);
-
-            // Optionally auto-book if decision is WORK_ORDER
-            if (requestType == InventoryRequestSource.WORK_ORDER) {
-                instance.setBookedDate(now);
-                instance.setInventoryInstanceStatus(InventoryInstanceStatus.BOOKED);
-            }
-
-            updated.add(instance);
+        if (pendingItem) {
+            throw new IllegalStateException("Cannot approve: Some instances are already processed or pending.");
         }
 
-        return inventoryInstanceRepository.saveAll(updated);
+        InventoryRequestSource requestType = request.getRequestSource();
+        Long linkedSourceId = request.getSourceId();
+        Date now = new Date();
+
+
+        for (InventoryInstance instance : instances) {
+
+
+            instance.setInventoryInstanceStatus(InventoryInstanceStatus.BOOKED);
+            instance.setBookedDate(now);
+
+        }
+
+        List<InventoryInstance> savedInstances = inventoryInstanceRepository.saveAll(instances);
+
+        // Update request status
+        request.setApprovalStatus(InventoryApprovalStatus.APPROVED);
+        inventoryRequestRepository.save(request);
+
+        // Create approval audit record
+        InventoryBookingApproval approval = new InventoryBookingApproval();
+        approval.setInventoryRequest(request);
+        approval.setApprovalDate(now);
+        approval.setApprovedBy(approvedBy); // Replace with logged-in username if available
+        approval.setApprovalStatus(InventoryApprovalStatus.APPROVED);
+        approval.setApprovalRemarks(approveRemarks);
+        inventoryBookingApprovalRepository.save(approval);
+        updateItemAvailability(request.getInventoryItem().getInventoryItemId());
+        return savedInstances;
     }
+
+
+
+    @Transactional
+    @Override
+    public List<InventoryInstance> rejectInventoryRequest(Long requestId, String rejectedBy, String rejectRemarks) {
+        // Fetch the request
+        InventoryRequest request = inventoryRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Inventory Request not found with ID: " + requestId));
+
+        List<InventoryInstance> instances = request.getRequestedInstances();
+        Date now = new Date();
+
+        // Update instance statuses
+        for (InventoryInstance instance : instances) {
+            if (!(instance.getInventoryInstanceStatus() == InventoryInstanceStatus.PENDING)) {
+                // If it was REQUESTED or AVAILABLE, revert back to AVAILABLE
+                instance.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                instance.setBookedDate(null);
+                instance.setInventoryRequest(null); // optional: unlink request
+            } else {
+                // If it was PENDING (not yet procured), mark as destroyed
+                instance.setInventoryInstanceStatus(InventoryInstanceStatus.DESTROYED);
+            }
+        }
+
+        List<InventoryInstance> savedInstances = inventoryInstanceRepository.saveAll(instances);
+
+        // Update request status
+        request.setApprovalStatus(InventoryApprovalStatus.REJECTED);
+        inventoryRequestRepository.save(request);
+
+        // 🔥 **Cancel related procurement orders**
+        List<InventoryProcurementOrder> relatedOrders =
+                inventoryProcurementOrderRepository.findByInventoryRequestId(requestId);
+
+        for (InventoryProcurementOrder order : relatedOrders) {
+            // Only cancel those that are still pending or active
+            if (order.getInventoryProcurementStatus() == InventoryProcurementStatus.IN_PROGRESS
+                    || order.getInventoryProcurementStatus() == InventoryProcurementStatus.CREATED) {
+                order.setInventoryProcurementStatus(InventoryProcurementStatus.CANCELED);
+            }
+        }
+        if (!relatedOrders.isEmpty()) {
+            inventoryProcurementOrderRepository.saveAll(relatedOrders);
+            logger.info("Canceled {} procurement order(s) linked to request {}", relatedOrders.size(), requestId);
+        }
+
+        // Create rejection audit record
+        InventoryBookingApproval approval = new InventoryBookingApproval();
+        approval.setInventoryRequest(request);
+        approval.setApprovalDate(now);
+        approval.setApprovedBy(rejectedBy);
+        approval.setApprovalStatus(InventoryApprovalStatus.REJECTED);
+        approval.setApprovalRemarks(rejectRemarks);
+        inventoryBookingApprovalRepository.save(approval);
+
+        // Update availability after rejection
+        updateItemAvailability(request.getInventoryItem().getInventoryItemId());
+
+        logger.info("Rejected inventory request {} and reverted {} instance(s)", requestId, savedInstances.size());
+        return savedInstances;
+    }
+
+
 
     @Override
     @Transactional
-    public List<InventoryInstance> requestInstanceByItemId(int itemId, double qty, InventoryRequestSource source, Long sourceId) {
+    public InventoryRequest requestInstanceByItemId(int itemId, double qty, InventoryRequestSource source, Long sourceId,String requestedBy,String requestRemarks) {
+
         InventoryItem item = inventoryItemRepository.findByActiveId(itemId);
         if (item == null) {
             throw new ResourceNotFoundException("Inventory item not found with ID: " + itemId);
         }
-        return requestInstance(item, qty, source, sourceId);
+        return requestInstance(item, qty, source, sourceId,requestedBy, requestRemarks);
     }
 
 
@@ -678,6 +789,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         double addedQty = request.getQuantity();
         double costPerUnit = request.getCostPerUnit();
         long referenceId = request.getReferenceId();
+        String createdBy = request.getCreatedBy();
         ProcurementDecision procurementDecision = request.getProcurementDecision();
 
         if (addedQty <= 0) {
@@ -693,57 +805,444 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
         logger.info("Inventory item found: {} - {}", dbItem.getInventoryItemId(), dbItem.getName());
 
-        List<InventoryInstance> instances = new ArrayList<>();
+        List<InventoryInstance> resultInstances = new ArrayList<>();
         Date now = new Date();
 
         double finalCost = costPerUnit > 0 ? costPerUnit :
                 dbItem.getStandardCost() != null ? dbItem.getStandardCost() : 0;
-
         double finalPrice = dbItem.getSellingPrice() != null ? dbItem.getSellingPrice() : 0;
 
         try {
-            if (isUnitByNos(dbItem)) {
-                int unitCount = (int) addedQty;
-                logger.info("Adding {} NOS-based inventory instances", unitCount);
+            // =========================================
+            // STEP 1: FILL EXISTING PENDING INSTANCES
+            // =========================================
+            List<InventoryInstance> pendingInstances = inventoryInstanceRepository
+                    .inventoryInstanceByStatus(
+                            inventoryItemId,
+                            InventoryInstanceStatus.PENDING.name(),
+                            addedQty // qty parameter, as per your existing query
+                    );
 
-                for (int i = 0; i < unitCount; i++) {
+            double remainingQty = addedQty;
+
+            if (!pendingInstances.isEmpty()) {
+                logger.info("Found {} pending instances to fill", pendingInstances.size());
+
+                for (InventoryInstance inst : pendingInstances) {
+                    if (isUnitByNos(dbItem)) {
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                        inst.setEntryDate(now);
+                        inst.setCostPerUnit(finalCost);
+                        inst.setSellPricePerUnit(finalPrice);
+                        resultInstances.add(inst);
+                        remainingQty -= 1;
+                        if (remainingQty <= 0) break;
+                    } else {
+                        // For quantity-based instance, assume full quantity is pending
+                        double canFill = Math.min(inst.getQuantity(), remainingQty);
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                        inst.setEntryDate(now);
+                        inst.setCostPerUnit(finalCost);
+                        inst.setSellPricePerUnit(finalPrice);
+                        resultInstances.add(inst);
+                        remainingQty -= canFill;
+                        if (remainingQty <= 0) break;
+                    }
+                }
+
+                inventoryInstanceRepository.saveAll(pendingInstances);
+                logger.info("Updated {} pending instances to AVAILABLE", pendingInstances.size());
+            }
+
+            // =========================================
+            // STEP 2: CREATE NEW INSTANCES IF STILL NEEDED
+            // =========================================
+            if (remainingQty > 0) {
+                logger.info("Still need to add {} new units", remainingQty);
+
+                if (isUnitByNos(dbItem)) {
+                    int unitCount = (int) remainingQty;
+                    for (int i = 0; i < unitCount; i++) {
+                        InventoryInstance inst = new InventoryInstance();
+                        inst.setInventoryItem(dbItem);
+                        inst.setEntryDate(now);
+                        inst.setQuantity(1);
+                        inst.setCostPerUnit(finalCost);
+                        inst.setSellPricePerUnit(finalPrice);
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                        resultInstances.add(inst);
+                    }
+                } else {
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
                     inst.setEntryDate(now);
-                    inst.setQuantity(1);
+                    inst.setQuantity(remainingQty);
                     inst.setCostPerUnit(finalCost);
                     inst.setSellPricePerUnit(finalPrice);
-                    inst.setLinkedSourceId(referenceId);
-                    inst.setProcurementDecision(procurementDecision);
-                    instances.add(inst);
-
+                    inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                    resultInstances.add(inst);
                 }
-            } else {
-                logger.info("Adding single quantity-based inventory instance with quantity {}", addedQty);
-                InventoryInstance inst = new InventoryInstance();
-                inst.setInventoryItem(dbItem);
-                inst.setEntryDate(now);
-                inst.setQuantity(addedQty);
-                inst.setCostPerUnit(finalCost);
-                inst.setSellPricePerUnit(finalPrice);
-                inst.setLinkedSourceId(referenceId);
-                inst.setProcurementDecision(procurementDecision);
-                instances.add(inst);
+
+                // save only the newly created instances (not the already updated pending ones)
+                List<InventoryInstance> newInstances = resultInstances.stream()
+                        .filter(i -> i.getInventoryItem().getInventoryItemId() == 0) // id=0 means new, adjust if you use different id logic
+                        .toList();
+                if (!newInstances.isEmpty()) {
+                    inventoryInstanceRepository.saveAll(newInstances);
+                }
             }
 
-            List<InventoryInstance> saved = inventoryInstanceRepository.saveAll(instances);
-            logger.info("Successfully saved {} inventory instances for item ID {}", saved.size(), inventoryItemId);
+            // =========================================
+            // STEP 3: Create procurement order record
+            // =========================================
 
+            InventoryProcurementOrder inventoryProcurementOrder = new InventoryProcurementOrder();
+            inventoryProcurementOrder.setInventoryItem(dbItem);
+            inventoryProcurementOrder.setPendingInventoryList(resultInstances);
+            inventoryProcurementOrder.setProcurementDecision(procurementDecision);
+            inventoryProcurementOrder.setOrderId(referenceId);
+            inventoryProcurementOrder.setCreatedBy(createdBy);
+            inventoryProcurementOrder.setInventoryProcurementStatus(InventoryProcurementStatus.COMPLETED);
+            inventoryProcurementOrderRepository.save(inventoryProcurementOrder);
+
+            // =========================================
+            // STEP 4: Update item availability
+            // =========================================
             updateItemAvailability(dbItem.getInventoryItemId());
             logger.info("Updated item availability for item ID {}", inventoryItemId);
 
-            return saved;
+            logger.info("Successfully processed total {} instances (updated + new) for item ID {}",
+                    resultInstances.size(), inventoryItemId);
+
+            return resultInstances;
 
         } catch (Exception ex) {
             logger.error("Error occurred while adding inventory instances", ex);
             throw new RuntimeException("Error occurred while adding inventory: " + ex.getMessage(), ex);
         }
     }
+
+
+
+    public Page<InventoryRequestGroupDTO> getGroupedRequests(
+            int page, int size,
+            String itemCode, String itemName,
+            InventoryRequestSource source,
+            InventoryApprovalStatus approvalStatus,
+            Long referenceId
+    ) {
+        // Step 1: Fetch all requests and apply filters
+        List<InventoryRequest> filteredRequests = inventoryRequestRepository.findAll().stream()
+                .filter(req -> referenceId == null || req.getSourceId() != null && req.getSourceId().toString().contains(referenceId.toString()))
+                .filter(req -> source == null || req.getRequestSource() == source)
+                .filter(req -> approvalStatus == null || req.getApprovalStatus() == approvalStatus)
+                .filter(req -> req.getInventoryItem() != null &&
+                        (itemCode == null || req.getInventoryItem().getItemCode().toLowerCase().contains(itemCode.toLowerCase())) &&
+                        (itemName == null || req.getInventoryItem().getName().toLowerCase().contains(itemName.toLowerCase()))
+                )
+                .toList();
+
+        // Step 2: Map to DTOs
+        List<InventoryRequestGroupDTO> dtoList = filteredRequests.stream()
+                .map(req -> {
+                    InventoryItem item = req.getInventoryItem();
+                    double totalQty = req.getRequestedInstances().stream()
+                            .mapToDouble(InventoryInstance::getQuantity)
+                            .sum();
+                    double requestQty = req.getRequestedInstances().stream()
+                            .filter(inst -> inst.getInventoryInstanceStatus() == InventoryInstanceStatus.REQUESTED)
+                            .count();
+                    return new InventoryRequestGroupDTO(
+                            req.getId(),
+                            req.getSourceId(),
+                            item.getInventoryItemId(),
+                            item.getItemCode(),
+                            item.getName(),
+                            totalQty,
+                            requestQty,
+                            totalQty-requestQty,
+                            req.getRequestedDate(),
+                            req.getRequestSource(),
+                            req.getRequestedBy(),
+                            req.getApprovalStatus()
+                    );
+                }).toList();
+
+        // Step 3: Pagination
+        int total = dtoList.size();
+        int fromIndex = Math.min(page * size, total);
+        int toIndex = Math.min(fromIndex + size, total);
+        List<InventoryRequestGroupDTO> pageContent = dtoList.subList(fromIndex, toIndex);
+
+        return new PageImpl<>(pageContent, PageRequest.of(page, size), total);
+    }
+
+    @Override
+    public List<InventoryInstance> getRequestedInstancesByReferenceAndItem(Long referenceId) {
+
+        List<InventoryInstance>  instanceList = inventoryRequestRepository.getReferenceById(referenceId).getRequestedInstances();
+        return instanceList;
+    }
+
+
+    @Transactional
+    @Override
+    public void updateProcurementStatus(Long procurementOrderId, InventoryProcurementStatus newStatus) {
+        InventoryProcurementOrder order = inventoryProcurementOrderRepository.findById(procurementOrderId)
+                .orElseThrow(() -> new RuntimeException("Procurement order not found"));
+
+        // Update the status
+        order.setInventoryProcurementStatus(newStatus);
+
+        if (newStatus == InventoryProcurementStatus.COMPLETED) {
+            boolean hasRequest = order.getInventoryRequest() != null;
+
+            for (InventoryInstance instance : order.getPendingInventoryList()) {
+                instance.setInventoryInstanceStatus(hasRequest
+                        ? InventoryInstanceStatus.REQUESTED
+                        : InventoryInstanceStatus.AVAILABLE);
+            }
+        }
+
+        inventoryProcurementOrderRepository.save(order);
+    }
+
+
+    @Transactional
+    @Override
+    public Page<InventoryProcurementOrderDTO> getProcurementOrders(
+            int page, int size,
+            InventoryProcurementStatus status,
+            Long inventoryItemId,
+            String createdBy
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "creationDate"));
+
+        List<InventoryProcurementOrder> allOrders = inventoryProcurementOrderRepository.findAll();
+
+        List<InventoryProcurementOrderDTO> filtered = allOrders.stream()
+                .filter(order -> status == null || order.getInventoryProcurementStatus() == status)
+                .filter(order -> inventoryItemId == null ||
+                        (order.getInventoryItem() != null &&
+                                order.getInventoryItem().getInventoryItemId() == inventoryItemId))
+                .filter(order -> createdBy == null ||
+                        (order.getCreatedBy() != null &&
+                                order.getCreatedBy().equalsIgnoreCase(createdBy)))
+                .map(order -> new InventoryProcurementOrderDTO(
+                        order.getId(),
+                        order.getInventoryItem() != null ? order.getInventoryItem().getItemCode() : null,
+                        order.getInventoryItem() != null ? order.getInventoryItem().getName() : null,
+                        order.getInventoryProcurementStatus(),
+                        order.getProcurementDecision(),
+                        order.getPendingInventoryList() != null ? order.getPendingInventoryList().size() : 0,
+                        order.getInventoryRequest() != null ? order.getInventoryRequest().getId() : null,
+                        order.getCreatedBy(),
+                        order.getCreationDate()
+                ))
+                .toList();
+
+        int total = filtered.size();
+        int fromIndex = Math.min(page * size, total);
+        int toIndex = Math.min(fromIndex + size, total);
+        List<InventoryProcurementOrderDTO> pageContent = filtered.subList(fromIndex, toIndex);
+
+        return new PageImpl<>(pageContent, pageable, total);
+    }
+
+    @Override
+    @Transactional
+    public List<InventoryInstance> addInventoryToExistingProcurement(AddInventoryRequest request, long procurementOrderId) {
+        logger.info("Received request to add inventory to existing procurement {}: {}", procurementOrderId, request);
+
+        int inventoryItemId = request.getInventoryItemId();
+        double addedQty = request.getQuantity();
+        double costPerUnit = request.getCostPerUnit();
+
+        if (addedQty <= 0) {
+            logger.warn("Attempted to add invalid quantity: {}", addedQty);
+            throw new IllegalArgumentException("Added quantity must be greater than zero.");
+        }
+
+        // ✅ Fetch existing procurement order
+        InventoryProcurementOrder procurementOrder = inventoryProcurementOrderRepository.findById(procurementOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Procurement order not found with ID: " + procurementOrderId));
+
+        InventoryItem dbItem = inventoryItemRepository.findByActiveId(inventoryItemId);
+        if (dbItem == null) {
+            logger.error("Inventory item not found with id: {}", inventoryItemId);
+            throw new ResourceNotFoundException("Inventory item not found with ID: " + inventoryItemId);
+        }
+
+        logger.info("Inventory item found: {} - {}", dbItem.getInventoryItemId(), dbItem.getName());
+
+        List<InventoryInstance> resultInstances = new ArrayList<>();
+        Date now = new Date();
+
+        double finalCost = costPerUnit > 0 ? costPerUnit :
+                dbItem.getStandardCost() != null ? dbItem.getStandardCost() : 0;
+        double finalPrice = dbItem.getSellingPrice() != null ? dbItem.getSellingPrice() : 0;
+
+        try {
+            // =========================================
+            // STEP 1: FILL EXISTING PENDING INSTANCES
+            // =========================================
+            List<InventoryInstance> pendingInstances = inventoryInstanceRepository
+                    .inventoryInstanceByStatus(
+                            inventoryItemId,
+                            InventoryInstanceStatus.PENDING.name(),
+                            addedQty
+                    );
+
+            double remainingQty = addedQty;
+
+            if (!pendingInstances.isEmpty()) {
+                logger.info("Found {} pending instances to fill", pendingInstances.size());
+
+                for (InventoryInstance inst : pendingInstances) {
+                    if (isUnitByNos(dbItem)) {
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                        inst.setEntryDate(now);
+                        inst.setCostPerUnit(finalCost);
+                        inst.setSellPricePerUnit(finalPrice);
+                        resultInstances.add(inst);
+                        remainingQty -= 1;
+                        if (remainingQty <= 0) break;
+                    } else {
+                        double canFill = Math.min(inst.getQuantity(), remainingQty);
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                        inst.setEntryDate(now);
+                        inst.setCostPerUnit(finalCost);
+                        inst.setSellPricePerUnit(finalPrice);
+                        resultInstances.add(inst);
+                        remainingQty -= canFill;
+                        if (remainingQty <= 0) break;
+                    }
+                }
+
+                inventoryInstanceRepository.saveAll(pendingInstances);
+                logger.info("Updated {} pending instances to AVAILABLE", pendingInstances.size());
+            }
+
+            // =========================================
+            // STEP 2: CREATE NEW INSTANCES IF STILL NEEDED
+            // =========================================
+            if (remainingQty > 0) {
+                logger.info("Still need to add {} new units", remainingQty);
+
+                if (isUnitByNos(dbItem)) {
+                    int unitCount = (int) remainingQty;
+                    for (int i = 0; i < unitCount; i++) {
+                        InventoryInstance inst = new InventoryInstance();
+                        inst.setInventoryItem(dbItem);
+                        inst.setEntryDate(now);
+                        inst.setQuantity(1);
+                        inst.setCostPerUnit(finalCost);
+                        inst.setSellPricePerUnit(finalPrice);
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                        resultInstances.add(inst);
+                    }
+                } else {
+                    InventoryInstance inst = new InventoryInstance();
+                    inst.setInventoryItem(dbItem);
+                    inst.setEntryDate(now);
+                    inst.setQuantity(remainingQty);
+                    inst.setCostPerUnit(finalCost);
+                    inst.setSellPricePerUnit(finalPrice);
+                    inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                    resultInstances.add(inst);
+                }
+
+                // save new instances
+                List<InventoryInstance> newInstances = resultInstances.stream()
+                        .filter(i -> i.getInventoryItem().getInventoryItemId() == 0)
+                        .toList();
+                if (!newInstances.isEmpty()) {
+                    inventoryInstanceRepository.saveAll(newInstances);
+                }
+            }
+
+            // =========================================
+            // STEP 3: Update existing procurement order
+            // =========================================
+            if (procurementOrder.getPendingInventoryList() == null) {
+                procurementOrder.setPendingInventoryList(new ArrayList<>());
+            }
+            procurementOrder.getPendingInventoryList().addAll(resultInstances);
+
+            inventoryProcurementOrderRepository.save(procurementOrder);
+
+            // =========================================
+            // STEP 4: Update item availability
+            // =========================================
+            updateItemAvailability(dbItem.getInventoryItemId());
+            logger.info("Updated item availability for item ID {}", inventoryItemId);
+
+            logger.info("Successfully added {} instances to procurement order {}", resultInstances.size(), procurementOrderId);
+            updateItemAvailability(dbItem.getInventoryItemId());
+            return resultInstances;
+
+        } catch (Exception ex) {
+            logger.error("Error occurred while adding inventory instances to existing procurement", ex);
+            throw new RuntimeException("Error occurred while adding inventory: " + ex.getMessage(), ex);
+        }
+    }
+
+
+    @Transactional
+    @Override
+    public InventoryProcurementOrderDTO completeProcurementOrder(Long orderId, String completedBy) {
+        // Fetch the procurement order
+        InventoryProcurementOrder order = inventoryProcurementOrderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Procurement order not found with ID: " + orderId));
+
+        // Check if already completed
+        if (order.getInventoryProcurementStatus() == InventoryProcurementStatus.COMPLETED) {
+            throw new IllegalStateException("Procurement order is already completed.");
+        }
+
+        Date now = new Date();
+
+        // ✅ Update instances status
+        List<InventoryInstance> pendingInstances = order.getPendingInventoryList();
+        if (pendingInstances != null && !pendingInstances.isEmpty()) {
+            for (InventoryInstance inst : pendingInstances) {
+                if (inst.getInventoryInstanceStatus() == InventoryInstanceStatus.PENDING) {
+                    if (inst.getInventoryRequest() != null) {
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
+                        inst.setBookedDate(now);
+                    } else {
+                        inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                        inst.setBookedDate(null);
+                    }
+                }
+            }
+            inventoryInstanceRepository.saveAll(pendingInstances);
+
+            // Update item availability for the item type
+            updateItemAvailability(pendingInstances.get(0).getInventoryItem().getInventoryItemId());
+        }
+
+        // ✅ Update order status
+        order.setInventoryProcurementStatus(InventoryProcurementStatus.COMPLETED);
+        InventoryProcurementOrder savedOrder = inventoryProcurementOrderRepository.save(order);
+
+        // ✅ Manually build and return DTO
+        InventoryProcurementOrderDTO dto = new InventoryProcurementOrderDTO();
+        dto.setId(savedOrder.getId());
+        dto.setItemCode(savedOrder.getInventoryItem() != null ? savedOrder.getInventoryItem().getItemCode() : null);
+        dto.setItemName(savedOrder.getInventoryItem() != null ? savedOrder.getInventoryItem().getName() : null);
+        dto.setStatus(savedOrder.getInventoryProcurementStatus());
+        dto.setDecision(savedOrder.getProcurementDecision());
+        dto.setTotalInstances(
+                savedOrder.getPendingInventoryList() != null ? savedOrder.getPendingInventoryList().size() : 0
+        );
+        dto.setRequestId(savedOrder.getInventoryRequest() != null ? savedOrder.getInventoryRequest().getId() : null);
+        dto.setCreatedBy(savedOrder.getCreatedBy());
+
+        return dto;
+    }
+
+
 
 
 }

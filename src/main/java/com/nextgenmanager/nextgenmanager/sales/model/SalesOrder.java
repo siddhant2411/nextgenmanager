@@ -90,7 +90,6 @@ public class SalesOrder {
     private SalesOrderStatus status = SalesOrderStatus.PENDING;
 
 
-
     @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL )
     private List<DeliveryNote> deliveryNotes;
 

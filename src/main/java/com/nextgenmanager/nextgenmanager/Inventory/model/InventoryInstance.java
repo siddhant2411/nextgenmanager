@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.Inventory.model;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import jakarta.persistence.*;
@@ -58,15 +59,17 @@ public class InventoryInstance {
     private Date bookedDate;
 
     @Temporal(TemporalType.TIMESTAMP)
-    private Date requestedDate;
-
-    @Temporal(TemporalType.TIMESTAMP)
     private Date deliveryDate;
 
 
-    private Double costPerUnit;
+    private Double costPerUnit=0.0;
 
-    private Double sellPricePerUnit;
+    private Double sellPricePerUnit=0.0;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inventoryRequestId")
+    @JsonBackReference
+    private InventoryRequest inventoryRequest;
 
     @CreationTimestamp
     @Column(updatable = false)
@@ -77,22 +80,8 @@ public class InventoryInstance {
 
     private Date deletedDate;
 
-    private InventoryInstanceStatus inventoryInstanceStatus = InventoryInstanceStatus.AVAILABLE;
-
     @Enumerated(EnumType.STRING)
-    private InventoryRequestSource requestSource; // NEW
-
-    @Enumerated(EnumType.STRING)
-    private ProcurementDecision procurementDecision = ProcurementDecision.UNDECIDED; // NEW
-
-    private Long linkedSourceId; // Stores Work Order or Sales Order ID
-
-    private Long linkedOrderId;
-
-    @Column(name = "approvalStatus")
-    @Enumerated(EnumType.STRING)
-    private InventoryApprovalStatus approvalStatus = InventoryApprovalStatus.PENDING;
-
+    private InventoryInstanceStatus inventoryInstanceStatus = InventoryInstanceStatus.PENDING;
 
 
     private static String generateShortUUID() {
