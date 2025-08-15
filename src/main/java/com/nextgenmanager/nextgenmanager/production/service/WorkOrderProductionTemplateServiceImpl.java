@@ -23,7 +23,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -85,13 +87,20 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         List<WorkOrderJobList> workOrderJobLists = workOrderProductionTemplate.getWorkOrderJobLists();
         BigDecimal totalLabourCost = BigDecimal.ZERO;
         BigDecimal totalLabourHour =  BigDecimal.ZERO;
+
+        // safe removal
+        workOrderJobLists.removeIf(workOrderJobList -> workOrderJobList.getProductionJob() == null);
         for (WorkOrderJobList workOrderJobList : workOrderJobLists) {
-            int actualWorkOrderJobList = workOrderJobList.getProductionJob().getId();
-            totalLabourCost = totalLabourCost.add(
-                        productionJobService.getProductionJobById(actualWorkOrderJobList).getCostPerHour()
-                            .multiply(workOrderJobList.getNumberOfHours())
-            );
-            totalLabourHour = totalLabourHour.add(workOrderJobList.getNumberOfHours());
+            if(workOrderJobList.getProductionJob()!=null) {
+                int actualWorkOrderJobList = workOrderJobList.getProductionJob().getId();
+                if (actualWorkOrderJobList > 0) {
+                    totalLabourCost = totalLabourCost.add(
+                            productionJobService.getProductionJobById(actualWorkOrderJobList).getCostPerHour()
+                                    .multiply(workOrderJobList.getNumberOfHours())
+                    );
+                    totalLabourHour = totalLabourHour.add(workOrderJobList.getNumberOfHours());
+                }
+            }
         }
         workOrderProductionTemplate.setEstimatedCostOfLabour(totalLabourCost);
         workOrderProductionTemplate.setEstimatedHours(totalLabourHour);
@@ -113,8 +122,11 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
 
         // 3. Calculate overhead cost and total cost
         BigDecimal totalCostBeforeOverhead = totalLabourCost.add(totalBomCost);
+        BigDecimal overheadCostPercentage = Optional.ofNullable(workOrderProductionTemplate.getOverheadCostPercentage())
+                .orElse(BigDecimal.ZERO);
+
         BigDecimal overheadCost = totalCostBeforeOverhead
-                .multiply(workOrderProductionTemplate.getOverheadCostPercentage().multiply(BigDecimal.valueOf(0.01)));
+                .multiply(overheadCostPercentage.multiply(BigDecimal.valueOf(0.01)));
         BigDecimal totalCost = totalCostBeforeOverhead.add(overheadCost);
 
         workOrderProductionTemplate.setOverheadCostValue(overheadCost);
