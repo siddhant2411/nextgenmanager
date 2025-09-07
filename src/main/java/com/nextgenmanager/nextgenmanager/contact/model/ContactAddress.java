@@ -32,6 +32,8 @@ public class ContactAddress {
 
     private String country;
 
+    private String pinCode;
+
     @ManyToOne
     @JoinColumn(name = "contact_id", referencedColumnName = "id")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})

@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.sales.model;
 
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import jakarta.persistence.*;
@@ -48,21 +49,34 @@ public class SalesOrder {
 
     // — Line items —
     @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
     private List<SalesOrderItem> items = new ArrayList<>();
 
     // — Commercial summary —
     @Column(precision = 12, scale = 2) private BigDecimal subTotal;       // sum of line taxable values
     @Column(precision = 12, scale = 2) private BigDecimal discountAmount;
 
+    private boolean includeFreightCharges;
     @Column(precision = 12, scale = 2)
     private BigDecimal freightAndForwardingCharges = BigDecimal.ZERO;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal discountPercentage;
+
+    @Enumerated(EnumType.STRING)
+    private TaxType taxType = TaxType.CGST_SGST;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal taxPercentage;
+
     @Column(precision = 12, scale = 2) private BigDecimal taxableValue;   // subTotal – discount
     @Column(precision = 12, scale = 2) private BigDecimal cgstAmount;
     @Column(precision = 12, scale = 2) private BigDecimal sgstAmount;
     @Column(precision = 12, scale = 2) private BigDecimal igstAmount;
     @Column(precision = 12, scale = 2) private BigDecimal cessAmount;
     @Column(precision = 12, scale = 2) private BigDecimal roundOffAmount;
-    @Column(precision = 12, scale = 2) private BigDecimal netAmount;     // final bill amount
+    @Column(precision = 12, scale = 2) private BigDecimal netAmount;
+    @Column(precision = 12, scale = 2) private BigDecimal totalPayableAmount;
 
     @Column(length = 200) private String paymentTerms;                    // e.g. “30% advance, balance on delivery”
     @Column(length = 200) private String incoterms;                      // e.g. “FOB, Indian Port”
@@ -87,7 +101,7 @@ public class SalesOrder {
     // — Status & audit —
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private SalesOrderStatus status = SalesOrderStatus.PENDING;
+    private SalesOrderStatus status = SalesOrderStatus.DRAFT;
 
 
     @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL )

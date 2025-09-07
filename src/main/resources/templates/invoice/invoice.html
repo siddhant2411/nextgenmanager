@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Invoice</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm 15mm 0 15mm;
+        }
+
+        body {
+            font-family: DejaVu Sans, Arial, sans-serif;
+            font-size: 12px;
+            margin: 0;
+            padding: 0;
+            background: #f2f2f2;
+        }
+
+        .invoice-container {
+            width: 100%;
+            max-width: 794px;
+            margin: auto auto 0 auto;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid black;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 1050px;
+            box-sizing: border-box;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 20px;
+            text-decoration: underline;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            word-break: break-word;
+        }
+
+        table td,
+        table th {
+            border: 1px solid black;
+            padding: 5px;
+            font-size: 11px;
+            vertical-align: top;
+        }
+
+        .items th {
+            background: #f0f0f0;
+        }
+
+        .totals td {
+            text-align: right;
+            font-size: 12px;
+        }
+
+        .footer-section {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 11px;
+        }
+
+        .declaration {
+            width: 100%;
+            text-align: left;
+        }
+
+        .footer {
+            width: 100%;
+            text-align: right;
+        }
+
+        @media print {
+            body {
+                background: none !important;
+            }
+
+            .invoice-container {
+                box-shadow: none !important;
+                margin: 0 auto;
+                border: 1px solid black;
+                background: #fff;
+            }
+
+            .footer-section {
+                position: absolute;
+                bottom: 40px;
+                left: 0;
+                right: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="invoice-container">
+
+        <!-- Header -->
+        <div class="header">
+            <h1>INVOICE</h1>
+        </div>
+
+        <!-- Seller & Buyer + References -->
+        <table style="margin-bottom:10px;">
+            <tr>
+                <!-- Seller & Buyer -->
+                <td style="width:50%; vertical-align: top;">
+                    <table style="width:100%; border: none;">
+                        <tr>
+                            <td>
+                                <b th:text="${companyName}">Process Equipment Corporation</b><br />
+                                <span th:text="${companyAddress}">123, Industrial Area, Ahmedabad</span><br />
+                                E-Mail: <span th:text="${companyEmail}">info@procequip.com</span><br />
+                                GST No: <span th:text="${gstNo}">24ARJPM1573G1ZT</span>
+                            </td>
+                        </tr>
+                    </table>
+                    <table style="width:100%; border: none; margin-top:5px;">
+                        <tr>
+                            <td>
+                                <b>Buyer (Bill to)</b><br />
+                                <span th:text="${salesOrder.customer.companyName}">Customer Name</span><br />
+                                Delivery Address: <span th:text="${salesOrder.deliveryAddress}">Delivery Address</span><br />
+                                GSTIN/PAN: <span th:text="${salesOrder.customer.gstNumber}">22AAAAA0000A1Z5</span>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+
+                <!-- References -->
+                <td style="width:50%; vertical-align: top;">
+                    <table style="width:100%;">
+                        <tr>
+                            <td><b>Invoice No.</b><br /><span th:text="${salesOrder.orderNumber}"></span></td>
+                            <td><b>Dated</b><br /><span th:text="${salesOrder.orderDate}"></span></td>
+                        </tr>
+                        <tr>
+                            <td><b>Buyer's Order No.</b><br /><span th:text="${salesOrder.poNumber}"></span></td>
+                            <td><b>Buyer's Order Date</b><br /><span th:text="${salesOrder.poDate}"></span></td>
+                        </tr>
+                        <tr>
+                            <td><b>Delivery Note</b><br /><span th:text="${salesOrder.orderNumber}"></span></td>
+                            <td><b>Mode/Terms of Payment</b><br /><span th:text="${salesOrder.paymentTerms}"></span></td>
+                        </tr>
+                        <tr>
+                            <td><b>Dispatch Doc No.</b><br /><span th:text="${salesOrder.orderNumber}"></span></td>
+                            <td><b>Dispatch Date</b><br /><span th:text="${salesOrder.deliveryDate}"></span></td>
+                        </tr>
+                        <tr>
+                            <td><b>Despatched through</b><br /><span th:text="${salesOrder.dispatchThrough}"></span></td>
+                            <td><b>Destination</b></td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><b>Terms of Delivery</b></td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Items -->
+        <table class="items">
+            <thead>
+                <tr>
+                    <th style="width:5%;">Sl No.</th>
+                    <th style="width:30%;">Description of Goods</th>
+                    <th style="width:10%;">HSN/SAC</th>
+                    <th style="width:10%;">Qty</th>
+                    <th style="width:10%;">Rate</th>
+                    <th style="width:10%;">UOM</th>
+                    <th style="width:10%;">Disc%</th>
+                    <th style="width:15%;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="item, iter : ${salesOrder.items}">
+                    <td th:text="${iter.index + 1}"></td>
+                    <td>
+                        <b><span th:text="${item.inventoryItem.name}"></span></b><br />
+                        Item Code: <span th:text="${item.inventoryItem.itemCode}"></span>
+                    </td>
+                    <td th:text="${item.hsnCode}"></td>
+                    <td th:text="${item.qty}"></td>
+                    <td th:text="${item.pricePerUnit}"></td>
+                    <td th:text="${item.inventoryItem.uom}"></td>
+                    <td th:text="${item.discountPercentage}"></td>
+                    <td th:text="${item.totalAmountOfProduct}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Totals -->
+        <table class="totals">
+            <tr>
+                <td><b>Total</b></td>
+                <td th:text="${salesOrder.subTotal}"></td>
+            </tr>
+            <tr>
+                <td><b>Discount</b></td>
+                <td th:text="${salesOrder.discountAmount}"></td>
+            </tr>
+            <tr>
+                <td><b>Freight Charges</b></td>
+                <td th:text="${salesOrder.freightAndForwardingCharges}"></td>
+            </tr>
+            <tr th:if="${salesOrder.taxType.name() == 'CGST_SGST'}">
+                <td><b>CGST</b></td>
+                <td th:text="${salesOrder.cgstAmount}"></td>
+            </tr>
+            <tr th:if="${salesOrder.taxType.name() == 'CGST_SGST'}">
+                <td><b>SGST</b></td>
+                <td th:text="${salesOrder.sgstAmount}"></td>
+            </tr>
+            <tr th:if="${salesOrder.taxType.name() == 'IGST'}">
+                <td><b>IGST</b></td>
+                <td th:text="${salesOrder.igstAmount}"></td>
+            </tr>
+            <tr>
+                <td><b>Net Amount</b></td>
+                <td><b th:text="${salesOrder.netAmount}"></b></td>
+            </tr>
+            <tr>
+                <td><b>Round Off</b></td>
+                <td th:text="${salesOrder.roundOffAmount}"></td>
+            </tr>
+            <tr>
+                <td><b>Total Payable Amount</b></td>
+                <td><b th:text="${salesOrder.totalPayableAmount}"></b></td>
+            </tr>
+            <tr>
+                <td colspan="2">Amount Chargeable (in words): <i th:text="${amountInWords}"></i></td>
+            </tr>
+        </table>
+
+         <div class="declaration">
+                <b>Declaration</b><br />
+                We declare that this invoice shows the actual price of the goods/services described and that all
+                particulars are true and correct
+                E. O.E
+            </div>
+
+        <!-- Footer Section -->
+        <div class="footer-section">
+           
+            <div class="footer">
+                <p>For <b th:text="${companyName}">Your Company Pvt Ltd</b></p>
+                <p>Authorised Signatory</p>
+            </div>
+        </div>
+
+    </div>
+</body>
+
+</html>

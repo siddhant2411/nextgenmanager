@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.sales.model;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
@@ -25,6 +26,7 @@ public class SalesOrderItem {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sales_order_id", nullable = false)
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    @JsonBackReference
     private SalesOrder salesOrder;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -38,19 +40,13 @@ public class SalesOrderItem {
     @Column(length = 20, nullable = false)
     private String hsnCode;                   // mandatory for GST
 
-    @Column(precision = 10, scale = 2) private BigDecimal quantity;
-    @Column(precision = 12, scale = 2) private BigDecimal unitPrice;
+
+    @Column(precision = 10, scale = 2) private BigDecimal qty;
+    @Column(precision = 12, scale = 2) private BigDecimal pricePerUnit;
     @Column(precision = 5,  scale = 2) private BigDecimal discountPercentage;
+    @Column(precision = 12,  scale = 2) private BigDecimal unitPriceAfterDiscount;
+    @Column(precision = 12, scale = 2) private BigDecimal totalAmountOfProduct;
 
-    @Column(precision = 12, scale = 2) private BigDecimal lineTaxableValue;  // qty * (unitPrice – discount)
-    @Column(precision = 5,  scale = 2) private BigDecimal cgstRate;
-    @Column(precision = 12, scale = 2) private BigDecimal cgstAmount;
-    @Column(precision = 5,  scale = 2) private BigDecimal sgstRate;
-    @Column(precision = 12, scale = 2) private BigDecimal sgstAmount;
-    @Column(precision = 5,  scale = 2) private BigDecimal igstRate;
-    @Column(precision = 12, scale = 2) private BigDecimal igstAmount;
-    @Column(precision = 12, scale = 2) private BigDecimal cessRate;
-    @Column(precision = 12, scale = 2) private BigDecimal cessAmount;
-
-    @Column(precision = 12, scale = 2) private BigDecimal lineTotal;
+//    It will be mapped to InventoryRequestId Directly on run time to check status
+    private Long itemRequestId;
 }
