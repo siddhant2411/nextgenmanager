@@ -2,9 +2,11 @@
 
 package com.nextgenmanager.nextgenmanager.items.service;
 
+import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemCode;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.items.spec.InventoryItemSpecification;
 import com.nextgenmanager.nextgenmanager.production.repository.ItemCodeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import java.time.Year;
 import java.util.Date;
@@ -171,8 +174,20 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
     @Override
     public Page<InventoryItem> searchInventoryItems(String query, int page, int size) {
+
         Pageable pageable = PageRequest.of(page, size);
         return inventoryItemRepository.searchActiveInventoryItems(query, pageable);
+    }
+
+    @Override
+    public Page<InventoryItem> filterInventoryItems(FilterRequest request) {
+        Sort.Direction direction = Sort.Direction.fromString(request.getSortDir()); // safer
+        Sort sort = Sort.by(direction, request.getSortBy());
+
+        Pageable pageable = PageRequest.of(request.getPage(), request.getSize(), sort);
+        Specification<InventoryItem> spec = InventoryItemSpecification.buildSpecification(request.getFilters());
+
+        return inventoryItemRepository.findAll(spec, pageable);
     }
 
     @Override

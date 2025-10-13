@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.items.service;
 
 
+import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import org.springframework.data.domain.Page;
 
@@ -28,6 +29,8 @@ public interface InventoryItemService {
     public Page<InventoryItem> searchInventoryItems(String query,int page, int size);
 
     public String generateUniqueCode();
+
+    public Page<InventoryItem> filterInventoryItems(FilterRequest request);
 
 
 

@@ -18,7 +18,7 @@ public class InventoryItem {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int InventoryItemId;
+    private int inventoryItemId;
 
     @Column(unique = true, nullable = false)
     private String itemCode;
@@ -47,6 +47,8 @@ public class InventoryItem {
 
     private String basicMaterial;
 
+
+    private String drawingNumber;
 
     private String processType;
 

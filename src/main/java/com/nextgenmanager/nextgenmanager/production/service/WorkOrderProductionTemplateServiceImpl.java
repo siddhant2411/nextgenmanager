@@ -113,9 +113,12 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         for (BomPosition bomPosition : bomPositionList) {
              int inventoryItemId  = bomPosition.getChildInventoryItem().getInventoryItemId();
 
-            BigDecimal itemCost =BigDecimal.valueOf(inventoryItemService.getInventoryItem(inventoryItemId).getStandardCost());
-            totalBomCost.add(itemCost);
+            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
+            BigDecimal itemCost = (item != null && item.getStandardCost() != null)
+                    ? BigDecimal.valueOf(item.getStandardCost())
+                    : BigDecimal.ZERO;
 
+            totalBomCost = totalBomCost.add(itemCost);
 
         }
         workOrderProductionTemplate.setEstimatedCostOfBom(totalBomCost);
@@ -166,8 +169,14 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         BigDecimal totalBomCost = BigDecimal.ZERO;
         for (BomPosition bomPosition : bomPositionList) {
             int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
-            double standardCost = inventoryItemService.getInventoryItem(inventoryItemId).getStandardCost();
+            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
+
+            double standardCost = (item != null && item.getStandardCost() != null)
+                    ? item.getStandardCost()
+                    : 0.0;
+
             BigDecimal itemCost = BigDecimal.valueOf(standardCost);
+
 
             BigDecimal quantity = BigDecimal.valueOf(bomPosition.getQuantity());  // quantity from BOM
             totalBomCost = totalBomCost.add(itemCost.multiply(quantity));  // sum (unitCost * quantity)

@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.items.controller;
 
+import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemAttachmentService;
@@ -214,6 +215,12 @@ public class InventoryItemController {
     @GetMapping("/getItemCode")
     public ResponseEntity<String> generateCode(){
         return ResponseEntity.ok(inventoryItemService.generateUniqueCode());
+    }
+
+
+    @PostMapping("/filter")
+    public Page<InventoryItem> filterInventoryItems(@RequestBody FilterRequest request) {
+        return inventoryItemService.filterInventoryItems(request);
     }
 
 
