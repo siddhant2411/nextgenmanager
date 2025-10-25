@@ -114,8 +114,8 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
              int inventoryItemId  = bomPosition.getChildInventoryItem().getInventoryItemId();
 
             InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
-            BigDecimal itemCost = (item != null && item.getStandardCost() != null)
-                    ? BigDecimal.valueOf(item.getStandardCost())
+            BigDecimal itemCost = (item != null && item.getProductFinanceSettings().getStandardCost() != null)
+                    ? BigDecimal.valueOf(item.getProductFinanceSettings().getStandardCost())
                     : BigDecimal.ZERO;
 
             totalBomCost = totalBomCost.add(itemCost);
@@ -171,8 +171,8 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
             int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
             InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
 
-            double standardCost = (item != null && item.getStandardCost() != null)
-                    ? item.getStandardCost()
+            double standardCost = (item != null && item.getProductFinanceSettings().getStandardCost() != null)
+                    ? item.getProductFinanceSettings().getStandardCost()
                     : 0.0;
 
             BigDecimal itemCost = BigDecimal.valueOf(standardCost);

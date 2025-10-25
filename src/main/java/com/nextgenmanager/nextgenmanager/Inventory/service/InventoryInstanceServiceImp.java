@@ -70,7 +70,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             availableQty = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(itemId);
         }
 
-        item.setAvailableQuantity(availableQty);
+        item.getProductInventorySettings().setAvailableQuantity(availableQty);
         inventoryItemRepository.save(item);
 
         logger.info("Updated available quantity for item ID {}: {}", itemId, availableQty);
@@ -108,11 +108,11 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 inst.setEntryDate(now);
                 inst.setQuantity(1);
                 inst.setCostPerUnit(
-                        template.getCostPerUnit() != null ? template.getCostPerUnit() : item.getStandardCost()
+                        template.getCostPerUnit() != null ? template.getCostPerUnit() : item.getProductFinanceSettings().getStandardCost()
                 );
                 inst.setSellPricePerUnit(
                         template.getSellPricePerUnit()  != null ?
-                                template.getSellPricePerUnit() : item.getSellingPrice());
+                                template.getSellPricePerUnit() : item.getProductFinanceSettings().getStandardCost());
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
                 instances.add(inst);
 
@@ -123,11 +123,11 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             inst.setEntryDate(now);
             inst.setQuantity(qty);
             inst.setCostPerUnit(
-                    template.getCostPerUnit() != null ? template.getCostPerUnit() : item.getStandardCost()
+                    template.getCostPerUnit() != null ? template.getCostPerUnit() : item.getProductFinanceSettings().getStandardCost()
             );
             inst.setSellPricePerUnit(
                     template.getSellPricePerUnit()  != null ?
-                            template.getSellPricePerUnit() : item.getSellingPrice());
+                            template.getSellPricePerUnit() : item.getProductFinanceSettings().getStandardCost());
             inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
             instances.add(inst);
         }
@@ -632,7 +632,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             currentCount = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(id);
         }
 
-        inventoryItem.setAvailableQuantity(currentCount);
+        inventoryItem.getProductInventorySettings().setAvailableQuantity(currentCount);
         inventoryItemRepository.save(inventoryItem);
     }
 
@@ -809,8 +809,8 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         Date now = new Date();
 
         double finalCost = costPerUnit > 0 ? costPerUnit :
-                dbItem.getStandardCost() != null ? dbItem.getStandardCost() : 0;
-        double finalPrice = dbItem.getSellingPrice() != null ? dbItem.getSellingPrice() : 0;
+                dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost() : 0;
+        double finalPrice = dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost() : 0;
 
         try {
             // =========================================
@@ -1079,8 +1079,8 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         Date now = new Date();
 
         double finalCost = costPerUnit > 0 ? costPerUnit :
-                dbItem.getStandardCost() != null ? dbItem.getStandardCost() : 0;
-        double finalPrice = dbItem.getSellingPrice() != null ? dbItem.getSellingPrice() : 0;
+                dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost(): 0;
+        double finalPrice = dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost() : 0;
 
         try {
             // =========================================

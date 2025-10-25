@@ -441,7 +441,7 @@ public class BomServiceImpl implements BomService {
                         BigDecimal unitCost = BigDecimal.valueOf(
                                 inventoryItemService.getInventoryItem(
                                         child.getChildInventoryItem().getInventoryItemId()
-                                ).getStandardCost()
+                                ).getProductFinanceSettings().getStandardCost()
                         );
                         return unitCost.multiply(BigDecimal.valueOf(child.getQuantity()));
                     })

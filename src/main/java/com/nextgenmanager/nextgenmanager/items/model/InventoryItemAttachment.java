@@ -21,11 +21,11 @@ public class InventoryItemAttachment {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId", nullable = false)
-    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-    @JsonBackReference
-    private InventoryItem inventoryItem;
+//    @ManyToOne(fetch = FetchType.LAZY)
+//    @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId", nullable = false)
+//    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+//    @JsonBackReference
+//    private InventoryItem inventoryItem;
 
     private String fileName;
     private String fileType;

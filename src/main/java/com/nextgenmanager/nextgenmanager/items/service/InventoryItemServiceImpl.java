@@ -2,12 +2,19 @@
 
 package com.nextgenmanager.nextgenmanager.items.service;
 
+import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
+import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
+import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.items.mapper.InventoryItemMapper;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemCode;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.spec.InventoryItemSpecification;
 import com.nextgenmanager.nextgenmanager.production.repository.ItemCodeRepository;
+import okio.FileMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,10 +24,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.time.Duration;
+import java.time.Instant;
 import java.time.Year;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 @Service
 public class InventoryItemServiceImpl implements InventoryItemService {
@@ -33,6 +42,28 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
     @Autowired
     private InventoryItemCodeGenerator codeGenerator;
+
+    @Autowired
+    private FileAttachmentRepository fileAttachmentRepository;
+
+    private final InventoryItemMapper inventoryItemMapper;
+
+    @Autowired
+    public InventoryItemServiceImpl(InventoryItemMapper inventoryItemMapper) {
+        this.inventoryItemMapper = inventoryItemMapper;
+    }
+
+    @Autowired
+    private FileStorageService fileStorageService;
+
+    private static final Map<String, String> JOIN_FIELD_MAP = Map.of(
+            "dimension", "productSpecification.dimension",
+            "size", "productSpecification.size",
+            "weight", "productSpecification.weight",
+            "basicMaterial", "productSpecification.basicMaterial",
+            "drawingNumber", "productSpecification.drawingNumber",
+            "availableQuantity", "productInventorySettings.availableQuantity"
+    );
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItem.class);
 
@@ -47,6 +78,24 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             }
             InventoryItem savedInventoryItem = inventoryItemRepository.save(inventoryItem);
             logger.info("Item Successfully added with inventory item id: {}", savedInventoryItem.getInventoryItemId());
+            long itemId = (long)savedInventoryItem.getInventoryItemId();
+            // 2️⃣ Upload and save file metadata if attachments exist
+            if (inventoryItem.getAttachments() != null && !inventoryItem.getAttachments().isEmpty()) {
+                for (MultipartFile file : inventoryItem.getAttachments()) {
+                    fileStorageService.uploadFile(
+                            file,
+                            "inventoryItem",
+                            "inventoryItem",
+                            itemId,
+                            "SYSTEM"
+                    );
+                }
+            }
+
+            // 3️⃣ Fetch uploaded file metadata to send back to UI
+            List<FileAttachment> metadataList = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem", itemId);
+            savedInventoryItem.setFileAttachments(metadataList);
+
             return savedInventoryItem;
         } catch (Exception e) {
             logger.error("Error while adding new inventory item: {}", e.getMessage());
@@ -59,10 +108,30 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         logger.debug("Fetching data for id: {}", itemId);
         try {
             InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(itemId);
+            List<FileAttachment> fileAttachments = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem",(long) itemId);
+
+            for (FileAttachment fileAttachment : fileAttachments) {
+                Date creationDate = fileAttachment.getPresignedUrlCreationDate();
+                if (creationDate != null) {
+                    Instant creationInstant = creationDate.toInstant();
+                    Instant oneHourAgo = Instant.now().minus(Duration.ofHours(1));
+
+                    if (creationInstant.isBefore(oneHourAgo)) {
+                        fileAttachment.setPresignedUrl(fileStorageService.getFileUrl(fileAttachment.getFileName()));
+                        fileAttachment.setPresignedUrlCreationDate(new Date());
+                    }
+                }else {
+                    fileAttachment.setPresignedUrl(fileStorageService.getFileUrl(fileAttachment.getFileName()));
+                    fileAttachment.setPresignedUrlCreationDate(new Date());
+                }
+            }
+
+
             if (inventoryItem == null) {
                 logger.warn("No inventory item with id: {}", itemId);
                 throw new IllegalAccessException("Item does not exist");
             }
+            inventoryItem.setFileAttachments(fileAttachments);
             return inventoryItem;
         } catch (Exception e) {
             logger.error("Error fetching inventory item with id: {}", itemId);
@@ -70,25 +139,53 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         }
     }
 
+//    @Override
+//    public Page<InventoryItem> getAllInventoryItems(int page, int size, String sortBy, String sortDir, String query) {
+//        logger.debug("Fetching all active inventory items with pagination and sorting");
+//        try {
+//            Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name())
+//                    ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
+//            Pageable pageable = PageRequest.of(page, size, sort);
+//            Page<InventoryItem> activeItems = inventoryItemRepository.findAllActiveCategory(query.toLowerCase(), pageable);
+//            if (activeItems.isEmpty()) {
+//                logger.warn("No active inventory items found");
+//            } else {
+//                logger.info("Fetched {} active inventory items", activeItems.getTotalElements());
+//            }
+//            return activeItems;
+//        } catch (Exception e) {
+//            logger.error("Error while fetching all active inventory items: {}", e.getMessage());
+//            throw new RuntimeException(e);
+//        }
+//    }
+
     @Override
-    public Page<InventoryItem> getAllInventoryItems(int page, int size, String sortBy, String sortDir, String query) {
+    public Page<InventoryItemDTO> getAllInventoryItems(int page, int size, String sortBy, String sortDir, String query) {
         logger.debug("Fetching all active inventory items with pagination and sorting");
+
         try {
             Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name())
                     ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
             Pageable pageable = PageRequest.of(page, size, sort);
+
             Page<InventoryItem> activeItems = inventoryItemRepository.findAllActiveCategory(query.toLowerCase(), pageable);
+
+
             if (activeItems.isEmpty()) {
                 logger.warn("No active inventory items found");
             } else {
                 logger.info("Fetched {} active inventory items", activeItems.getTotalElements());
             }
-            return activeItems;
+
+
+            return activeItems.map(inventoryItemMapper::toDTO);
+
         } catch (Exception e) {
             logger.error("Error while fetching all active inventory items: {}", e.getMessage());
             throw new RuntimeException(e);
         }
     }
+
 
     @Override
     public List<InventoryItem> getAllInventoryItemsWithDeleted() {
@@ -163,7 +260,41 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             updatedItem.setInventoryItemId(itemId);
             updatedItem.setItemCode(existingItem.getItemCode()); // preserve original code
 
+
             InventoryItem newItem = inventoryItemRepository.save(updatedItem);
+
+
+            List<FileAttachment> updatedItemFileAttachments = updatedItem.getFileAttachments();
+            List<FileAttachment> existingFileAttachments =
+                    fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem", (long) itemId);
+
+
+            for (FileAttachment oldFile : existingFileAttachments) {
+                boolean stillExists = updatedItemFileAttachments.stream()
+                        .anyMatch(newFile -> newFile.getFileName().equals(oldFile.getFileName()));
+                if (!stillExists) {
+                    logger.info("Deleting file removed from UI: {}", oldFile.getFileName());
+                    fileStorageService.deleteAttachment(oldFile.getId());
+                }
+            }
+
+            if (updatedItem.getAttachments() != null && !updatedItem.getAttachments().isEmpty()) {
+                for (MultipartFile file : updatedItem.getAttachments()) {
+                    if (!fileStorageService.existsInStorage(existingFileAttachments, file)) {
+                        fileStorageService.uploadFile(
+                                file,
+                                "inventoryItem",
+                                "inventoryItem",
+                                (long) itemId,
+                                "SYSTEM"
+                        );
+                        logger.info("Uploaded new file: {}", file.getOriginalFilename());
+                    } else {
+                        logger.debug("Skipping existing file: {}", file.getOriginalFilename());
+                    }
+                }
+            }
+            newItem.setFileAttachments(fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem",(long) itemId));
             logger.info("Inventory item with id: {} successfully updated", itemId);
             return newItem;
         } catch (Exception e) {
@@ -180,14 +311,22 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     }
 
     @Override
-    public Page<InventoryItem> filterInventoryItems(FilterRequest request) {
+    public Page<InventoryItemDTO> filterInventoryItems(FilterRequest request) {
         Sort.Direction direction = Sort.Direction.fromString(request.getSortDir()); // safer
-        Sort sort = Sort.by(direction, request.getSortBy());
+        String sortBy = request.getSortBy();
+        if (JOIN_FIELD_MAP.containsKey(sortBy)) {
+            sortBy = JOIN_FIELD_MAP.get(sortBy);
+        }
+        Sort sort = Sort.by(direction, sortBy);
 
+        List<FilterCriteria> filters = request.getFilters();
+        FilterCriteria filterDeleteDateIsNull = new FilterCriteria("deletedDate", "=", null);
+        filters.add(filterDeleteDateIsNull);
         Pageable pageable = PageRequest.of(request.getPage(), request.getSize(), sort);
-        Specification<InventoryItem> spec = InventoryItemSpecification.buildSpecification(request.getFilters());
+        Specification<InventoryItem> spec = InventoryItemSpecification.buildSpecification(filters,JOIN_FIELD_MAP);
+        Page<InventoryItem> inventoryItems =inventoryItemRepository.findAll(spec, pageable);
 
-        return inventoryItemRepository.findAll(spec, pageable);
+        return inventoryItems.map(inventoryItemMapper::toDTO);
     }
 
     @Override

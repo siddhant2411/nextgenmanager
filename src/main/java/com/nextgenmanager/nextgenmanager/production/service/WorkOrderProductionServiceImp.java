@@ -161,7 +161,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
             instanceListEntry.setWorkOrderProduction(newWorkOrderProduction);
 
             try {
-                double availableQty = inventoryItem.getAvailableQuantity();
+                double availableQty = inventoryItem.getProductInventorySettings().getAvailableQuantity();
                 List<InventoryInstance> bookedInstances = new ArrayList<>();
 
                 if (availableQty >= totalRequiredQty) {

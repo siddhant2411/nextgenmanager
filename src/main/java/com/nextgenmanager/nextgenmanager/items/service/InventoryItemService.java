@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.items.service;
 
 
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import org.springframework.data.domain.Page;
 
@@ -13,7 +14,7 @@ public interface InventoryItemService {
 
     public InventoryItem getInventoryItem(int itemId);
 
-    public Page<InventoryItem> getAllInventoryItems(int page, int size, String sortBy, String sortDir, String query);
+    public Page<InventoryItemDTO> getAllInventoryItems(int page, int size, String sortBy, String sortDir, String query);
 
     public List<InventoryItem> getAllInventoryItemsWithDeleted();
 
@@ -30,7 +31,7 @@ public interface InventoryItemService {
 
     public String generateUniqueCode();
 
-    public Page<InventoryItem> filterInventoryItems(FilterRequest request);
+    public Page<InventoryItemDTO> filterInventoryItems(FilterRequest request);
 
 
 

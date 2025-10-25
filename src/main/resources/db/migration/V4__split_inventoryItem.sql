@@ -1,0 +1,10 @@
+ALTER TABLE INVENTORYITEM
+DROP COLUMN weight,
+DROP COLUMN dimension,
+DROP COLUMN size,
+DROP COLUMN basicMaterial,
+DROP COLUMN processType,
+DROP COLUMN drawingNumber;
+
+
+

@@ -1,10 +1,15 @@
 package com.nextgenmanager.nextgenmanager.items.controller;
 
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
+import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
+import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
-import com.nextgenmanager.nextgenmanager.items.service.InventoryItemAttachmentService;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
+import io.minio.GetObjectResponse;
+import okio.FileMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,17 +40,29 @@ public class InventoryItemController {
     private InventoryItemService inventoryItemService;
 
     @Autowired
-    private InventoryItemAttachmentService attachmentService;
+    private FileStorageService fileStorageService;
+
+    @Autowired
+    private FileAttachmentRepository fileAttachmentRepository;
+
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItemController.class);
 
     private static final String UPLOAD_DIR = "files/";
 
 
-    @PostMapping("/add")
-    public ResponseEntity<InventoryItem> addInventoryItem(@RequestBody InventoryItem inventoryItem) {
+    @PostMapping(
+            value = "/add",
+            consumes = { MediaType.MULTIPART_FORM_DATA_VALUE },
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<InventoryItem> addInventoryItem(
+            @RequestPart("inventoryItem") InventoryItem inventoryItem,
+            @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) {
         logger.debug("Received request to add inventory item");
+
         try {
+            inventoryItem.setAttachments(attachments);
             InventoryItem savedItem = inventoryItemService.addInventoryItem(inventoryItem);
             return ResponseEntity.status(HttpStatus.CREATED).body(savedItem);
         } catch (Exception e) {
@@ -75,7 +92,7 @@ public class InventoryItemController {
             @RequestParam(defaultValue = "") String search){
         logger.debug("Received request to fetch all active inventory items with pagination and sorting");
         try {
-            Page<InventoryItem> items = inventoryItemService.getAllInventoryItems(page, size, sortBy, sortDir,search);
+            Page<InventoryItemDTO> items = inventoryItemService.getAllInventoryItems(page, size, sortBy, sortDir,search);
             return ResponseEntity.ok(items);
         } catch (Exception e) {
             logger.error("Error fetching all inventory items: {}", e.getMessage());
@@ -111,12 +128,16 @@ public class InventoryItemController {
         }
     }
 
-    @PutMapping("/{id}")
+    @PutMapping(value = "/{id}",
+            consumes = { MediaType.MULTIPART_FORM_DATA_VALUE },
+            produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<InventoryItem> editInventoryItem(
             @PathVariable int id,
-            @RequestBody InventoryItem updatedItem) {
+            @RequestPart("inventoryItem") InventoryItem updatedItem,
+            @RequestPart(value = "attachments", required = false)  List<MultipartFile> attachments) {
         logger.debug("Received request to edit inventory item with id: {}", id);
         try {
+            updatedItem.setAttachments(attachments);
             InventoryItem savedItem = inventoryItemService.editInventoryItem(id, updatedItem);
             return ResponseEntity.ok(savedItem);
         } catch (IllegalArgumentException e) {
@@ -154,7 +175,7 @@ public class InventoryItemController {
             attachment.setFileName(fileName);
             attachment.setFilePath(filePath.toString());
             attachment.setFileType(file.getContentType());
-            attachmentService.saveAttachment(id, attachment);
+//            attachmentService.saveAttachment(id, attachment);
 
             return ResponseEntity.ok("File uploaded successfully!");
         } catch (IOException e) {
@@ -163,54 +184,60 @@ public class InventoryItemController {
     }
 
     @GetMapping("/download/{fileId}")
-    public ResponseEntity<UrlResource> downloadFile(@PathVariable Long fileId) {
+    public ResponseEntity<byte[]> downloadFile(@PathVariable Long fileId) {
         try {
-            Optional<InventoryItemAttachment> attachmentOpt = attachmentService.getAttachmentById(fileId);
-            if (attachmentOpt.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-            }
+            // 1️⃣ Get metadata from DB
+            FileAttachment metadata = fileAttachmentRepository.findById(fileId)
+                    .orElseThrow(() -> new IllegalArgumentException("File not found with ID: " + fileId));
 
-            InventoryItemAttachment attachment = attachmentOpt.get();
-            Path filePath = Paths.get(attachment.getFilePath()).normalize();
-            UrlResource resource = new UrlResource(filePath.toUri());
+            // 2️⃣ Get file object from MinIO
+            GetObjectResponse objectResponse = fileStorageService.downloadById(fileId);
 
-            if (resource.exists() && resource.isReadable()) {
-                return ResponseEntity.ok()
-                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
-                        .body(resource);
-            } else {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-            }
-        } catch (MalformedURLException e) {
+            // 3️⃣ Read bytes from the MinIO stream
+            byte[] fileBytes = objectResponse.readAllBytes();
+
+            // 4️⃣ Prepare headers and return
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(metadata.getContentType() != null
+                            ? metadata.getContentType()
+                            : MediaType.APPLICATION_OCTET_STREAM_VALUE))
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + metadata.getOriginalName() + "\"")
+                    .body(fileBytes);
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
 
 
-    @DeleteMapping("/delete/{fileId}")
-    public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
-        try {
-            Optional<InventoryItemAttachment> attachmentOpt = attachmentService.getAttachmentById(fileId);
-            if (attachmentOpt.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("File not found!");
-            }
 
-            InventoryItemAttachment attachment = attachmentOpt.get();
-            Path filePath = Paths.get(attachment.getFilePath());
-
-            // Delete file from the storage
-            Files.deleteIfExists(filePath);
-
-            // Remove entry from the database
-            attachmentService.deleteAttachment(fileId);
-
-
-            return ResponseEntity.ok("File deleted successfully!");
-        } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting file: " + e.getMessage());
-        }
-    }
+//    @DeleteMapping("/delete/{fileId}")
+//    public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
+//        try {
+//            Optional<InventoryItemAttachment> attachmentOpt = attachmentService.getAttachmentById(fileId);
+//            if (attachmentOpt.isEmpty()) {
+//                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("File not found!");
+//            }
+//
+//            InventoryItemAttachment attachment = attachmentOpt.get();
+//            Path filePath = Paths.get(attachment.getFilePath());
+//
+//            // Delete file from the storage
+//            Files.deleteIfExists(filePath);
+//
+//            // Remove entry from the database
+//            attachmentService.deleteAttachment(fileId);
+//
+//
+//            return ResponseEntity.ok("File deleted successfully!");
+//        } catch (IOException e) {
+//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting file: " + e.getMessage());
+//        }
+//    }
 
     @GetMapping("/getItemCode")
     public ResponseEntity<String> generateCode(){
@@ -219,7 +246,7 @@ public class InventoryItemController {
 
 
     @PostMapping("/filter")
-    public Page<InventoryItem> filterInventoryItems(@RequestBody FilterRequest request) {
+    public Page<InventoryItemDTO> filterInventoryItems(@RequestBody FilterRequest request) {
         return inventoryItemService.filterInventoryItems(request);
     }
 
