@@ -1,8 +1,11 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
+import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
@@ -19,11 +22,13 @@ public interface BomService {
 
     public Bom getBom(int id);
 
+    public BomDTO getBomDTO(int id);
+
     public Bom deleteBom(int id);
 
     public Bom editBom(Bom bom);
 
-    public Page<BomDTO> getAllBom(int page, int size, String sortBy, String sortDir, String query);
+    public Page<Bom> getAllBom(int page, int size, String sortBy, String sortDir, String query);
 
     public void saveAttachment(int id, MultipartFile bomAttachment) throws IOException;
 
@@ -34,5 +39,7 @@ public interface BomService {
     public List<Bom> getBomByParentInventoryItem(int id);
 
     public WorkOrderProductionTemplate getBomWOTemplateByBomId(int id);
+
+    public Page<BomListDTO> filterBom(FilterRequest request);
 
 }

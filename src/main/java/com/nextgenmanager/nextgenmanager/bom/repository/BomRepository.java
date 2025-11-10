@@ -6,7 +6,9 @@ import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -14,18 +16,12 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface BomRepository extends JpaRepository<Bom,Integer> {
+public interface BomRepository extends JpaRepository<Bom,Integer>, JpaSpecificationExecutor<Bom> {
 
-    @Query(
-            value = "SELECT new com.nextgenmanager.nextgenmanager.bom.dto.BomDTO(b.id, b.bomName, i.itemCode, i.name) " +
-                    "FROM Bom b " +
-                    "JOIN b.parentInventoryItem i " +  // Assuming the relationship is mapped correctly in Bom entity
-                    "WHERE b.deletedDate IS NULL " +
-                    "AND (LOWER(b.bomName) LIKE %:search% " +
-                    "OR LOWER(i.itemCode) LIKE %:search% " +
-                    "OR LOWER(i.name) LIKE %:search%)"
-    )
-    Page<BomDTO> findAllActiveBom(@Param("search") String search, Pageable pageable);
+
+
+    @Query("SELECT b FROM Bom b WHERE b.deletedDate IS NULL")
+    Page<Bom> findAllActiveBom(Pageable pageable);
 
 
     @Query("SELECT b FROM Bom b WHERE b.parentInventoryItem.id = :inventoryItemId")
@@ -33,8 +29,6 @@ public interface BomRepository extends JpaRepository<Bom,Integer> {
 
     @Query("SELECT w FROM WorkOrderProductionTemplate w WHERE w.bom.id = :bomId")
     WorkOrderProductionTemplate findWOTemplateByBomId(@Param("bomId") int bomId);
-
-
 
 
 }

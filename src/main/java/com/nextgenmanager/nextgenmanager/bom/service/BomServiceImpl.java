@@ -1,6 +1,8 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
-import com.nextgenmanager.nextgenmanager.bom.dto.BOMTemplateMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
+import com.nextgenmanager.nextgenmanager.bom.mapper.BomListMapper;
+import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
@@ -8,15 +10,19 @@ import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.bom.spec.GenericSpecification;
+import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
+import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.items.mapper.InventoryItemMapper;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionTemplateRepository;
-import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionTemplateService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
+import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +31,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -63,7 +70,20 @@ public class BomServiceImpl implements BomService {
     @Autowired
     private BomAttachmentRepository bomAttachmentRepository;
 
+    private final BomListMapper bomListMapper;
+
     private static final String UPLOAD_DIR = "files/bom/";
+
+    private static final Map<String, String> JOIN_FIELD_MAP = Map.of(
+            "parentItemCode", "parentInventoryItem.itemCode",
+            "parentItemName", "parentInventoryItem.name",
+            "parentDrawingNumber", "parentInventoryItem.productSpecification.drawingNumber"
+    );
+
+    public BomServiceImpl(BomListMapper bomListMapper) {
+        this.bomListMapper = bomListMapper;
+    }
+
 
     @Override
     public Bom addBom(Bom bom) {
@@ -175,8 +195,32 @@ public class BomServiceImpl implements BomService {
                 });
     }
 
+    @Override
+    public BomDTO getBomDTO(int id) {
+        logger.info("Fetching BOM DTO with ID: {}", id);
 
+        Bom bom = bomRepository.findById(id)
+                .filter(b -> b.getDeletedDate() == null)
+                .orElseThrow(() -> {
+                    logger.error("BOM not found or deleted with ID: {}", id);
+                    return new ResourceNotFoundException("BOM not found with ID: " + id);
+                });
 
+        // Ensure required lazy relations are initialized
+        Hibernate.initialize(bom.getParentInventoryItem());
+        Hibernate.initialize(bom.getChildInventoryItems());
+        Hibernate.initialize(bom.getBomAttachmentList());
+
+        // Fetch latest attachments before mapping
+        List<BomAttachment> latestAttachments = getLatestAttachments(bom);
+        bom.setBomAttachmentList(latestAttachments);
+
+        // Map entity to DTO
+        BomDTO response = BomMapper.toDto(bom);
+
+        logger.info("Successfully mapped BOM with ID {} to DTO", id);
+        return response;
+    }
 
 
     @Override
@@ -251,7 +295,7 @@ public class BomServiceImpl implements BomService {
     }
 
     @Override
-    public Page<BomDTO> getAllBom(int page, int size, String sortBy, String sortDir, String query) {
+    public Page<Bom> getAllBom(int page, int size, String sortBy, String sortDir, String query) {
         logger.debug("Fetching all active BOMs with page: {}, size: {}, sortBy: {}, sortDir: {}, query: {}", page, size, sortBy, sortDir, query);
 
         try {
@@ -269,7 +313,7 @@ public class BomServiceImpl implements BomService {
             Pageable pageable = PageRequest.of(page, size, sort);
 
             // Fetch the BOMs using the repository
-            Page<BomDTO> boms = bomRepository.findAllActiveBom(query.toLowerCase(), pageable);
+            Page<Bom> boms = bomRepository.findAllActiveBom( pageable);
 
             // Logging based on results
             if (boms.isEmpty()) {
@@ -484,6 +528,26 @@ public class BomServiceImpl implements BomService {
         }
     }
 
+
+    public Page<BomListDTO> filterBom(FilterRequest request){
+        Sort.Direction direction = Sort.Direction.fromString(request.getSortDir()); // safer
+        String sortBy = request.getSortBy();
+        if (JOIN_FIELD_MAP.containsKey(sortBy)) {
+            sortBy = JOIN_FIELD_MAP.get(sortBy);
+        }
+        Sort sort = Sort.by(direction, sortBy);
+
+        List<FilterCriteria> filters = request.getFilters();
+        FilterCriteria filterDeleteDateIsNull = new FilterCriteria("deletedDate", "=", null);
+        filters.add(filterDeleteDateIsNull);
+        Pageable pageable = PageRequest.of(request.getPage(), request.getSize(), sort);
+
+        Specification<Bom> spec = GenericSpecification.buildSpecification(filters, JOIN_FIELD_MAP);
+        Page<Bom> boms = bomRepository.findAll(spec, pageable);
+
+        return boms.map(bomListMapper::toDTO);
+
+    }
 
 
 }

@@ -35,7 +35,7 @@ public class BomPosition {
 //    private Bom parentBom;
 
     // Many BomPositions can reference one InventoryItem (Many-to-One relationship)
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "inventoryItemId", nullable = false)
     private InventoryItem childInventoryItem;
 

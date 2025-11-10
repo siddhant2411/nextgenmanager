@@ -20,6 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -29,6 +31,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@Transactional
 public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProductionTemplateService{
 
     private static final Logger logger = LoggerFactory.getLogger(WorkOrderProductionTemplateServiceImpl.class);
@@ -45,12 +48,17 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
     @Autowired
     private BomService bomService;
 
-    @Autowired
-    private InventoryItemService inventoryItemService;
+    private final InventoryItemService inventoryItemService;
+
 
     @Autowired
     private InventoryInstanceService inventoryInstanceService;
 
+    public WorkOrderProductionTemplateServiceImpl(InventoryItemService inventoryItemService) {
+        this.inventoryItemService = inventoryItemService;
+    }
+
+    @Override
     public WorkOrderProductionTemplate getWorkOrderProductionTemplate(int id){
 
         logger.debug("Fetching workOrderProductionTemplate for ID: {}", id);
@@ -70,6 +78,7 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
 
     ;
 
+    @Override
     public List<WorkOrderProductionTemplate> getWorkOrderProductionTemplateList(){
 
         logger.debug("Fetching all WOPTemplate");
@@ -80,6 +89,8 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         return workOrderProductionTemplateList;
     };
 
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
     public WorkOrderProductionTemplate createWorkOrderProductionTemplate(WorkOrderProductionTemplate workOrderProductionTemplate) {
         logger.debug("Creating new workOrderProductionTemplate: {}", workOrderProductionTemplate);
 
@@ -114,7 +125,7 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
              int inventoryItemId  = bomPosition.getChildInventoryItem().getInventoryItemId();
 
             InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
-            BigDecimal itemCost = (item != null && item.getProductFinanceSettings().getStandardCost() != null)
+            BigDecimal itemCost = (item != null && item.getProductFinanceSettings() != null)
                     ? BigDecimal.valueOf(item.getProductFinanceSettings().getStandardCost())
                     : BigDecimal.ZERO;
 
@@ -142,8 +153,10 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         return savedWorkOrderProductionTemplate;
     }
 
+
+    @Override
     public WorkOrderProductionTemplate updateWorkOrderProductionTemplate(int id, WorkOrderProductionTemplate workOrderProductionTemplate) {
-        logger.info("Attempting to update workOrderProductionTemplate with ID: {}", id);
+        logger.debug("Attempting to update workOrderProductionTemplate with ID: {}", id);
 
         // Fetch existing entity to ensure it exists
         WorkOrderProductionTemplate existing = getWorkOrderProductionTemplate(id);
@@ -171,7 +184,7 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
             int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
             InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
 
-            double standardCost = (item != null && item.getProductFinanceSettings().getStandardCost() != null)
+            double standardCost = (item != null && item.getProductFinanceSettings()!= null)
                     ? item.getProductFinanceSettings().getStandardCost()
                     : 0.0;
 
@@ -207,6 +220,7 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
     }
 
 
+    @Override
     public void deleteWorkOrderProductionTemplate(int id){
 
         logger.debug("Attempting to soft workOrderProductionTemplate with ID: {}", id);

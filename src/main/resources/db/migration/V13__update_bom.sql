@@ -1,0 +1,18 @@
+ALTER TABLE BOM
+ADD COLUMN bomStatus smallint NOT NULL DEFAULT 0,
+ADD COLUMN effectiveFrom TIMESTAMP,
+ADD COLUMN effectiveTo TIMESTAMP,
+ADD COLUMN ecoNumber VARCHAR(256),
+ADD COLUMN changeReason VARCHAR(512),
+ADD COLUMN approvedBy VARCHAR(512),
+ADD COLUMN version INT NOT NULL DEFAULT 1,
+ADD COLUMN approvalComments VARCHAR(1024),
+ADD COLUMN description VARCHAR(1024),
+ADD COLUMN isActive BOOLEAN,
+ADD COLUMN isDefault BOOLEAN,
+ADD COLUMN approvalDate TIMESTAMP;
+
+
+
+UPDATE bom SET bomStatus=0 where bomStatus IS NULL;
+UPDATE bom SET version = 1 WHERE version IS NULL;

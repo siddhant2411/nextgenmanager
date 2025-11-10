@@ -22,11 +22,14 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
     Page<InventoryItem> findAllActiveCategory(@Param("search") String search, Pageable pageable);
 
 
+    InventoryItem findByInventoryItemIdAndDeletedDateIsNull(int id);
+
 //    @Query(value = "SELECT * FROM find_active_inventory_item_by_id(:idParam)", nativeQuery = true)
 //    InventoryItem findByActiveId(@Param("idParam") int id);
 
-    @Query(value = "SELECT * FROM inventoryItem i WHERE i.inventoryItemId = :id AND i.deletedDate IS NULL", nativeQuery = true)
+    @Query("SELECT i FROM InventoryItem i WHERE i.inventoryItemId = :id AND i.deletedDate IS NULL")
     InventoryItem findByActiveId(@Param("id") int id);
+
 
     @Procedure("check_item_code_exists")
     boolean checkItemCodeExists(@Param("itemCodeParam") String itemCode);

@@ -1,7 +1,10 @@
 package com.nextgenmanager.nextgenmanager.items.model;
 
+import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.ObjectIdGenerators;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import jakarta.persistence.*;
 import lombok.*;
@@ -17,6 +20,10 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "inventoryItem")
+@JsonIdentityInfo(
+        generator = ObjectIdGenerators.PropertyGenerator.class,
+        property = "inventoryItemId"
+)
 public class InventoryItem {
 
     @Id
@@ -66,6 +73,10 @@ public class InventoryItem {
     @JsonManagedReference
     private ProductFinanceSettings productFinanceSettings;
 
+    @OneToOne(mappedBy = "parentInventoryItem",
+            fetch = FetchType.LAZY)
+//    @JsonManagedReference
+    private Bom activeBom;
 
     @Transient
     @JsonIgnore

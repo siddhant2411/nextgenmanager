@@ -1,13 +1,16 @@
 package com.nextgenmanager.nextgenmanager.bom.controller;
 
+import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
+import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMResponseTemplateMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BOMTemplateMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
+import com.nextgenmanager.nextgenmanager.bom.service.BomWorkflowService;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProduction;
+import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionTemplateService;
 import org.slf4j.Logger;
@@ -24,10 +27,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 @RestController
@@ -42,6 +41,9 @@ public class BomController {
 
     @Autowired
     private BomService bomService;
+
+    @Autowired
+    private BomWorkflowService bomWorkflowService;
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getBom(@PathVariable Integer id) {
@@ -59,8 +61,8 @@ public class BomController {
                 logger.warn("WorkOrderProductionTemplate not found for BOM ID: {}", id);
             }
 
-            BOMTemplateMapper bomTemplateMapper = new BOMTemplateMapper();
-            bomTemplateMapper.setBom(bom);
+            BOMResponseTemplateMapper bomTemplateMapper = new BOMResponseTemplateMapper();
+            bomTemplateMapper.setBom(BomMapper.toDto(bom));
             bomTemplateMapper.setWorkOrderProductionTemplate(workOrderProductionTemplate);
 
             logger.info("Successfully fetched BOM and template for ID: {}", id);
@@ -80,27 +82,11 @@ public class BomController {
 
     @PostMapping
     public ResponseEntity<?> addBom(@RequestBody BOMTemplateMapper bomTemplateMapper) {
-        logger.info("Received request to add new BOM");
+        logger.debug("Received request to add new BOM");
 
         try {
-            // Save BOM first
-            Bom savedBom = bomService.addBom(bomTemplateMapper.getBom());
-            logger.debug("BOM saved with ID: {}", savedBom.getId());
 
-            // Create associated WorkOrderProductionTemplate
-            WorkOrderProductionTemplate inputTemplate = bomTemplateMapper.getWorkOrderProductionTemplate();
-            inputTemplate.setBom(savedBom); // Ensure linkage
-            WorkOrderProductionTemplate savedTemplate =
-                    workOrderProductionTemplateService.createWorkOrderProductionTemplate(inputTemplate);
-
-            logger.debug("WorkOrderProductionTemplate saved with ID: {}", savedTemplate.getId());
-
-            // Prepare response
-            BOMTemplateMapper newBomTemplateMapper = new BOMTemplateMapper();
-            newBomTemplateMapper.setBom(savedBom);
-            newBomTemplateMapper.setWorkOrderProductionTemplate(savedTemplate);
-
-            logger.info("Successfully created BOM and WorkOrderProductionTemplate with BOM ID: {}", savedBom.getId());
+            BOMTemplateMapper newBomTemplateMapper = bomWorkflowService.createBomWithTemplate(bomTemplateMapper);
             return ResponseEntity.status(HttpStatus.CREATED).body(newBomTemplateMapper);
 
         } catch (Exception e) {
@@ -113,26 +99,8 @@ public class BomController {
 
     @PutMapping("/{id}")
     public ResponseEntity<?> updateBom(@PathVariable Integer id, @RequestBody BOMTemplateMapper bomTemplateMapper) {
-        logger.info("Received request to update BOM with id: {}", id);
-        try {
-            Bom bomToUpdate = bomTemplateMapper.getBom();
-            bomToUpdate.setId(id);
-            Bom updatedBom = bomService.editBom(bomToUpdate);
-
-            WorkOrderProductionTemplate template = bomTemplateMapper.getWorkOrderProductionTemplate();
-            template.setBom(updatedBom);
-            BOMTemplateMapper responseMapper = new BOMTemplateMapper();
-            responseMapper.setBom(updatedBom);
-            if(template.getId()>0) {
-                WorkOrderProductionTemplate updatedTemplate = workOrderProductionTemplateService.updateWorkOrderProductionTemplate(template.getId(), template);
-                responseMapper.setWorkOrderProductionTemplate(updatedTemplate);
-            }else {
-                WorkOrderProductionTemplate workOrderProductionTemplate = workOrderProductionTemplateService.createWorkOrderProductionTemplate(template);
-                responseMapper.setWorkOrderProductionTemplate(workOrderProductionTemplate);
-            }
-
-
-            logger.info("Successfully updated BOM and Template for ID: {}", id);
+        try{
+            BOMTemplateMapper responseMapper = bomWorkflowService.updateBomWithTemplate(id,bomTemplateMapper);
             return ResponseEntity.ok(responseMapper);
 
         } catch (Exception e) {
@@ -196,8 +164,10 @@ public class BomController {
             @RequestParam(defaultValue = "") String search){
         logger.debug("Received request to fetch all BOMs with pagination and sorting");
         try {
-            Page<BomDTO> items = bomService.getAllBom(page, size, sortBy, sortDir,search);
-            return ResponseEntity.ok(items);
+            Page<Bom> items = bomService.getAllBom(page, size, sortBy, sortDir, search);
+            Page<BomDTO> dtoPage = items.map(BomMapper::toDto);
+            return ResponseEntity.ok(dtoPage);
+
         } catch (Exception e) {
             logger.error("Error fetching all BOMs: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
@@ -261,4 +231,9 @@ public class BomController {
         }
     }
 
+
+    @PostMapping("/filter")
+    public Page<BomListDTO> filterInventoryItems(@RequestBody FilterRequest request) {
+        return bomService.filterBom(request);
+    }
 }

@@ -15,6 +15,7 @@ import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepositor
 import com.nextgenmanager.nextgenmanager.items.spec.InventoryItemSpecification;
 import com.nextgenmanager.nextgenmanager.production.repository.ItemCodeRepository;
 import okio.FileMetadata;
+import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
@@ -104,34 +107,11 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     }
 
     @Override
+    @Transactional(propagation = Propagation.REQUIRED)
     public InventoryItem getInventoryItem(int itemId) {
         logger.debug("Fetching data for id: {}", itemId);
         try {
             InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(itemId);
-            List<FileAttachment> fileAttachments = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem",(long) itemId);
-
-            for (FileAttachment fileAttachment : fileAttachments) {
-                Date creationDate = fileAttachment.getPresignedUrlCreationDate();
-                if (creationDate != null) {
-                    Instant creationInstant = creationDate.toInstant();
-                    Instant oneHourAgo = Instant.now().minus(Duration.ofHours(1));
-
-                    if (creationInstant.isBefore(oneHourAgo)) {
-                        fileAttachment.setPresignedUrl(fileStorageService.getFileUrl(fileAttachment.getFileName()));
-                        fileAttachment.setPresignedUrlCreationDate(new Date());
-                    }
-                }else {
-                    fileAttachment.setPresignedUrl(fileStorageService.getFileUrl(fileAttachment.getFileName()));
-                    fileAttachment.setPresignedUrlCreationDate(new Date());
-                }
-            }
-
-
-            if (inventoryItem == null) {
-                logger.warn("No inventory item with id: {}", itemId);
-                throw new IllegalAccessException("Item does not exist");
-            }
-            inventoryItem.setFileAttachments(fileAttachments);
             return inventoryItem;
         } catch (Exception e) {
             logger.error("Error fetching inventory item with id: {}", itemId);

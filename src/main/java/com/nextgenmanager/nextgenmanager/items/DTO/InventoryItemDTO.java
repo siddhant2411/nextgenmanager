@@ -2,20 +2,21 @@ package com.nextgenmanager.nextgenmanager.items.DTO;
 
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 
 /**This DTO is for display the table on UI
  *
- * @author John Doe
+ * @author Siddhant Mavani
  * @version 1.0.0
  * @since 18-10-2025
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
+@Getter
+@Setter
 public class InventoryItemDTO {
 
     private int inventoryItemId;

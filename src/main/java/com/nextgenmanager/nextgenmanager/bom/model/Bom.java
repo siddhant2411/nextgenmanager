@@ -1,8 +1,6 @@
 package com.nextgenmanager.nextgenmanager.bom.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.*;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
 import jakarta.persistence.*;
@@ -24,6 +22,10 @@ import java.util.List;
 @Table(name = "bom")
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+@JsonIdentityInfo(
+        generator = ObjectIdGenerators.PropertyGenerator.class,
+        property = "id"
+)
 public class Bom {
 
     @Id
@@ -33,15 +35,52 @@ public class Bom {
     @Column(name = "bomName")
     private String bomName;
     // Many BOMs can have one parent InventoryItem (Many-to-One relationship)
-    @ManyToOne
-    @JoinColumn(name = "parentInventoryItemId", nullable = false) // The foreign key column name
+
+    @OneToOne
+    @JoinColumn(name = "parentInventoryItemId", nullable = false, unique = true)
+//    @JsonBackReference
     private InventoryItem parentInventoryItem;
 
-    // One BOM can have many child BOMPositions (One-to-Many relationship)
     @OneToMany
-
     @JoinColumn(name = "bomPositionId")
     private List<BomPosition> childInventoryItems; // Assuming BomPosition is another entity
+
+    @Enumerated(EnumType.ORDINAL)
+    @Column(nullable = false)
+    private BomStatus bomStatus;
+
+    @Column(name = "effectiveFrom")
+    private Date effectiveFrom;
+
+    @Column(name = "effectiveTo")
+    private Date effectiveTo;
+
+    @Column(name = "version")
+    private String revision;
+
+    @Column(name = "ecoNumber")
+    private String ecoNumber;
+
+    @Column(name = "changeReason")
+    private String changeReason;
+
+    @Column(name = "approvedBy")
+    private String approvedBy;
+
+    @Column(name = "approvalDate")
+    private Date approvalDate;
+
+    @Column(name = "approvalComments")
+    private String approvalComments;
+
+    @Column(name = "description")
+    private String description;
+
+    @Column(name = "isActive")
+    private Boolean isActive = true;
+
+    @Column(name = "isDefault")
+    private Boolean isDefault;
 
     @CreationTimestamp
     @Column(updatable = false)
