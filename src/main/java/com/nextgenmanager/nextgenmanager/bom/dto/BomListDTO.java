@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.bom.dto;
 
 import com.nextgenmanager.nextgenmanager.bom.model.BomStatus;
+import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import lombok.*;
 
 import java.util.Date;
@@ -25,6 +26,7 @@ public class BomListDTO {
     private String parentItemName;
     private String revision;
     private BomStatus bomStatus;
+    private UOM uom;
     private String parentDrawingNumber;
     private Date effectiveFrom;
     private Date effectiveTo;

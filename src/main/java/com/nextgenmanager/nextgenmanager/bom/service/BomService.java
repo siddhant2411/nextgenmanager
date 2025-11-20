@@ -42,4 +42,6 @@ public interface BomService {
 
     public Page<BomListDTO> filterBom(FilterRequest request);
 
+    public Page<BomListDTO> searchActiveBom(String request);
+
 }

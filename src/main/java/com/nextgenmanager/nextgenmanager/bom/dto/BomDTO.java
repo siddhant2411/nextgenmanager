@@ -16,8 +16,9 @@ public class BomDTO {
     private int id;
     private String bomName;
     private InventoryItemDTO parentInventoryItem;
-    private List<BomPositionResponse> childInventoryItems;
+    private List<BomListDTO> childrenBoms;
     private String bomStatus;
+    private String revision;
     private Date effectiveFrom;
     private Date effectiveTo;
     private String ecoNumber;

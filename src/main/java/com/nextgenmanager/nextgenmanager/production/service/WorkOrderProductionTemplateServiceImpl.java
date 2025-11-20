@@ -119,19 +119,21 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         Bom existingBom = bomService.getBom(bomId);  // Returns a managed entity
         workOrderProductionTemplate.setBom(existingBom);
         // 2. Calculate total BOM cost
-        List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
+//        List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
+
+//        TODO: Fix this with Bom logic instead of inventoryItem logic
         BigDecimal totalBomCost = BigDecimal.ZERO;
-        for (BomPosition bomPosition : bomPositionList) {
-             int inventoryItemId  = bomPosition.getChildInventoryItem().getInventoryItemId();
-
-            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
-            BigDecimal itemCost = (item != null && item.getProductFinanceSettings() != null)
-                    ? BigDecimal.valueOf(item.getProductFinanceSettings().getStandardCost())
-                    : BigDecimal.ZERO;
-
-            totalBomCost = totalBomCost.add(itemCost);
-
-        }
+//        for (BomPosition bomPosition : bomPositionList) {
+//             int inventoryItemId  = bomPosition.getChildInventoryItem().getInventoryItemId();
+//
+//            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
+//            BigDecimal itemCost = (item != null && item.getProductFinanceSettings() != null)
+//                    ? BigDecimal.valueOf(item.getProductFinanceSettings().getStandardCost())
+//                    : BigDecimal.ZERO;
+//
+//            totalBomCost = totalBomCost.add(itemCost);
+//
+//        }
         workOrderProductionTemplate.setEstimatedCostOfBom(totalBomCost);
 
         // 3. Calculate overhead cost and total cost
@@ -178,22 +180,23 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
 
         // 2. Calculate total BOM cost
         int bomId = workOrderProductionTemplate.getBom().getId();
-        List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
+//        List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
+//        TODO: same way as create method
         BigDecimal totalBomCost = BigDecimal.ZERO;
-        for (BomPosition bomPosition : bomPositionList) {
-            int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
-            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
-
-            double standardCost = (item != null && item.getProductFinanceSettings()!= null)
-                    ? item.getProductFinanceSettings().getStandardCost()
-                    : 0.0;
-
-            BigDecimal itemCost = BigDecimal.valueOf(standardCost);
-
-
-            BigDecimal quantity = BigDecimal.valueOf(bomPosition.getQuantity());  // quantity from BOM
-            totalBomCost = totalBomCost.add(itemCost.multiply(quantity));  // sum (unitCost * quantity)
-        }
+//        for (BomPosition bomPosition : bomPositionList) {
+//            int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
+//            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
+//
+//            double standardCost = (item != null && item.getProductFinanceSettings()!= null)
+//                    ? item.getProductFinanceSettings().getStandardCost()
+//                    : 0.0;
+//
+//            BigDecimal itemCost = BigDecimal.valueOf(standardCost);
+//
+//
+//            BigDecimal quantity = BigDecimal.valueOf(bomPosition.getQuantity());  // quantity from BOM
+//            totalBomCost = totalBomCost.add(itemCost.multiply(quantity));  // sum (unitCost * quantity)
+//        }
         workOrderProductionTemplate.setEstimatedCostOfBom(totalBomCost);
 
 

@@ -1,12 +1,14 @@
 package com.nextgenmanager.nextgenmanager.bom.mapper;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionResponse;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 
+import java.util.Collections;
 import java.util.stream.Collectors;
 
 public class BomMapper {
@@ -18,14 +20,15 @@ public class BomMapper {
                 .id(bom.getId())
                 .bomName(bom.getBomName())
                 .parentInventoryItem(toDto(bom.getParentInventoryItem()))
-                .childInventoryItems(
-                        bom.getChildInventoryItems() != null ?
-                                bom.getChildInventoryItems().stream()
-                                        .map(BomMapper::toDto)
+                .childrenBoms(
+                        bom.getPositions() != null ?
+                                bom.getPositions().stream()
+                                        .map(pos -> toChildBomDto(pos.getChildBom()))
                                         .collect(Collectors.toList())
-                                : null
+                                : Collections.emptyList()
                 )
                 .bomStatus(bom.getBomStatus() != null ? bom.getBomStatus().name() : null)
+                .revision(bom.getRevision())
                 .effectiveFrom(bom.getEffectiveFrom())
                 .effectiveTo(bom.getEffectiveTo())
                 .ecoNumber(bom.getEcoNumber())
@@ -39,6 +42,24 @@ public class BomMapper {
                 .creationDate(bom.getCreationDate())
                 .updatedDate(bom.getUpdatedDate())
                 .deletedDate(bom.getDeletedDate())
+                .build();
+    }
+
+
+    public static BomListDTO toChildBomDto(Bom child) {
+        if (child == null) return null;
+
+        InventoryItem item = child.getParentInventoryItem();
+
+        return BomListDTO.builder()
+                .id(child.getId())
+                .bomName(child.getBomName())
+                .revision(child.getRevision())
+                .parentDrawingNumber(item!=null ? (item.getProductSpecification()!=null?
+                        item.getProductSpecification().getDrawingNumber():null):null)
+                .parentItemCode(item != null ? item.getItemCode() : null)
+                .parentItemName(item != null ? item.getName() : null)
+                .uom(item != null ? item.getUom() : null)
                 .build();
     }
 
@@ -63,7 +84,7 @@ public class BomMapper {
                 .id(position.getId())
                 .position(position.getPosition())
                 .quantity(position.getQuantity())
-                .childInventoryItem(toDto(position.getChildInventoryItem()))
+                .childBom(position.getChildBom())
                 .build();
     }
 

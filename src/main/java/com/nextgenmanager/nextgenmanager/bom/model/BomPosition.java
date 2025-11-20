@@ -29,15 +29,13 @@ public class BomPosition {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private int id;
 
-    // Many BomPositions belong to one BOM (Many-to-One relationship)
-//    @ManyToOne(fetch = FetchType.LAZY)
-//    @JoinColumn(name = "bomId", nullable = false)
-//    private Bom parentBom;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parentBomId", nullable = false)
+    private Bom parentBom;
 
-    // Many BomPositions can reference one InventoryItem (Many-to-One relationship)
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "inventoryItemId", nullable = false)
-    private InventoryItem childInventoryItem;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "childBomId", nullable = false)
+    private Bom childBom;
 
     @Column(name = "position")
     private int position;

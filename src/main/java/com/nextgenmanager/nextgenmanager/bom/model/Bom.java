@@ -34,16 +34,13 @@ public class Bom {
 
     @Column(name = "bomName")
     private String bomName;
-    // Many BOMs can have one parent InventoryItem (Many-to-One relationship)
 
-    @OneToOne
-    @JoinColumn(name = "parentInventoryItemId", nullable = false, unique = true)
-//    @JsonBackReference
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parentInventoryItemId", nullable = false)
     private InventoryItem parentInventoryItem;
 
-    @OneToMany
-    @JoinColumn(name = "bomPositionId")
-    private List<BomPosition> childInventoryItems; // Assuming BomPosition is another entity
+    @OneToMany(mappedBy = "parentBom", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BomPosition> positions;
 
     @Enumerated(EnumType.ORDINAL)
     @Column(nullable = false)
@@ -81,6 +78,18 @@ public class Bom {
 
     @Column(name = "isDefault")
     private Boolean isDefault;
+
+    @Column(nullable = false)
+    private Integer versionNumber;
+
+    @Column(nullable = false)
+    private Boolean isActiveVersion = false;
+
+    @Column(nullable = false)
+    private String versionGroup;
+
+
+
 
     @CreationTimestamp
     @Column(updatable = false)

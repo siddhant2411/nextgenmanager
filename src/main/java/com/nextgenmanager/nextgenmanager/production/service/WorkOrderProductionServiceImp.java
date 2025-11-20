@@ -148,51 +148,52 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
         newWorkOrderProduction.setOverheadCostPercentage(template.getOverheadCostPercentage());
         newWorkOrderProduction.setOverheadCostValue(template.getOverheadCostValue());
 
-        List<BomPosition> bomPositions = bom.getChildInventoryItems();
+//        TODO:  Fix this with BOM
+        List<BomPosition> bomPositions = new ArrayList<>();
         List<WorkOrderInventoryInstanceList> allInstanceLists = new ArrayList<>();
         List<WorkOrderInventoryInstanceList> pendingInstanceLists = new ArrayList<>();
 
-        for (BomPosition bomPos : bomPositions) {
-            InventoryItem inventoryItem = bomPos.getChildInventoryItem();
-            double totalRequiredQty = bomPos.getQuantity() * (newWorkOrderProduction.getQuantity() != 0 ? newWorkOrderProduction.getQuantity() : 1);
-
-            WorkOrderInventoryInstanceList instanceListEntry = new WorkOrderInventoryInstanceList();
-            instanceListEntry.setInventoryItem(inventoryItem);
-            instanceListEntry.setWorkOrderProduction(newWorkOrderProduction);
-
-            try {
-                double availableQty = inventoryItem.getProductInventorySettings().getAvailableQuantity();
-                List<InventoryInstance> bookedInstances = new ArrayList<>();
-
-                if (availableQty >= totalRequiredQty) {
-                    logger.info("Booking available quantity: {} for item ID: {}", totalRequiredQty, inventoryItem.getInventoryItemId());
-                    bookedInstances = inventoryInstanceService.bookInventoryInstance(inventoryItem, totalRequiredQty);
-                    instanceListEntry.setInventoryStatus(InventoryStatus.AVAILABLE);
-                    instanceListEntry.setInventoryInstanceList(bookedInstances);
-                } else {
-                    logger.warn("Only {} available for item ID: {}, required: {}", availableQty, inventoryItem.getInventoryItemId(), totalRequiredQty);
-
-                    // Book what is available
-                    if (availableQty > 0) {
-                        bookedInstances = inventoryInstanceService.bookInventoryInstance(inventoryItem, availableQty);
-                    }
-
-                    // Request remaining
-                    double remainingQty = totalRequiredQty - availableQty;
-//                    List<InventoryInstance> requestedInstances = inventoryInstanceService.requestInstance(inventoryItem, remainingQty);
+//        for (BomPosition bomPos : bomPositions) {
+//            InventoryItem inventoryItem = bomPos.getChildInventoryItem();
+//            double totalRequiredQty = bomPos.getQuantity() * (newWorkOrderProduction.getQuantity() != 0 ? newWorkOrderProduction.getQuantity() : 1);
 //
-//                    bookedInstances.addAll(requestedInstances);
-                    instanceListEntry.setInventoryStatus(InventoryStatus.PENDING);
-                    pendingInstanceLists.add(instanceListEntry);
-                }
-
-                instanceListEntry.setInventoryInstanceList(bookedInstances);
-                allInstanceLists.add(instanceListEntry);
-            } catch (Exception e) {
-                logger.error("Error while processing item ID {}: {}", inventoryItem.getInventoryItemId(), e.getMessage(), e);
-                throw e;
-            }
-        }
+//            WorkOrderInventoryInstanceList instanceListEntry = new WorkOrderInventoryInstanceList();
+//            instanceListEntry.setInventoryItem(inventoryItem);
+//            instanceListEntry.setWorkOrderProduction(newWorkOrderProduction);
+//
+//            try {
+//                double availableQty = inventoryItem.getProductInventorySettings().getAvailableQuantity();
+//                List<InventoryInstance> bookedInstances = new ArrayList<>();
+//
+//                if (availableQty >= totalRequiredQty) {
+//                    logger.info("Booking available quantity: {} for item ID: {}", totalRequiredQty, inventoryItem.getInventoryItemId());
+//                    bookedInstances = inventoryInstanceService.bookInventoryInstance(inventoryItem, totalRequiredQty);
+//                    instanceListEntry.setInventoryStatus(InventoryStatus.AVAILABLE);
+//                    instanceListEntry.setInventoryInstanceList(bookedInstances);
+//                } else {
+//                    logger.warn("Only {} available for item ID: {}, required: {}", availableQty, inventoryItem.getInventoryItemId(), totalRequiredQty);
+//
+//                    // Book what is available
+//                    if (availableQty > 0) {
+//                        bookedInstances = inventoryInstanceService.bookInventoryInstance(inventoryItem, availableQty);
+//                    }
+//
+//                    // Request remaining
+//                    double remainingQty = totalRequiredQty - availableQty;
+////                    List<InventoryInstance> requestedInstances = inventoryInstanceService.requestInstance(inventoryItem, remainingQty);
+////
+////                    bookedInstances.addAll(requestedInstances);
+//                    instanceListEntry.setInventoryStatus(InventoryStatus.PENDING);
+//                    pendingInstanceLists.add(instanceListEntry);
+//                }
+//
+//                instanceListEntry.setInventoryInstanceList(bookedInstances);
+//                allInstanceLists.add(instanceListEntry);
+//            } catch (Exception e) {
+//                logger.error("Error while processing item ID {}: {}", inventoryItem.getInventoryItemId(), e.getMessage(), e);
+//                throw e;
+//            }
+//        }
 
         newWorkOrderProduction.setWorkOrderInventoryInstanceLists(allInstanceLists);
         if (pendingInstanceLists.isEmpty()) {
@@ -265,8 +266,8 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
 
 
     private WorkOrderProductionDTO convertToDTO(WorkOrderProduction workOrderProduction){
-//      TODO: Test this method also check how to handle bom if bom is not available
-        List<BomPosition> bomPositionList = workOrderProduction.getWorkOrderProductionTemplate().getBom().getChildInventoryItems();
+//      TODO:  Fix this with BOM
+        List<BomPosition> bomPositionList = new ArrayList<>();
         WorkOrderProductionDTO dto = new WorkOrderProductionDTO();
         dto.setId(workOrderProduction.getId());
         dto.setSalesOrderNumber(

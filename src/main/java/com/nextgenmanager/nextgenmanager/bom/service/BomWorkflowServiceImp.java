@@ -49,7 +49,7 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
             // Prepare response
             BOMTemplateMapper newBomTemplateMapper = new BOMTemplateMapper();
             newBomTemplateMapper.setBom(savedBom);
-            newBomTemplateMapper.setWorkOrderProductionTemplate(savedTemplate);
+//            newBomTemplateMapper.setWorkOrderProductionTemplate(savedTemplate);
 
             logger.info("Successfully created BOM and WorkOrderProductionTemplate with BOM ID: {}", savedBom.getId());
             return newBomTemplateMapper;

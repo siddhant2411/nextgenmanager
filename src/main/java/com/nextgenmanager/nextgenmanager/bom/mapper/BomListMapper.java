@@ -12,5 +12,6 @@ public interface BomListMapper {
     @Mapping(target = "parentItemCode", source = "parentInventoryItem.itemCode")
     @Mapping(target = "parentItemName", source = "parentInventoryItem.name")
     @Mapping(target = "parentDrawingNumber", source = "parentInventoryItem.productSpecification.drawingNumber")
+    @Mapping(target = "uom", source = "parentInventoryItem.uom")
     BomListDTO toDTO(Bom bom);
 }

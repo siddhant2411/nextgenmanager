@@ -36,8 +36,6 @@ public class BomController {
 
     private static final Logger logger = LoggerFactory.getLogger(BomController.class);
 
-    @Autowired
-    private WorkOrderProductionTemplateService workOrderProductionTemplateService;
 
     @Autowired
     private BomService bomService;
@@ -235,5 +233,10 @@ public class BomController {
     @PostMapping("/filter")
     public Page<BomListDTO> filterInventoryItems(@RequestBody FilterRequest request) {
         return bomService.filterBom(request);
+    }
+
+    @PostMapping("/active/search")
+    public Page<BomListDTO> searchActiveBom(@RequestBody String request) {
+        return bomService.searchActiveBom(request);
     }
 }

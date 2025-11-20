@@ -73,10 +73,6 @@ public class InventoryItem {
     @JsonManagedReference
     private ProductFinanceSettings productFinanceSettings;
 
-    @OneToOne(mappedBy = "parentInventoryItem",
-            fetch = FetchType.LAZY)
-//    @JsonManagedReference
-    private Bom activeBom;
 
     @Transient
     @JsonIgnore
