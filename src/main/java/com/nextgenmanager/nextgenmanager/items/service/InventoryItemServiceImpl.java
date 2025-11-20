@@ -112,6 +112,8 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         logger.debug("Fetching data for id: {}", itemId);
         try {
             InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(itemId);
+            List<FileAttachment> metadataList = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem", (long) itemId);
+            inventoryItem.setFileAttachments(metadataList);
             return inventoryItem;
         } catch (Exception e) {
             logger.error("Error fetching inventory item with id: {}", itemId);
