@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
-import com.nextgenmanager.nextgenmanager.bom.dto.BOMTemplateMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingRequestMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -9,8 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 public interface BomWorkflowService {
 
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
-    public BOMTemplateMapper createBomWithTemplate(BOMTemplateMapper bomTemplateMapper);
+    public BOMRoutingMapper createBomWithRouting(BOMRoutingRequestMapper bomRoutingRequestMapper);
 
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
-    public BOMTemplateMapper updateBomWithTemplate(int bomId,BOMTemplateMapper bomTemplateMapper);
+    public BOMRoutingMapper updateBomWithTemplate(int bomId,BOMRoutingRequestMapper bomTemplateMapper);
 }

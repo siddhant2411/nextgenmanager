@@ -1,9 +1,16 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
 import com.nextgenmanager.nextgenmanager.bom.controller.BomController;
-import com.nextgenmanager.nextgenmanager.bom.dto.BOMTemplateMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingRequestMapper;
+import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
+import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionTemplateResponseDTO;
+import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
+import com.nextgenmanager.nextgenmanager.production.model.Routing;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
+import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionTemplateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,31 +35,37 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
     @Autowired
     private WorkOrderProductionTemplateService workOrderProductionTemplateService;
 
+    @Autowired
+    private RoutingService routingService;
+
+    @Autowired
+    private RoutingMapper routingMapper;
+
     @Override
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
-    public BOMTemplateMapper createBomWithTemplate(BOMTemplateMapper bomTemplateMapper) {
+    public BOMRoutingMapper createBomWithRouting(BOMRoutingRequestMapper bomRoutingRequestMapper) {
 
         logger.debug("Received request to add new BOM");
         try {
 
-            Bom savedBom = bomService.addBom(bomTemplateMapper.getBom());
+            Bom savedBom = bomService.addBom(bomRoutingRequestMapper.getBom());
             logger.debug("BOM saved with ID: {}", savedBom.getId());
 
             // Create associated WorkOrderProductionTemplate
-            WorkOrderProductionTemplate inputTemplate = bomTemplateMapper.getWorkOrderProductionTemplate();
-            inputTemplate.setBom(savedBom); // Ensure linkage
-            WorkOrderProductionTemplate savedTemplate =
-                    workOrderProductionTemplateService.createWorkOrderProductionTemplate(inputTemplate);
+            Routing routing = bomRoutingRequestMapper.getRouting();
+            routing.setBom(savedBom); // Ensure linkage
+            RoutingDto savedRouting =
+                    routingService.createOrUpdateRouting(savedBom.getId(),routingMapper.toDTO(routing),"SYSTEM");
 
-            logger.debug("WorkOrderProductionTemplate saved with ID: {}", savedTemplate.getId());
+            logger.debug("WorkOrderProductionTemplate saved with ID: {}", savedRouting.getId());
 
             // Prepare response
-            BOMTemplateMapper newBomTemplateMapper = new BOMTemplateMapper();
-            newBomTemplateMapper.setBom(savedBom);
-//            newBomTemplateMapper.setWorkOrderProductionTemplate(savedTemplate);
+            BOMRoutingMapper newBomRoutingMapper = new BOMRoutingMapper();
+            newBomRoutingMapper.setBom(BomMapper.toDto(savedBom));
+            newBomRoutingMapper.setRouting(savedRouting);
 
             logger.info("Successfully created BOM and WorkOrderProductionTemplate with BOM ID: {}", savedBom.getId());
-            return newBomTemplateMapper;
+            return newBomRoutingMapper;
 
         } catch (Exception e) {
             logger.error("Failed to create BOM: {}", e.getMessage(), e);
@@ -64,24 +77,19 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
-    public BOMTemplateMapper updateBomWithTemplate(int bomId,BOMTemplateMapper bomTemplateMapper) {
+    public BOMRoutingMapper updateBomWithTemplate(int bomId,BOMRoutingRequestMapper bomTemplateMapper) {
         logger.debug("Received request to update BOM with id: {}", bomId);
         try {
             Bom bomToUpdate = bomTemplateMapper.getBom();
             bomToUpdate.setId(bomId);
-            Bom updatedBom = bomService.editBom(bomToUpdate);
+            Bom updatedBom = bomService.editBom(bomId,bomToUpdate);
 
-            WorkOrderProductionTemplate template = bomTemplateMapper.getWorkOrderProductionTemplate();
-            template.setBom(updatedBom);
-            BOMTemplateMapper responseMapper = new BOMTemplateMapper();
-            responseMapper.setBom(updatedBom);
-            if(template.getId()>0) {
-                WorkOrderProductionTemplate updatedTemplate = workOrderProductionTemplateService.updateWorkOrderProductionTemplate(template.getId(), template);
-                responseMapper.setWorkOrderProductionTemplate(updatedTemplate);
-            }else {
-                WorkOrderProductionTemplate workOrderProductionTemplate = workOrderProductionTemplateService.createWorkOrderProductionTemplate(template);
-                responseMapper.setWorkOrderProductionTemplate(workOrderProductionTemplate);
-            }
+            Routing routing = bomTemplateMapper.getRouting();
+            routing.setBom(updatedBom);
+            RoutingDto routingDto = routingService.createOrUpdateRouting(bomId,routingMapper.toDTO(routing),"SYSTEM");
+            BOMRoutingMapper responseMapper = new BOMRoutingMapper();
+            responseMapper.setBom(BomMapper.toDto(updatedBom));
+            responseMapper.setRouting(routingDto);
 
 
             logger.info("Successfully updated BOM and Template for ID: {}", bomId);

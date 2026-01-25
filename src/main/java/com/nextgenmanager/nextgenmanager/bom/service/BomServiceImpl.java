@@ -1,12 +1,11 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
-import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.*;
 import com.nextgenmanager.nextgenmanager.bom.events.BomCreatedEvent;
 import com.nextgenmanager.nextgenmanager.bom.events.BomModifiedEvent;
 import com.nextgenmanager.nextgenmanager.bom.events.BomStatusChangedEvent;
 import com.nextgenmanager.nextgenmanager.bom.mapper.BomListMapper;
 import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
-import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
@@ -16,17 +15,25 @@ import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.bom.spec.BomSpecifications;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
+import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.common.spec.GenericSpecification;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
+import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionTemplateRepository;
+import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
+import io.minio.GetObjectResponse;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
-import org.hibernate.Hibernate;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +46,11 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,7 +58,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+
 
 @Service
 @Transactional
@@ -72,6 +83,14 @@ public class BomServiceImpl implements BomService {
     @Autowired
     private BomAttachmentRepository bomAttachmentRepository;
 
+    @Autowired
+    private FileStorageService fileStorageService;
+
+
+    @Autowired
+    private RoutingService routingService;
+
+
     private final  DomainEventPublisher domainEventPublisher;
 
 
@@ -86,7 +105,7 @@ public class BomServiceImpl implements BomService {
     );
 
     private static final Map<BomStatus, Set<BomStatus>> allowedTransitions = Map.of(
-            BomStatus.DRAFT, Set.of(BomStatus.PENDING_APPROVAL),
+            BomStatus.DRAFT, Set.of(BomStatus.PENDING_APPROVAL,BomStatus.ARCHIVED),
             BomStatus.PENDING_APPROVAL, Set.of(BomStatus.APPROVED),
             BomStatus.APPROVED, Set.of(BomStatus.ACTIVE),
             BomStatus.ACTIVE, Set.of(BomStatus.INACTIVE, BomStatus.OBSOLETE),
@@ -100,6 +119,17 @@ public class BomServiceImpl implements BomService {
         this.bomListMapper = bomListMapper;
     }
 
+
+    public List<BomPosition> getBomPositions(int bomId){
+        Bom bom = getBom(bomId);
+        return bom.getPositions();
+    }
+
+    public List<BomPositionDTO> getBomPositionsDTO(int bomId){
+        Bom bom = getBom(bomId);
+        BomDTO bomDTO = BomMapper.toDto(bom);
+        return bomDTO.getPositions();
+    }
 
     @Override
     @Transactional
@@ -184,16 +214,15 @@ public class BomServiceImpl implements BomService {
 
 
     @Transactional
-    public Bom changeBomStatus(int bomId, BomStatus newBomStatus, String approvalComment) {
+    @Override
+    public BomDTO changeBomStatus(int bomId, BomStatusChangeRequest bomStatusChangeRequest) {
 
         Bom bom = getBom(bomId);
         BomStatus currentStatus = bom.getBomStatus();
-
-        if (!bom.getIsActive()) {
-            throw new IllegalStateException(
-                    "Cannot change state of inactive BOM: " + bom.getId()
-            );
-        }
+        BomStatus newBomStatus = bomStatusChangeRequest.getNextStatus();
+        String approvalComment = bomStatusChangeRequest.getApprovalComments();
+        String changeReason = bomStatusChangeRequest.getChangeReason();
+        String ecoNumber  = bomStatusChangeRequest.getEcoNumber();
 
         // Validate transition
         checkBomStatusTransition(
@@ -205,6 +234,8 @@ public class BomServiceImpl implements BomService {
         try {
 
             bom.setBomStatus(newBomStatus);
+            bom.setChangeReason(changeReason);
+            bom.setEcoNumber(ecoNumber);
 
             // Versioning logic
             if (newBomStatus == BomStatus.APPROVED) {
@@ -222,9 +253,24 @@ public class BomServiceImpl implements BomService {
 
             if(newBomStatus == BomStatus.ACTIVE){
                 bom.setIsActiveVersion(true);
+                InventoryItem inventoryItem = inventoryItemService.getInventoryItem(bom.getParentInventoryItem().getInventoryItemId());
+                String itemCode  = inventoryItem.getItemCode();
+                Specification<Bom> spec = Specification.where(BomSpecifications.hasIsActive(true))
+                        .and(Specification.where(BomSpecifications.hasParentItemCode(itemCode)));
+                List<Bom> activeBOMs = bomRepository.findAll(spec);
+                
+                for(Bom activeBom: activeBOMs){
+                    activeBom.setBomStatus(BomStatus.INACTIVE);
+                    activeBom.setIsActive(false);
+                    activeBom.setIsActiveVersion(false);
+                }
+                bomRepository.saveAll(activeBOMs);
+                bom.setIsActiveVersion(true);
+                bom.setIsActive(true);
+                bom.setBomStatus(newBomStatus);
                 bom.setEffectiveFrom(new Date());
             }
-            if(newBomStatus==BomStatus.INACTIVE){
+            if(newBomStatus== BomStatus.INACTIVE){
                 bom.setEffectiveTo(new Date());
             }
 
@@ -233,11 +279,32 @@ public class BomServiceImpl implements BomService {
             // Publish audit / lifecycle event
             domainEventPublisher.publish(new BomStatusChangedEvent(saved.getId(),currentStatus,newBomStatus));
 
-            return saved;
+            return BomMapper.toDto(bom);
 
-        } catch (Exception e) {
+        }
+
+        catch (Exception e) {
             throw new RuntimeException("Failed to change BOM status", e);
         }
+    }
+
+    @Override
+    public List<FileAttachment> getAttachments(int bomId) {
+        List<FileAttachment> attachmentList = fileStorageService.findAttachmentsByTypeAndId("bom", (long) bomId);
+        return attachmentList;
+    }
+
+    @Override
+    public FileAttachment getAttachment(long fileId) {
+        return fileStorageService.getFileById(fileId);
+    }
+
+    @Override
+    public void uploadFile(int bomId, MultipartFile file) throws Exception {
+
+        Bom bom = getBom(bomId);
+        fileStorageService.uploadFile(file,"bom","bom",(long)bomId,"SYSTEM");
+
     }
 
 
@@ -288,22 +355,7 @@ public class BomServiceImpl implements BomService {
         return fileName.replaceAll("(?i)_v\\d+(\\.\\w+)$", "$1"); // Extract base filename
     }
 
-    private List<BomAttachment> getLatestAttachments(Bom bom) {
-        List<BomAttachment> attachments = bom.getBomAttachmentList();
-        if (attachments == null || attachments.isEmpty()) {
-            return Collections.emptyList();
-        }
 
-        return attachments.stream()
-                .filter(att -> att != null && extractVersion(att).isPresent()) // Ensure att is not null and version is present
-                .collect(Collectors.groupingBy(att -> extractBaseFileName(att.getFileName())))
-                .values().stream()
-                .map(list -> list.stream()
-                        .filter(Objects::nonNull)
-                        .max(Comparator.comparing(att -> extractVersion(att).orElse(0))))
-                .flatMap(Optional::stream)
-                .collect(Collectors.toList());
-    }
 
 
     @Override
@@ -329,17 +381,6 @@ public class BomServiceImpl implements BomService {
                     return new ResourceNotFoundException("BOM not found with ID: " + id);
                 });
 
-        // Ensure required lazy relations are initialized
-        Hibernate.initialize(bom.getParentInventoryItem());
-//        TODO:  Fix this with BOM
-//        Hibernate.initialize(bom.getChildInventoryItems());
-        Hibernate.initialize(bom.getBomAttachmentList());
-
-        // Fetch latest attachments before mapping
-        List<BomAttachment> latestAttachments = getLatestAttachments(bom);
-        bom.setBomAttachmentList(latestAttachments);
-
-        // Map entity to DTO
         BomDTO response = BomMapper.toDto(bom);
 
         logger.info("Successfully mapped BOM with ID {} to DTO", id);
@@ -372,11 +413,11 @@ public class BomServiceImpl implements BomService {
 
     @Override
     @Transactional
-    public Bom editBom(Bom bom) {
-        logger.debug("Editing BOM id={}", bom.getId());
+    public Bom editBom(int bomId,Bom bom) {
+        logger.debug("Editing BOM id={}", bomId);
 
         // Verify BOM exists
-        Bom existingBom = bomRepository.findById(bom.getId())
+        Bom existingBom = bomRepository.findById(bomId)
                 .orElseThrow(() -> new ResourceNotFoundException("BOM not found with ID: " + bom.getId()));
 
         // Only editable in DRAFT or PENDING_APPROVAL
@@ -554,38 +595,54 @@ public class BomServiceImpl implements BomService {
 
     @Override
     @Transactional
-    public void deleteAttachment(Long fileId) throws IOException {
-        Optional<BomAttachment> attachmentOpt = bomAttachmentRepository.findById(fileId);
+    public void deleteAttachment(int bomId, Long fileId) throws Exception {
 
-        if (attachmentOpt.isEmpty()) {
-            logger.warn("File ID not found: {}", fileId);
-            throw new ResourceNotFoundException("File not found with ID: " + fileId);
-        }
-
-        BomAttachment attachment = attachmentOpt.get();
-        Pair<String, String> prefixAndExtension = extractBaseFilePrefixAndExtension(attachment.getFileName());
-
-        String prefix = prefixAndExtension.getLeft();
-        String extension = prefixAndExtension.getRight();
-
-        // Find all versions with same prefix & extension
-        List<BomAttachment> allVersions = bomAttachmentRepository.findAllVersionsByPrefixAndExtension(prefix, extension);
-
-        for (BomAttachment file : allVersions) {
-            Path filePath = getFilePath(file.getId());
-            try {
-                Files.deleteIfExists(filePath);
-                logger.info("Deleted file: {}", filePath);
-            } catch (IOException ex) {
-                logger.error("Failed to delete file: {}. Error: {}", filePath, ex.getMessage());
-            }
-        }
-
-        // Delete all versions from DB
-        bomAttachmentRepository.deleteAllVersionsByPrefixAndExtension(prefix, extension);
-        logger.info("Deleted all versions of file with prefix: {} and extension: {}", prefix, extension);
+        fileStorageService.deleteAttachment(fileId);
+        logger.info("File: {} deleted for bomId: {} ",fileId,bomId);
     }
 
+    @Override
+    public GetObjectResponse downloadBomAttachment(Long fileId) {
+
+        try {
+            GetObjectResponse file =  fileStorageService.downloadById(fileId);
+            logger.info("File with id: {} requested for download",fileId);
+            return file;
+        }
+        catch (Exception e){
+            logger.error("Something went wrong while downloading file: {} "+e,fileId);
+            throw new RuntimeException(e.getMessage());
+        }
+
+    }
+
+    @Override
+    public BOMRoutingMapper duplicateBom(int bomId) {
+        try{
+            Bom orginalBom = getBom(bomId);
+            Bom bomCopy = new Bom();
+
+            bomCopy.setBomName(orginalBom.getBomName());
+            bomCopy.setParentInventoryItem(orginalBom.getParentInventoryItem());
+            bomCopy.setPositions(bomCopy.getPositions());
+            bomCopy.setDescription(bomCopy.getDescription());
+            bomCopy.setVersionGroup(bomCopy.getVersionGroup());
+
+            Bom newBom = addBom(bomCopy);
+
+            RoutingDto routingDto = routingService.createOrUpdateRouting(newBom.getId(),routingService.getByBom(orginalBom.getId()),"SYSTEM");
+            BomDTO bomDTO = BomMapper.toDto(newBom);
+
+            BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
+            bomRoutingMapper.setBom(bomDTO);
+            bomRoutingMapper.setRouting(routingDto);
+            return bomRoutingMapper;
+
+        }catch (ResourceNotFoundException e){
+            logger.error("Bom not found with id : {} to duplicate ",bomId);
+            throw new RuntimeException("Bom not found with id : "+bomId+"  to duplicate",e);
+        }
+    }
 
     private Pair<String, String> extractBaseFilePrefixAndExtension(String fileName) {
         Pattern pattern = Pattern.compile("^(.*)_v\\d+\\.(\\w+)$"); // Extracts prefix and extension
@@ -703,7 +760,7 @@ public class BomServiceImpl implements BomService {
         if (current.getId() == target.getId()) {
             return true;   // cycle
         }
-
+        current = getBom(current.getId());
         if (current.getPositions() == null) return false;
 
         for (BomPosition pos : current.getPositions()) {
@@ -721,13 +778,14 @@ public class BomServiceImpl implements BomService {
         Sort sort = Sort.by(Sort.Direction.ASC, "parentInventoryItem.name");
         Pageable pageable = PageRequest.of(0, 10, sort);
 
-        logger.info("Search text = [{}]", request);
+        logger.debug("Search text = [{}]", request);
 
 
 
         Specification<Bom> spec = Specification.where(BomSpecifications.hasIsActive(true))
                 .and(BomSpecifications.hasIsActiveVersion(true))
-                .and(BomSpecifications.isLatestVersion());
+                .and(BomSpecifications.isLatestVersion())
+                .and(BomSpecifications.isNotDeleted());
 
         if (request!=null) {
             request = request.trim().replace("\"", "").toLowerCase();
@@ -739,6 +797,134 @@ public class BomServiceImpl implements BomService {
         return boms.map(bomListMapper::toDTO);
     }
 
+
+    @Override
+    public BigDecimal calculateBomCost(int bomId) {
+
+        Bom rootBom = getBom(bomId);  // fetch managed entity
+
+        // Use recursion with cycle-protection to avoid infinite loops
+        Set<Integer> visited = new HashSet<>();
+
+        return calculateBomCostRecursive(rootBom, visited)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+
+    private BigDecimal calculateBomCostRecursive(Bom bom, Set<Integer> visited) {
+
+        if (bom == null) {
+            return BigDecimal.ZERO;
+        }
+
+        // Detect circular BOMs
+        if (visited.contains(bom.getId())) {
+            throw new IllegalStateException("Circular BOM detected at BOM id: " + bom.getId());
+        }
+
+        visited.add(bom.getId());
+
+        BigDecimal total = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+        List<BomPosition> positions = getBomPositions(bom.getId());
+
+        for (BomPosition pos : positions) {
+
+            BigDecimal qty = BigDecimal.valueOf(
+                    Optional.of(pos.getQuantity()).orElse(1.0)
+            );
+
+            // Case 1: BOM → Inventory Item
+            if (pos.getChildBom().getParentInventoryItem() != null) {
+
+                InventoryItem item = pos.getChildBom().getParentInventoryItem();
+                InventoryItem managedItem = inventoryItemService.getInventoryItem(item.getInventoryItemId());
+
+                BigDecimal unitCost = Optional.ofNullable(managedItem.getProductFinanceSettings())
+                        .map(fin -> BigDecimal.valueOf(fin.getStandardCost()))
+                        .orElse(BigDecimal.ZERO);
+
+                total = total.add(unitCost.multiply(qty));
+            }
+
+            // Case 2: BOM → Child BOM (multi-level)
+            else {
+
+                BigDecimal childBomCost = calculateBomCostRecursive(
+                        pos.getChildBom(),
+                        visited    // ensures cycle detection applies to full BOM tree
+                );
+
+                total = total.add(childBomCost.multiply(qty));
+            }
+        }
+
+        visited.remove(bom.getId());   // allow same BOM on different branches
+        return total;
+    }
+
+    @Override
+    public Map<Integer, RollupRow> getRolledUpQuantity(int bomId) {
+
+        Bom bom = getBom(bomId);
+
+        Map<Integer, RollupRow> result = new HashMap<>();
+        Set<Integer> bomPath = new HashSet<>();
+
+        rollupRecursive(bom, 1.0, result, bomPath);
+
+        return result;
+    }
+
+    private void rollupRecursive(
+            Bom bom,
+            double multiplier,
+            Map<Integer, RollupRow> result,
+            Set<Integer> bomPath
+    ) {
+        // true circular BOM protection (path-based)
+        if (bomPath.contains(bom.getId())) {
+            throw new IllegalStateException(
+                    "Circular BOM detected at BOM id: " + bom.getId()
+            );
+        }
+
+        bomPath.add(bom.getId());
+
+        for (BomPosition pos : bom.getPositions()) {
+
+            InventoryItem item =
+                    pos.getChildBom().getParentInventoryItem();
+
+            int itemId = item.getInventoryItemId();
+            double effectiveQty = multiplier * pos.getQuantity();
+
+            result.compute(itemId, (k, v) -> {
+                if (v == null) {
+                    RollupRow row = new RollupRow();
+                    row.setItem(item);
+                    row.setTotalQty(effectiveQty);
+                    return row;
+                } else {
+                    v.setTotalQty(v.getTotalQty() + effectiveQty);
+                    return v;
+                }
+            });
+
+            // recurse into child BOM
+            if (pos.getChildBom() != null) {
+                rollupRecursive(
+                        pos.getChildBom(),
+                        effectiveQty,
+                        result,
+                        bomPath
+                );
+            }
+        }
+
+        // critical: backtrack
+        bomPath.remove(bom.getId());
+    }
 
 
 

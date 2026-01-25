@@ -2,7 +2,7 @@ package com.nextgenmanager.nextgenmanager.bom.model;
 
 import com.fasterxml.jackson.annotation.*;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
+import com.nextgenmanager.nextgenmanager.production.model.Routing;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -22,10 +22,6 @@ import java.util.List;
 @Table(name = "bom")
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-@JsonIdentityInfo(
-        generator = ObjectIdGenerators.PropertyGenerator.class,
-        property = "id"
-)
 public class Bom {
 
     @Id
@@ -74,7 +70,7 @@ public class Bom {
     private String description;
 
     @Column(name = "isActive")
-    private Boolean isActive = true;
+    private Boolean isActive = false;
 
     @Column(name = "isDefault")
     private Boolean isDefault;
@@ -89,6 +85,8 @@ public class Bom {
     private String versionGroup;
 
 
+    @OneToOne(mappedBy = "bom", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Routing routing;
 
 
     @CreationTimestamp
@@ -100,7 +98,4 @@ public class Bom {
 
     private Date deletedDate;
 
-    @OneToMany(mappedBy = "bom", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonManagedReference
-    private List<BomAttachment> bomAttachmentList;
 }

@@ -1,14 +1,14 @@
 package com.nextgenmanager.nextgenmanager.production.service;
 
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
-import com.nextgenmanager.nextgenmanager.production.DTO.WorkOrderProductionDTO;
-import com.nextgenmanager.nextgenmanager.production.DTO.WorkOrderProductionRequestMapper;
+import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionDTO;
+import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionRequestMapper;
+import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.model.*;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionRepository;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;

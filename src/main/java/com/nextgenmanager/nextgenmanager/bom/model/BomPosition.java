@@ -34,7 +34,7 @@ public class BomPosition {
     private Bom parentBom;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "childBomId", nullable = false)
+    @JoinColumn(name = "childBomId", nullable = true)
     private Bom childBom;
 
     @Column(name = "position")

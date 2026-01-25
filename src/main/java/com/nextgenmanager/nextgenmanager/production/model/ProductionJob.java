@@ -34,7 +34,19 @@ public class ProductionJob {
     @JoinColumn(name = "machine_details_id", referencedColumnName = "id")
     private MachineDetails machineDetails;
 
-    @Enumerated(EnumType.STRING)
+    @Column(precision = 10, scale = 2)
+    private BigDecimal defaultSetupTime;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal defaultRunTimePerUnit;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workCenterId")
+    private WorkCenter workCenter;
+
+    private String category;
+
+    @Enumerated(EnumType.ORDINAL)
     @Column(nullable = false, length = 50)
     private JobRole roleRequired;
 

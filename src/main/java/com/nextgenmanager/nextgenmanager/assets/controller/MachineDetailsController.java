@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.assets.controller;
 
+import com.nextgenmanager.nextgenmanager.assets.dto.MachineDetailsResponseDTO;
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
 import com.nextgenmanager.nextgenmanager.assets.service.MachineDetailsService;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
@@ -25,31 +26,34 @@ public class MachineDetailsController {
     @GetMapping("/{id}")
     public ResponseEntity<?> getMachineById(@PathVariable String id){
         try {
-            MachineDetails machineDetails = machineDetailsService.getMachineDetailsById(Integer.parseInt(id));
+            MachineDetailsResponseDTO machineDetails = machineDetailsService.getMachineDetailsById(Integer.parseInt(id));
             return ResponseEntity.ok(machineDetails);
         } catch (ResourceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         } catch (Exception e){
+            logger.error("Error in getting the Machine Details: "+e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }
 
     @GetMapping
-    public ResponseEntity<List<MachineDetails>> getAllMachines(){
+    public ResponseEntity<List<MachineDetailsResponseDTO>> getAllMachines(){
         try {
             logger.debug("Fetching all machined details");
-            List<MachineDetails> machineDetailsList = machineDetailsService.getMachineList();
+            List<MachineDetailsResponseDTO> machineDetailsList = machineDetailsService.getMachineList();
             return ResponseEntity.ok(machineDetailsList);
         } catch (Exception e){
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<MachineDetails> updateMachineDetails(@RequestParam String id, @RequestBody MachineDetails machineDetails){
+    public ResponseEntity<?> updateMachineDetails(@RequestParam String id, @RequestBody MachineDetails machineDetails){
         try {
-            MachineDetails updatedMachineDetails = machineDetailsService.updateMachineDetails(Integer.parseInt(id),machineDetails);
+            MachineDetailsResponseDTO updatedMachineDetails = machineDetailsService.updateMachineDetails(Integer.parseInt(id),machineDetails);
             return ResponseEntity.ok(updatedMachineDetails);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
@@ -57,9 +61,9 @@ public class MachineDetailsController {
 
 
     @PostMapping
-    public ResponseEntity<MachineDetails> createMachine(@RequestBody MachineDetails newMachineDetails){
+    public ResponseEntity<?> createMachine(@RequestBody MachineDetails newMachineDetails){
         try {
-            MachineDetails machineDetails = machineDetailsService.createMachineDetails(newMachineDetails);
+            MachineDetailsResponseDTO machineDetails = machineDetailsService.createMachineDetails(newMachineDetails);
             return ResponseEntity.status(201).body(machineDetails);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);

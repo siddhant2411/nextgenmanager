@@ -2,11 +2,9 @@ package com.nextgenmanager.nextgenmanager.common.service;
 
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import io.minio.*;
 import io.minio.errors.ErrorResponseException;
 import io.minio.http.Method;
-import jakarta.persistence.criteria.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,11 +12,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
+import java.lang.module.ResolutionException;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -102,7 +99,7 @@ public class FileStorageServiceImpl implements FileStorageService{
                 .build());
     }
 
-    public void deleteAttachment(Long attachmentId) throws Exception {
+    public void deleteAttachment(Long attachmentId) throws Exception  {
         FileAttachment attachment = fileAttachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new RuntimeException("Attachment not found"));
 
@@ -194,5 +191,28 @@ public class FileStorageServiceImpl implements FileStorageService{
         }
     }
 
+    @Override
+    public List<FileAttachment> findAttachmentsByTypeAndId(String entityType, Long entityId) {
+        try {
+            return fileAttachmentRepository.findByReferenceTypeAndReferenceId(entityType,entityId);
+        }
+        catch (Exception e){
+            logger.error("Error fetching attachments for type: {} with id:{}",entityType,entityId);
+            throw new RuntimeException("Error fetching attachments: "+e.getMessage());
+        }
+
+    }
+
+    @Override
+    public FileAttachment getFileById(long fileId){
+        try {
+            return fileAttachmentRepository.findById(fileId).orElseThrow(()-> new ResolutionException("File with id: "+fileId+" does not exists"));
+
+        }
+        catch (Exception e){
+            logger.error("Error fetching attachments with id: {}",fileId);
+            throw new RuntimeException("Error fetching attachment: "+e.getMessage());
+        }
+    }
 
 }

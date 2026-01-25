@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.bom.dto;
 
+import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import lombok.*;
 
@@ -16,7 +17,7 @@ public class BomDTO {
     private int id;
     private String bomName;
     private InventoryItemDTO parentInventoryItem;
-    private List<BomListDTO> childrenBoms;
+    private List<BomPositionDTO> positions;
     private String bomStatus;
     private String revision;
     private Date effectiveFrom;

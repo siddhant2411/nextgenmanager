@@ -2,11 +2,14 @@ package com.nextgenmanager.nextgenmanager.bom.mapper;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionResponse;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 
 import java.util.Collections;
 import java.util.stream.Collectors;
@@ -20,10 +23,12 @@ public class BomMapper {
                 .id(bom.getId())
                 .bomName(bom.getBomName())
                 .parentInventoryItem(toDto(bom.getParentInventoryItem()))
-                .childrenBoms(
+                .positions(
                         bom.getPositions() != null ?
                                 bom.getPositions().stream()
-                                        .map(pos -> toChildBomDto(pos.getChildBom()))
+                                        .map(pos -> toChildBomDto(pos)
+
+                                        )
                                         .collect(Collectors.toList())
                                 : Collections.emptyList()
                 )
@@ -46,12 +51,13 @@ public class BomMapper {
     }
 
 
-    public static BomListDTO toChildBomDto(Bom child) {
-        if (child == null) return null;
+    public static BomPositionDTO toChildBomDto(BomPosition position) {
+        if (position.getChildBom() == null) return null;
 
+        Bom child = position.getChildBom();
         InventoryItem item = child.getParentInventoryItem();
 
-        return BomListDTO.builder()
+        return BomPositionDTO.builder()
                 .id(child.getId())
                 .bomName(child.getBomName())
                 .revision(child.getRevision())
@@ -60,6 +66,9 @@ public class BomMapper {
                 .parentItemCode(item != null ? item.getItemCode() : null)
                 .parentItemName(item != null ? item.getName() : null)
                 .uom(item != null ? item.getUom() : null)
+                .position(position.getPosition())
+                .quantity(position.getQuantity())
+                .hasChildBom(!position.getChildBom().getPositions().isEmpty())
                 .build();
     }
 

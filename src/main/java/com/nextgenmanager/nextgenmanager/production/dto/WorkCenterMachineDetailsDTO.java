@@ -1,0 +1,31 @@
+package com.nextgenmanager.nextgenmanager.production.dto;
+
+
+import com.nextgenmanager.nextgenmanager.assets.dto.MachineDetailsResponseDTO;
+import com.nextgenmanager.nextgenmanager.production.model.WorkCenter;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class WorkCenterMachineDetailsDTO {
+
+    private int id;
+    private String centerCode;
+    private String centerName;
+    private String description;
+    private BigDecimal costPerHour;
+    private BigDecimal availableHoursPerDay;
+    private WorkCenter.WorkCenterStatus workCenterStatus;
+    private String department;
+    private String location;
+    private Integer maxLoadPercentage;
+    private String supervisor;
+    private List<String> availableShifts;
+
+}

@@ -20,10 +20,6 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "inventoryItem")
-@JsonIdentityInfo(
-        generator = ObjectIdGenerators.PropertyGenerator.class,
-        property = "inventoryItemId"
-)
 public class InventoryItem {
 
     @Id

@@ -1,19 +1,24 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
-import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
-import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.*;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
+import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
+import io.minio.GetObjectResponse;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.MalformedURLException;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface BomService {
@@ -26,7 +31,7 @@ public interface BomService {
 
     public Bom deleteBom(int id);
 
-    public Bom editBom(Bom bom);
+    public Bom editBom(int bomId,Bom bom);
 
     public Page<Bom> getAllBom(int page, int size, String sortBy, String sortDir, String query);
 
@@ -34,7 +39,7 @@ public interface BomService {
 
     public UrlResource getAttachmentById(Long fileId) throws MalformedURLException;
 
-    public void deleteAttachment(Long fileId) throws IOException;
+    public void deleteAttachment(int bomId ,Long fileId) throws Exception;
 
     public List<Bom> getBomByParentInventoryItem(int id);
 
@@ -44,4 +49,24 @@ public interface BomService {
 
     public Page<BomListDTO> searchActiveBom(String request);
 
+    public List<BomPosition> getBomPositions(int bomId);
+
+    public List<BomPositionDTO> getBomPositionsDTO(int bomId);
+
+    public BigDecimal calculateBomCost(int bomId);
+
+    BomDTO changeBomStatus(int bomId,BomStatusChangeRequest bomStatusChangeRequest);
+
+    List<FileAttachment> getAttachments(int bomId);
+
+
+    FileAttachment getAttachment(long fileId);
+
+    void uploadFile(int bomId, MultipartFile file) throws Exception;
+
+    public GetObjectResponse downloadBomAttachment(Long fileId);
+
+    BOMRoutingMapper duplicateBom(int bomId);
+
+    public Map<Integer, RollupRow> getRolledUpQuantity(int bomId);
 }

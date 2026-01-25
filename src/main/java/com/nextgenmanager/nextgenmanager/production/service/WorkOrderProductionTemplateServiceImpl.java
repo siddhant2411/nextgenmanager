@@ -2,18 +2,21 @@ package com.nextgenmanager.nextgenmanager.production.service;
 
 
 
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
+import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
-import com.nextgenmanager.nextgenmanager.production.model.ProductionJob;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderJobList;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
-import com.nextgenmanager.nextgenmanager.production.repository.ProductionJobRepository;
+import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionTemplateResponseDTO;
+import com.nextgenmanager.nextgenmanager.production.helper.OperationTotals;
+import com.nextgenmanager.nextgenmanager.production.helper.OverheadTotals;
+import com.nextgenmanager.nextgenmanager.production.helper.RoutingStatus;
+import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderProductionTemplateResponseMapper;
+import com.nextgenmanager.nextgenmanager.production.model.*;
+import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderJobListRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionTemplateRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
@@ -24,10 +27,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Optional;
+import java.math.RoundingMode;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -50,6 +51,14 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
 
     private final InventoryItemService inventoryItemService;
 
+    @Autowired
+    private WorkOrderProductionTemplateResponseMapper woptResponseMapper;
+
+    @Autowired
+    private WorkOrderJobListRepository workOrderJobListRepository;
+
+    @Autowired
+    private WorkCenterService workCenterService;
 
     @Autowired
     private InventoryInstanceService inventoryInstanceService;
@@ -58,15 +67,37 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
         this.inventoryItemService = inventoryItemService;
     }
 
+    private static final Map<RoutingStatus, RoutingStatus> NEXT_STATUS = Map.of(
+            RoutingStatus.DRAFT, RoutingStatus.APPROVED,
+            RoutingStatus.APPROVED, RoutingStatus.ACTIVE,
+            RoutingStatus.ACTIVE, RoutingStatus.OBSOLETE
+    );
+
+
     @Override
-    public WorkOrderProductionTemplate getWorkOrderProductionTemplate(int id){
+    public WorkOrderProductionTemplateResponseDTO getWorkOrderProductionTemplate(int id){
 
         logger.debug("Fetching workOrderProductionTemplate for ID: {}", id);
+        WorkOrderProductionTemplate wopt = workOrderProductionTemplateRepository.findById(id)
+                .filter(WOPTemplate -> WOPTemplate.getDeletedDate()==null)
+                .orElseThrow(() -> {
+                    logger.error("workOrderProductionTemplate not found for ID: {}", id);
+                    return new ResourceNotFoundException("workOrderProductionTemplate not found for ID: " + id);
+                });
+
+        return woptResponseMapper.toDTO(wopt);
+    }
+
+    @Override
+    public WorkOrderProductionTemplate getWorkOrderProductionTemplateEntity(int id){
+
+        logger.debug("Fetching workOrderProductionTemplate for ID: {}", id);
+
         return workOrderProductionTemplateRepository.findById(id)
                 .filter(WOPTemplate -> WOPTemplate.getDeletedDate()==null)
                 .orElseThrow(() -> {
                     logger.error("workOrderProductionTemplate not found for ID: {}", id);
-                    return new RuntimeException("workOrderProductionTemplate not found for ID: " + id);
+                    return new ResourceNotFoundException("workOrderProductionTemplate not found for ID: " + id);
                 });
     }
 
@@ -76,150 +107,281 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
                 .orElseThrow(() -> new EntityNotFoundException("Template not found for BOM ID " + bomId));
     }
 
-    ;
 
     @Override
-    public List<WorkOrderProductionTemplate> getWorkOrderProductionTemplateList(){
+    public List<WorkOrderProductionTemplateResponseDTO> getWorkOrderProductionTemplateList(){
 
         logger.debug("Fetching all WOPTemplate");
         List<WorkOrderProductionTemplate> workOrderProductionTemplateList = workOrderProductionTemplateRepository.findAll().stream()
                 .filter(WOPTemplate -> WOPTemplate.getDeletedDate() == null)
                 .collect(Collectors.toList());
         logger.debug("Retrieved {} active workOrderProductionTemplate records", workOrderProductionTemplateList.size());
-        return workOrderProductionTemplateList;
+
+        return workOrderProductionTemplateList.stream().map(workOrderProductionTemplate -> woptResponseMapper.toDTO(workOrderProductionTemplate)).toList();
     };
 
     @Override
     @Transactional(propagation = Propagation.REQUIRED)
-    public WorkOrderProductionTemplate createWorkOrderProductionTemplate(WorkOrderProductionTemplate workOrderProductionTemplate) {
-        logger.debug("Creating new workOrderProductionTemplate: {}", workOrderProductionTemplate);
+    public WorkOrderProductionTemplateResponseDTO createWorkOrderProductionTemplate(WorkOrderProductionTemplate wopt) {
 
-        // 1. Calculate total labour cost
-        List<WorkOrderJobList> workOrderJobLists = workOrderProductionTemplate.getWorkOrderJobLists();
-        BigDecimal totalLabourCost = BigDecimal.ZERO;
-        BigDecimal totalLabourHour =  BigDecimal.ZERO;
+        try {
 
-        // safe removal
-        workOrderJobLists.removeIf(workOrderJobList -> workOrderJobList.getProductionJob() == null);
-        for (WorkOrderJobList workOrderJobList : workOrderJobLists) {
-            if(workOrderJobList.getProductionJob()!=null) {
-                int actualWorkOrderJobList = workOrderJobList.getProductionJob().getId();
-                if (actualWorkOrderJobList > 0) {
-                    totalLabourCost = totalLabourCost.add(
-                            productionJobService.getProductionJobById(actualWorkOrderJobList).getCostPerHour()
-                                    .multiply(workOrderJobList.getNumberOfHours())
-                    );
-                    totalLabourHour = totalLabourHour.add(workOrderJobList.getNumberOfHours());
-                }
-            }
+
+        validateWopt(wopt);
+
+        List<WorkOrderJobList> jobLists = loadManagedEntities(wopt);
+
+        OperationTotals op = calculateOperationTotals(jobLists);
+        wopt.setTotalSetupTime(op.getTotalSetup());
+        wopt.setTotalRunTime(op.getTotalRun());
+        wopt.setEstimatedHours(op.getTotalHours());
+        wopt.setEstimatedCostOfLabour(op.getTotalLabour());
+
+        BigDecimal bomCost = calculateBomCost(wopt.getBom().getId());
+        wopt.setEstimatedCostOfBom(bomCost);
+
+        OverheadTotals overhead = calculateOverhead(
+                op.getTotalLabour(), bomCost,
+                Optional.ofNullable(wopt.getOverheadCostPercentage()).orElse(BigDecimal.ZERO)
+        );
+
+        wopt.setOverheadCostValue(overhead.getOverhead());
+        wopt.setTotalCostOfWorkOrder(overhead.getTotalCost());
+
+
+
+        WorkOrderProductionTemplate saved = workOrderProductionTemplateRepository.save(wopt);
+
+        logger.info("Created WOPT id={} for BOM id={}, labourCost={}, bomCost={}, totalCost={}",
+                saved.getId(), wopt.getBom().getId(), saved.getEstimatedCostOfLabour(),
+                saved.getEstimatedCostOfBom(), saved.getTotalCostOfWorkOrder());
+
+        WorkOrderProductionTemplateResponseDTO woptResponseDTO = woptResponseMapper.toDTO(saved);
+            return woptResponseDTO;
         }
-        workOrderProductionTemplate.setEstimatedCostOfLabour(totalLabourCost);
-        workOrderProductionTemplate.setEstimatedHours(totalLabourHour);
-        int bomId = workOrderProductionTemplate.getBom().getId();
-        Bom existingBom = bomService.getBom(bomId);  // Returns a managed entity
-        workOrderProductionTemplate.setBom(existingBom);
-        // 2. Calculate total BOM cost
-//        List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
+        catch (IllegalArgumentException e){
+            logger.error(e.getMessage());
+            throw new IllegalArgumentException(e.getMessage());
+        }
+        catch (ResourceNotFoundException e){
+            logger.error(e.getMessage());
+            throw new ResourceNotFoundException(e.getMessage());
+        }
+        catch (Exception e){
+            logger.error("Error saving WOPT"+e.getMessage());
+            throw new RuntimeException(e.getMessage());
+        }
 
-//        TODO: Fix this with Bom logic instead of inventoryItem logic
-        BigDecimal totalBomCost = BigDecimal.ZERO;
-//        for (BomPosition bomPosition : bomPositionList) {
-//             int inventoryItemId  = bomPosition.getChildInventoryItem().getInventoryItemId();
-//
-//            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
-//            BigDecimal itemCost = (item != null && item.getProductFinanceSettings() != null)
-//                    ? BigDecimal.valueOf(item.getProductFinanceSettings().getStandardCost())
-//                    : BigDecimal.ZERO;
-//
-//            totalBomCost = totalBomCost.add(itemCost);
-//
-//        }
-        workOrderProductionTemplate.setEstimatedCostOfBom(totalBomCost);
+    }
 
-        // 3. Calculate overhead cost and total cost
-        BigDecimal totalCostBeforeOverhead = totalLabourCost.add(totalBomCost);
-        BigDecimal overheadCostPercentage = Optional.ofNullable(workOrderProductionTemplate.getOverheadCostPercentage())
-                .orElse(BigDecimal.ZERO);
+    private void validateWopt(WorkOrderProductionTemplate wopt) {
+        if (wopt == null)
+            throw new IllegalArgumentException("WOPT must not be null");
 
-        BigDecimal overheadCost = totalCostBeforeOverhead
-                .multiply(overheadCostPercentage.multiply(BigDecimal.valueOf(0.01)));
-        BigDecimal totalCost = totalCostBeforeOverhead.add(overheadCost);
+        if (wopt.getBom() == null || wopt.getBom().getId() == 0)
+            throw new IllegalArgumentException("WOPT requires a valid BOM");
 
-        workOrderProductionTemplate.setOverheadCostValue(overheadCost);
-        workOrderProductionTemplate.setTotalCostOfWorkOrder(totalCost);
-
-        // 4. Save and return
-        WorkOrderProductionTemplate savedWorkOrderProductionTemplate = workOrderProductionTemplateRepository.save(workOrderProductionTemplate);
-        logger.info("Successfully created workOrderProductionTemplate with ID: {}", savedWorkOrderProductionTemplate.getId());
-
-        return savedWorkOrderProductionTemplate;
     }
 
 
-    @Override
-    public WorkOrderProductionTemplate updateWorkOrderProductionTemplate(int id, WorkOrderProductionTemplate workOrderProductionTemplate) {
-        logger.debug("Attempting to update workOrderProductionTemplate with ID: {}", id);
+    private List<WorkOrderJobList> loadManagedEntities(WorkOrderProductionTemplate incoming) {
 
-        // Fetch existing entity to ensure it exists
-        WorkOrderProductionTemplate existing = getWorkOrderProductionTemplate(id);
+        // 1. Always load BOM as a managed entity
+        Bom managedBom = bomService.getBom(incoming.getBom().getId());
+        incoming.setBom(managedBom);
 
-        // 1. Calculate total labour cost
-        List<WorkOrderJobList> workOrderJobLists = workOrderProductionTemplate.getWorkOrderJobLists();
-        BigDecimal totalLabourCost = BigDecimal.ZERO;
-        BigDecimal totalLabourHour = BigDecimal.ZERO;
-        for (WorkOrderJobList workOrderJobList : workOrderJobLists) {
-            int actualWorkOrderJobList = workOrderJobList.getProductionJob().getId();
-            totalLabourCost = totalLabourCost.add(
-                    productionJobService.getProductionJobById(actualWorkOrderJobList).getCostPerHour()
-                            .multiply(workOrderJobList.getNumberOfHours())
+        List<WorkOrderJobList> incomingJobs = Optional.ofNullable(incoming.getWorkOrderJobLists())
+                .orElse(new ArrayList<>());
+
+        List<WorkOrderJobList> managedList = new ArrayList<>();
+
+        for (WorkOrderJobList inc : incomingJobs) {
+
+            WorkOrderJobList job;
+
+            // 2. Load existing job if ID present
+            if (inc.getId() != 0) {
+                job = workOrderJobListRepository.findById(inc.getId())
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException("Job not found: " + inc.getId())
+                        );
+            } else {
+                job = new WorkOrderJobList();
+            }
+
+            // 3. Copy simple fields
+            job.setOperationNumber(inc.getOperationNumber());
+            job.setSetupTime(inc.getSetupTime());
+            job.setRunTimePerUnit(inc.getRunTimePerUnit());
+            job.setLabourCost(inc.getLabourCost());
+            job.setOverheadCost(inc.getOverheadCost());
+            job.setOperationDescription(inc.getOperationDescription());
+            job.setIsParallelOperation(inc.getIsParallelOperation());
+            job.setToolingRequirements(inc.getToolingRequirements());
+            job.setSkillLevelRequired(inc.getSkillLevelRequired());
+
+            // 4. Attach managed ProductionJob
+            ProductionJob pj = productionJobService.getProductionJobEntityById(
+                    inc.getProductionJob().getId()
             );
-            totalLabourHour = totalLabourHour.add(workOrderJobList.getNumberOfHours());
+            job.setProductionJob(pj);
+
+            // 5. Attach managed WorkCenter
+            if (inc.getWorkCenter() != null && inc.getWorkCenter().getId() > 0) {
+                WorkCenter wc = workCenterService.getWorkCenterEntityById(
+                        inc.getWorkCenter().getId()
+                );
+                job.setWorkCenter(wc);
+            }
+
+            // 6. Attach to parent WOPT
+            job.setWorkOrderProductionTemplate(incoming);
+
+            managedList.add(job);
         }
-        workOrderProductionTemplate.setEstimatedCostOfLabour(totalLabourCost);
-        workOrderProductionTemplate.setEstimatedHours(totalLabourHour);
 
-        // 2. Calculate total BOM cost
-        int bomId = workOrderProductionTemplate.getBom().getId();
-//        List<BomPosition> bomPositionList = bomService.getBom(bomId).getChildInventoryItems();
-//        TODO: same way as create method
-        BigDecimal totalBomCost = BigDecimal.ZERO;
-//        for (BomPosition bomPosition : bomPositionList) {
-//            int inventoryItemId = bomPosition.getChildInventoryItem().getInventoryItemId();
-//            InventoryItem item = inventoryItemService.getInventoryItem(inventoryItemId);
-//
-//            double standardCost = (item != null && item.getProductFinanceSettings()!= null)
-//                    ? item.getProductFinanceSettings().getStandardCost()
-//                    : 0.0;
-//
-//            BigDecimal itemCost = BigDecimal.valueOf(standardCost);
-//
-//
-//            BigDecimal quantity = BigDecimal.valueOf(bomPosition.getQuantity());  // quantity from BOM
-//            totalBomCost = totalBomCost.add(itemCost.multiply(quantity));  // sum (unitCost * quantity)
-//        }
-        workOrderProductionTemplate.setEstimatedCostOfBom(totalBomCost);
+        return managedList;
+    }
 
 
 
-        // 3. Calculate overhead cost and total cost
-        BigDecimal totalCostBeforeOverhead = totalLabourCost.add(totalBomCost);
-        BigDecimal overheadCost = totalCostBeforeOverhead
-                .multiply(workOrderProductionTemplate.getOverheadCostPercentage().multiply(BigDecimal.valueOf(0.01)));
-        BigDecimal totalCost = totalCostBeforeOverhead.add(overheadCost);
+    private OperationTotals calculateOperationTotals(List<WorkOrderJobList> jobLists) {
 
-        workOrderProductionTemplate.setOverheadCostValue(overheadCost);
-        workOrderProductionTemplate.setTotalCostOfWorkOrder(totalCost);
+        BigDecimal totalSetup = BigDecimal.ZERO;
+        BigDecimal totalRun = BigDecimal.ZERO;
+        BigDecimal totalLabour = BigDecimal.ZERO;
+        BigDecimal totalHours = BigDecimal.ZERO;
 
-        // 4. Set ID explicitly to ensure update (optional but safe)
-        workOrderProductionTemplate.setId(id);
+        for (WorkOrderJobList job : jobLists) {
+            ProductionJob pj = job.getProductionJob();
 
-        // 5. Save and return
-        workOrderProductionTemplate.setWorkOrderProductionTemplateDocuments(getWorkOrderProductionTemplate(workOrderProductionTemplate.getId()).getWorkOrderProductionTemplateDocuments());
-        WorkOrderProductionTemplate updatedWorkOrderProductionTemplate = workOrderProductionTemplateRepository.save(workOrderProductionTemplate);
+            BigDecimal setup = Optional.ofNullable(job.getSetupTime())
+                    .orElse(Optional.ofNullable(pj.getDefaultSetupTime()).orElse(BigDecimal.ZERO));
 
-        logger.info("Successfully updated workOrderProductionTemplate with ID: {}", updatedWorkOrderProductionTemplate.getId());
+            BigDecimal run = Optional.ofNullable(job.getRunTimePerUnit())
+                    .orElse(Optional.ofNullable(pj.getDefaultRunTimePerUnit()).orElse(BigDecimal.ZERO));
 
-        return updatedWorkOrderProductionTemplate;
+            BigDecimal costPerHour = Optional.ofNullable(pj.getCostPerHour()).orElse(BigDecimal.ZERO);
+
+            BigDecimal opHours = setup.add(run);
+
+            totalSetup = totalSetup.add(setup);
+            totalRun = totalRun.add(run);
+            totalLabour = totalLabour.add(costPerHour.multiply(opHours));
+            totalHours = totalHours.add(opHours);
+        }
+
+        return new OperationTotals(totalSetup, totalRun, totalLabour, totalHours);
+    }
+
+    @Override
+    public BigDecimal calculateBomCost(int bomId) {
+
+        List<BomPosition> positions = bomService.getBomPositions(bomId);
+        BigDecimal total = BigDecimal.ZERO;
+
+        for (BomPosition pos : positions) {
+
+            BigDecimal qty = BigDecimal.valueOf(pos.getQuantity());
+            BigDecimal unitCost = BigDecimal.ZERO;
+
+            if (pos.getChildBom().getParentInventoryItem() != null) {
+                InventoryItem item = inventoryItemService.getInventoryItem(
+                        pos.getChildBom().getParentInventoryItem().getInventoryItemId()
+                );
+
+                unitCost = Optional.ofNullable(item.getProductFinanceSettings())
+                        .map(p -> BigDecimal.valueOf(p.getStandardCost()))
+                        .orElse(BigDecimal.ZERO);
+
+            } else {
+                unitCost = calculateBomCost(pos.getChildBom().getId()); // recursion
+            }
+
+            total = total.add(unitCost.multiply(qty));
+        }
+
+        return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+
+    private OverheadTotals calculateOverhead(BigDecimal labour, BigDecimal bom, BigDecimal pct) {
+
+        BigDecimal base = labour.add(bom);
+        BigDecimal overhead = base.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal total = base.add(overhead);
+
+        return new OverheadTotals(overhead, total);
+    }
+
+
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public WorkOrderProductionTemplateResponseDTO updateWorkOrderProductionTemplate(
+            int id, WorkOrderProductionTemplate incoming) {
+
+        logger.debug("Updating WOPT id={}", id);
+
+        try {
+            // 1. Load existing WOPT (managed entity)
+            WorkOrderProductionTemplate existing = getWorkOrderProductionTemplateEntity(id);
+
+            // 2. Validate incoming request
+            validateWopt(incoming);
+
+
+            existing.setCostingMethod(incoming.getCostingMethod());
+            existing.setDetails(incoming.getDetails());
+            existing.setOverheadCostPercentage(incoming.getOverheadCostPercentage());
+
+            // If BOM is changed, update
+            if (incoming.getBom() != null && incoming.getBom().getId() != existing.getBom().getId()) {
+                existing.setBom(incoming.getBom());
+            }
+
+            // 4. Replace job list but attach to managed entities
+            existing.getWorkOrderJobLists().clear();
+            List<WorkOrderJobList> managedJobs = loadManagedEntities(incoming);
+            existing.getWorkOrderJobLists().addAll(managedJobs);
+
+            // 5. Recalculate operation totals
+            OperationTotals op = calculateOperationTotals(managedJobs);
+            existing.setTotalSetupTime(op.getTotalSetup());
+            existing.setTotalRunTime(op.getTotalRun());
+            existing.setEstimatedHours(op.getTotalHours());
+            existing.setEstimatedCostOfLabour(op.getTotalLabour());
+
+            // 6. Recalculate BOM cost
+            BigDecimal bomCost = calculateBomCost(existing.getBom().getId());
+            existing.setEstimatedCostOfBom(bomCost);
+
+            // 7. Recalculate overhead
+            OverheadTotals overhead = calculateOverhead(
+                    op.getTotalLabour(),
+                    bomCost,
+                    Optional.ofNullable(incoming.getOverheadCostPercentage()).orElse(BigDecimal.ZERO)
+            );
+
+            existing.setOverheadCostValue(overhead.getOverhead());
+            existing.setTotalCostOfWorkOrder(overhead.getTotalCost());
+
+            // 8. Save
+            WorkOrderProductionTemplate updated = workOrderProductionTemplateRepository.save(existing);
+
+            logger.info("Updated WOPT id={} | labour={}, bom={}, total={}",
+                    updated.getId(),
+                    updated.getEstimatedCostOfLabour(),
+                    updated.getEstimatedCostOfBom(),
+                    updated.getTotalCostOfWorkOrder()
+            );
+
+            return woptResponseMapper.toDTO(updated);
+
+        } catch (Exception e) {
+            logger.error("Error updating WOPT id={} | {}", id, e.getMessage());
+            throw e;
+        }
     }
 
 
@@ -227,10 +389,92 @@ public class WorkOrderProductionTemplateServiceImpl implements WorkOrderProducti
     public void deleteWorkOrderProductionTemplate(int id){
 
         logger.debug("Attempting to soft workOrderProductionTemplate with ID: {}", id);
-        WorkOrderProductionTemplate workOrderProductionTemplate = getWorkOrderProductionTemplate(id);
+        WorkOrderProductionTemplate workOrderProductionTemplate  = workOrderProductionTemplateRepository.findById(id)
+                .filter(WOPTemplate -> WOPTemplate.getDeletedDate()==null)
+                .orElseThrow(() -> {
+                    logger.error("workOrderProductionTemplate not found for ID: {}", id);
+                    return new RuntimeException("workOrderProductionTemplate not found for ID: " + id);
+                });
         workOrderProductionTemplate.setBom(null);
         workOrderProductionTemplate.setDeletedDate(new Date());
         workOrderProductionTemplateRepository.save(workOrderProductionTemplate);
         logger.info("Successfully soft deleted workOrderProductionTemplate with ID: {}", id);
+    }
+
+    @Override
+    public WorkOrderProductionTemplate getActiveVersion(int bomId) {
+        return null;
+    }
+
+    @Override
+    public WorkOrderProductionTemplate createNewVersion(int bomId, WorkOrderProductionTemplate wopt) {
+        return null;
+    }
+
+    @Override
+    public void activateVersion(int versionId) {
+
+    }
+
+    @Override
+    public WorkOrderJobList addJobToTemplate(int woptId, WorkOrderJobList job) {
+        return null;
+    }
+
+    @Override
+    public WorkOrderJobList updateJobInTemplate(int woptId, int jobId, WorkOrderJobList job) {
+        return null;
+    }
+
+    @Override
+    public void removeJobFromTemplate(int woptId, int jobId) {
+
+    }
+
+    @Override
+    public List<WorkOrderJobList> getJobListForTemplate(int woptId) {
+        return List.of();
+    }
+
+    @Override
+    public WorkOrderProductionTemplate recalculateTotals(int woptId) {
+        return null;
+    }
+
+    @Override
+    public BigDecimal calculateSetupTime(int woptId) {
+        return null;
+    }
+
+    @Override
+    public BigDecimal calculateRunTime(int woptId) {
+        return null;
+    }
+
+    @Override
+    public BigDecimal calculateLabourCost(int woptId) {
+        return null;
+    }
+
+
+
+    @Override
+    public BigDecimal calculateOverheadCost(int woptId) {
+        return null;
+    }
+
+    @Override
+    public boolean validateOperationSequence(int woptId) {
+        return false;
+    }
+
+    @Override
+    public boolean validateEffectiveDates(Date effectiveFrom, Date effectiveTo) {
+        return false;
+    }
+
+    @Override
+    public boolean validateConsistencyWithBOM(int bomId, int woptId) {
+        return false;
     }
 }

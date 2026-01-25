@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.bom.spec;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
@@ -23,12 +24,27 @@ public class BomSpecifications {
                 cb.like(cb.lower(root.join("parentInventoryItem").get("itemCode")), "%" + search + "%");
     }
 
+    public static Specification<Bom> hasParentItemCode(String itemCode) {
+        return (root, query, cb) ->
+                cb.equal(
+                        cb.lower(
+                                root.join("parentInventoryItem", JoinType.LEFT)
+                                        .get("itemCode")
+                        ),
+                        itemCode.toLowerCase()
+                );
+    }
+
     public static Specification<Bom> hasIsActive(Boolean active) {
         return (root, query, cb) -> cb.equal(root.get("isActive"), active);
     }
 
     public static Specification<Bom> hasIsActiveVersion(Boolean v) {
         return (root, query, cb) -> cb.equal(root.get("isActiveVersion"), v);
+    }
+
+    public static Specification<Bom> isNotDeleted() {
+        return (root, query, cb) -> cb.isNull(root.get("deletedDate"));
     }
 
     public static Specification<Bom> isLatestVersion() {
