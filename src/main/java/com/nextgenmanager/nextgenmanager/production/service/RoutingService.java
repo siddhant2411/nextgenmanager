@@ -28,6 +28,8 @@ public interface RoutingService {
 
     RoutingDto getByBom(Integer bomId);
 
+    Routing getRoutingEntityByBom(Integer bomId);
+
     public List<RoutingOperation> getOperationsEntities(Long routingId);
 
     RoutingDto getRouting(Long id);

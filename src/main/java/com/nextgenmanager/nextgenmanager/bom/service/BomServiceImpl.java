@@ -659,6 +659,19 @@ public class BomServiceImpl implements BomService {
         return bomRepository.findBomByParentInventoryItemId(id);
     }
 
+    @Override
+    public BomDTO getActiveBomByParentInventoryItem(int id){
+        InventoryItem inventoryItem = inventoryItemService.getInventoryItem(id); // to check if inventory item exists
+        List<Bom> boms = bomRepository.findBomByParentInventoryItemId(id);
+
+        for(Bom bom: boms){
+            if(bom.getIsActiveVersion()!=null && bom.getBomStatus()==BomStatus.ACTIVE){
+                return BomMapper.toDto(bom);
+            }
+        }
+        throw new ResourceNotFoundException("Active BOM not found for item: "+inventoryItem.getItemCode());
+    }
+
     public WorkOrderProductionTemplate getBomWOTemplateByBomId(int id){
         return bomRepository.findWOTemplateByBomId(id);
     }

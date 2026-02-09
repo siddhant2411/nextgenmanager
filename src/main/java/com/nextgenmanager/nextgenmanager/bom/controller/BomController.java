@@ -161,32 +161,31 @@ public class BomController {
         }
     }
 
-//    @GetMapping("/get-by-item/{itemId}")
-//    public ResponseEntity<?> getBomByItem(@PathVariable Integer itemId) {
-//        logger.debug("Received request to get BOMs by item ID: {}", itemId);
-//        try {
-//            List<Bom> boms = bomService.getBomByParentInventoryItem(itemId);
-//            List<BOMTemplateMapper> responseList = new ArrayList<>();
-//
-//            for (Bom bom : boms) {
-//                WorkOrderProductionTemplate template = bomService.getBomWOTemplateByBomId(bom.getId());
-//
-//                BOMTemplateMapper mapper = new BOMTemplateMapper();
-//                mapper.setBom(bom);
-//                mapper.setWorkOrderProductionTemplate(template);
-//
-//                responseList.add(mapper);
-//            }
-//
-//            logger.info("Returning {} BOM(s) for item ID: {}", responseList.size(), itemId);
-//            return ResponseEntity.ok(responseList);
-//
-//        } catch (Exception e) {
-//            logger.error("Failed to fetch BOMs by item ID {}: {}", itemId, e.getMessage(), e);
-//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-//                    .body(Map.of("error", "Failed to fetch BOMs: " + e.getMessage()));
-//        }
-//    }
+    @GetMapping("/active-by-item/{itemId}")
+    public ResponseEntity<?> getBomByItem(@PathVariable Integer itemId) {
+        logger.debug("Received request to get BOMs by item ID: {}", itemId);
+        try {
+                BomDTO activeBom = bomService.getActiveBomByParentInventoryItem(itemId);
+                RoutingDto routingDto = routingService.getByBom(activeBom.getId());
+
+                BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
+                bomRoutingMapper.setBom(activeBom);
+                bomRoutingMapper.setRouting(routingDto);
+            return ResponseEntity.ok(bomRoutingMapper);
+
+
+        }
+        catch (ResourceNotFoundException e) {
+            logger.error("BOM not found for item ID {}: {}", itemId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error",e.getMessage()));
+        }
+        catch (Exception e) {
+            logger.error("Failed to fetch BOMs by item ID {}: {}", itemId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to fetch BOMs: " + e.getMessage()));
+        }
+    }
 
     @GetMapping("/all")
     public ResponseEntity<?> getAllBoms(

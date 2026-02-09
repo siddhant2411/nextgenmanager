@@ -1,0 +1,7 @@
+package com.nextgenmanager.nextgenmanager.production.repository.audit;
+
+import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderHistory;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface WorkOrderHistoryRepository extends JpaRepository<WorkOrderHistory,Long> {
+}

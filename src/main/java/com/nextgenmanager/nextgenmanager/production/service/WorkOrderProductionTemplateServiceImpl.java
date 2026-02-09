@@ -13,7 +13,7 @@ import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionTemplateResponseDTO;
 import com.nextgenmanager.nextgenmanager.production.helper.OperationTotals;
 import com.nextgenmanager.nextgenmanager.production.helper.OverheadTotals;
-import com.nextgenmanager.nextgenmanager.production.helper.RoutingStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.RoutingStatus;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderProductionTemplateResponseMapper;
 import com.nextgenmanager.nextgenmanager.production.model.*;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderJobListRepository;

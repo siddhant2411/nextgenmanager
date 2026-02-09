@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
 
-import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

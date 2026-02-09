@@ -5,7 +5,7 @@ import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto;
 import com.nextgenmanager.nextgenmanager.production.helper.InvalidTransitionException;
-import com.nextgenmanager.nextgenmanager.production.helper.RoutingStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.RoutingStatus;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
 import com.nextgenmanager.nextgenmanager.production.mapper.RoutingOperationMapper;
@@ -25,7 +25,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class RoutingServiceImpl implements RoutingService{
@@ -92,14 +91,28 @@ public class RoutingServiceImpl implements RoutingService{
                     opDto.getSequenceNumber() != null ? opDto.getSequenceNumber() : seq++
             );
             op.setName(opDto.getName());
-            op.setProductionJob(productionJobService.getProductionJobEntityById(opDto.getProductionJob().getId()));
-            op.setWorkCenter(workCenterService.getWorkCenterEntityById(opDto.getWorkCenter().getId()));
+
+            if (opDto.getProductionJob() != null ) {
+                op.setProductionJob(productionJobService.getProductionJobEntityById(opDto.getProductionJob().getId()));
+            }
+//            else {
+//                throw new ValidationException("ProductionJob is required for operation.");
+//            }
+
+            if (opDto.getWorkCenter() != null ) {
+                op.setWorkCenter(workCenterService.getWorkCenterEntityById(opDto.getWorkCenter().getId()));
+            }
+//            else {
+//                throw new ValidationException("WorkCenter is required for operation.");
+//            }
+
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
             op.setInspection(opDto.getInspection());
             op.setNotes(opDto.getNotes());
             routing.getOperations().add(op);
         }
+
 
         Routing saved = routingRepository.save(routing);
 
@@ -208,6 +221,15 @@ public class RoutingServiceImpl implements RoutingService{
         routing.setOperations(getOperationsEntities(routing.getId()));
 
         return routingMapper.toDTO(routing);
+    }
+
+    @Override
+    public Routing getRoutingEntityByBom(Integer bomId){
+
+        Routing routing =routingRepository.findByBomId(bomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Routing not found for BOM: " + bomId));
+        routing.setOperations(getOperationsEntities(routing.getId()));
+        return routing;
     }
 
     @Override

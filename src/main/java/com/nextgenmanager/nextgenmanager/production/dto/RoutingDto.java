@@ -1,6 +1,6 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
-import com.nextgenmanager.nextgenmanager.production.helper.RoutingStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.RoutingStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;

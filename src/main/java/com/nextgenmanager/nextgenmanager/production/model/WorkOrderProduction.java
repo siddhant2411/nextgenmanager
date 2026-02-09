@@ -2,8 +2,8 @@ package com.nextgenmanager.nextgenmanager.production.model;
 
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
-import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderSourceType;
-import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderSourceType;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;

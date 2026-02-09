@@ -3,7 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.service;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionRequestMapper;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProduction;
-import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import org.springframework.data.domain.Page;
 
 import java.util.Optional;

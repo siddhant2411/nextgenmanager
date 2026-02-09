@@ -1,12 +1,10 @@
 package com.nextgenmanager.nextgenmanager.production.model;
 
 
-import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.ObjectIdGenerators;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
-import com.nextgenmanager.nextgenmanager.production.helper.RoutingStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.RoutingStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;

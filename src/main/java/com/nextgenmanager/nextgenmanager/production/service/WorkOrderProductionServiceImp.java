@@ -8,7 +8,7 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionRequestMapper;
-import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.model.*;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionRepository;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
@@ -197,7 +197,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
 
         newWorkOrderProduction.setWorkOrderInventoryInstanceLists(allInstanceLists);
         if (pendingInstanceLists.isEmpty()) {
-            newWorkOrderProduction.setWorkOrderStatus(WorkOrderStatus.READY);
+//            newWorkOrderProduction.setWorkOrderStatus(WorkOrderStatus.READY);
         }
 
         WorkOrderProduction savedWorkOrder = workOrderProductionRepository.save(newWorkOrderProduction);
@@ -250,7 +250,7 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
             WorkOrderProduction childWorkOrder = new WorkOrderProduction();
             childWorkOrder.setQuantity(pendingItem.getInventoryInstanceList().size());
             childWorkOrder.setDueDate(parentWorkOrder.getDueDate()); // optional
-            childWorkOrder.setWorkOrderStatus(WorkOrderStatus.DRAFT);
+//            childWorkOrder.setWorkOrderStatus(WorkOrderStatus.DRAFT);
             childWorkOrder.setSalesOrder(parentWorkOrder.getSalesOrder());
             childWorkOrder.setParentWorkOrderProduction(parentWorkOrder);
             childWorkOrder.setWorkOrderProductionTemplate(template);
@@ -339,9 +339,9 @@ public class WorkOrderProductionServiceImp implements WorkOrderProductionService
 
     private boolean isValidStatusTransition(WorkOrderStatus current, WorkOrderStatus next) {
         return switch (current) {
-            case DRAFT     -> next == WorkOrderStatus.IN_PROGRESS || next == WorkOrderStatus.CANCELLED;
-            case READY     -> next == WorkOrderStatus.COMPLETED || next == WorkOrderStatus.CANCELLED;
-            case IN_PROGRESS -> next == WorkOrderStatus.READY || next == WorkOrderStatus.CANCELLED;
+//            case DRAFT     -> next == WorkOrderStatus.IN_PROGRESS || next == WorkOrderStatus.CANCELLED;
+//            case READY     -> next == WorkOrderStatus.COMPLETED || next == WorkOrderStatus.CANCELLED;
+//            case IN_PROGRESS -> next == WorkOrderStatus.READY || next == WorkOrderStatus.CANCELLED;
             default        -> false;
         };
     }

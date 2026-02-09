@@ -1,4 +1,4 @@
-package com.nextgenmanager.nextgenmanager.production.helper;
+package com.nextgenmanager.nextgenmanager.production.enums;
 
 public enum RoutingStatus {
     DRAFT,

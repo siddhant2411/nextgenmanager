@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BomConnectDTO;
-import com.nextgenmanager.nextgenmanager.production.helper.RoutingStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.RoutingStatus;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import lombok.*;
 

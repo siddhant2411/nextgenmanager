@@ -4,7 +4,7 @@ package com.nextgenmanager.nextgenmanager.production.dto;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProduction;
-import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import lombok.AllArgsConstructor;
 import lombok.Data;

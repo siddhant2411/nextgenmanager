@@ -4,7 +4,7 @@ package com.nextgenmanager.nextgenmanager.production.controller;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.controller.WorkOrderListRequest;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionDTO;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProduction;
-import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

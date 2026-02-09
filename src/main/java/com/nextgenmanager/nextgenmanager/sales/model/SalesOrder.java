@@ -31,6 +31,7 @@ public class SalesOrder {
     // — Voucher identification —
     @Column(unique = true, nullable = false)
     private String orderNumber;                     // e.g. “SO/2025/0001”
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private VoucherType voucherType = VoucherType.SALES_ORDER;
