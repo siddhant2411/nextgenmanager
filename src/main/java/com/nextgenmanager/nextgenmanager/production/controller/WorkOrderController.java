@@ -561,6 +561,43 @@ public class WorkOrderController {
         }
     }
 
+
+    @GetMapping("/{id}/history")
+    public ResponseEntity<?> getWorkOrderHistory(@PathVariable int id) {
+        try {
+            logger.debug("Fetching history for WorkOrder id: {}", id);
+
+            var history = workOrderService.getWorkOrderHistory(id);
+
+            return ResponseEntity.ok(history);
+
+        } catch (EntityNotFoundException e) {
+            logger.warn("WorkOrder not found with id: {}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "WorkOrder not found with ID: " + id));
+
+        } catch (Exception e) {
+            logger.error("Error fetching history for WorkOrder id: {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to fetch WorkOrder history: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/summary")
+    public ResponseEntity<?> getWorkOrderSummary() {
+        try {
+            logger.debug("Fetching Work Order summary");
+
+            var summary = workOrderService.getWorkOrderSummary();
+
+            return ResponseEntity.ok(summary);
+
+        } catch (Exception e) {
+            logger.error("Error fetching Work Order summary", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to fetch Work Order summary: " + e.getMessage()));
+        }
+    }
     // ============================================================================
     // EXCEPTION HANDLERS
     // ============================================================================

@@ -79,6 +79,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
                 String generatedCode = codeGenerator.generateItemCode(inventoryItem);
                 inventoryItem.setItemCode(generatedCode);
             }
+
             InventoryItem savedInventoryItem = inventoryItemRepository.save(inventoryItem);
             logger.info("Item Successfully added with inventory item id: {}", savedInventoryItem.getInventoryItemId());
             long itemId = (long)savedInventoryItem.getInventoryItemId();

@@ -1,27 +1,19 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
-import com.nextgenmanager.nextgenmanager.bom.controller.BomController;
 import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingRequestMapper;
 import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionTemplateResponseDTO;
 import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
 import com.nextgenmanager.nextgenmanager.production.model.Routing;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
-import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionTemplateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Map;
 
 
 @Service
@@ -31,9 +23,6 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
 
     @Autowired
     private BomService bomService;
-
-    @Autowired
-    private WorkOrderProductionTemplateService workOrderProductionTemplateService;
 
     @Autowired
     private RoutingService routingService;

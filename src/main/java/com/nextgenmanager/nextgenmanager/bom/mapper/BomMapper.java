@@ -68,6 +68,7 @@ public class BomMapper {
                 .uom(item != null ? item.getUom() : null)
                 .position(position.getPosition())
                 .quantity(position.getQuantity())
+                .scrapPercentage(position.getScrapPercentage())
                 .hasChildBom(!position.getChildBom().getPositions().isEmpty())
                 .build();
     }

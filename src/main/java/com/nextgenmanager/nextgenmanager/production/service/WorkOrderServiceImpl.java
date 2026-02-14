@@ -6,13 +6,10 @@ import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.common.spec.GenericSpecification;
-import com.nextgenmanager.nextgenmanager.production.dto.IssueWorkOrderMaterialDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.PartialOperationCompleteDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderListDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderRequestDTO;
+import com.nextgenmanager.nextgenmanager.production.dto.*;
 import com.nextgenmanager.nextgenmanager.production.enums.*;
+import com.nextgenmanager.nextgenmanager.production.helper.WorkOrderHistory;
+import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderHistoryMapper;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderListMapper;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderMapper;
 import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
@@ -36,6 +33,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @Service
@@ -66,6 +66,8 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
     @Autowired
     private WorkOrderListMapper workOrderListMapper;
+
+
 
     @Override
     public WorkOrderDTO getWorkOrder(int id) {
@@ -138,14 +140,34 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
             WorkOrderMaterial wom = new WorkOrderMaterial();
             wom.setWorkOrder(workOrder);
-            wom.setComponent( bomItem.getChildBom().getParentInventoryItem() );
+            wom.setComponent(bomItem.getChildBom().getParentInventoryItem());
 
+            BigDecimal baseQty = BigDecimal.valueOf(bomItem.getQuantity());
+            BigDecimal plannedQty = dto.getPlannedQuantity();
 
+            BigDecimal scrapPercent = bomItem.getScrapPercentage() != null
+                    ? bomItem.getScrapPercentage()
+                    : BigDecimal.ZERO;
 
-            BigDecimal requiredQty =
-                    BigDecimal.valueOf(bomItem.getQuantity()).multiply(dto.getPlannedQuantity());
+            // ---- NET REQUIRED (Actual Need) ----
+            BigDecimal netRequired = baseQty
+                    .multiply(plannedQty)
+                    .setScale(5, RoundingMode.HALF_UP);
 
-            wom.setRequiredQuantity(requiredQty);
+            // ---- SCRAP MULTIPLIER ----
+            BigDecimal scrapMultiplier = BigDecimal.ONE.add(
+                    scrapPercent.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP)
+            );
+
+            // ---- PLANNED REQUIRED (With Scrap Buffer) ----
+            BigDecimal plannedRequired = netRequired
+                    .multiply(scrapMultiplier)
+                    .setScale(5, RoundingMode.HALF_UP);
+
+            wom.setNetRequiredQuantity(netRequired);
+            wom.setPlannedRequiredQuantity(plannedRequired);
+            wom.setScrappedQuantity(scrapPercent);
+
             wom.setIssuedQuantity(BigDecimal.ZERO);
             wom.setScrappedQuantity(BigDecimal.ZERO);
             wom.setIssueStatus(MaterialIssueStatus.NOT_ISSUED);
@@ -233,6 +255,148 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     private String generateWorkOrderNumber() {
         Long seq = workOrderRepository.getNextWorkOrderSequence();
         return "WO-" + seq;
+    }
+
+    private BigDecimal calculateWorkOrderCompletedQuantity(WorkOrder workOrder) {
+
+        // ---- OPERATION BASED COMPLETION ----
+        List<WorkOrderOperation> operations =
+                workOrderOperationRepository.findByWorkOrder(workOrder);
+
+        BigDecimal operationCompletedUnits = operations.stream()
+                .filter(op -> op.getDeletedDate() == null)
+                .map(op -> op.getCompletedQuantity() != null
+                        ? op.getCompletedQuantity()
+                        : BigDecimal.ZERO)
+                .min(BigDecimal::compareTo)
+                .orElse(BigDecimal.ZERO);
+
+
+        // ---- MATERIAL BASED COMPLETION ----
+        List<WorkOrderMaterial> materials =
+                workOrderMaterialRepository.findByWorkOrder(workOrder);
+
+        Optional<BigDecimal> materialCompletedUnits = materials.stream()
+                .filter(mat -> mat.getDeletedDate() == null)
+                .map(mat -> {
+
+                    if (mat.getNetRequiredQuantity() == null ||
+                            mat.getNetRequiredQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                        return null;
+                    }
+
+                    BigDecimal plannedQty = workOrder.getPlannedQuantity() != null
+                            ? workOrder.getPlannedQuantity()
+                            : BigDecimal.ZERO;
+
+                    if (plannedQty.compareTo(BigDecimal.ZERO) <= 0) {
+                        return BigDecimal.ZERO;
+                    }
+
+                    BigDecimal issued = mat.getIssuedQuantity() != null
+                            ? mat.getIssuedQuantity()
+                            : BigDecimal.ZERO;
+
+                    BigDecimal scrapped = mat.getScrappedQuantity() != null
+                            ? mat.getScrappedQuantity()
+                            : BigDecimal.ZERO;
+
+                    // ✅ GOOD CONSUMED
+                    BigDecimal goodConsumed = issued.subtract(scrapped);
+
+                    if (goodConsumed.compareTo(BigDecimal.ZERO) <= 0) {
+                        return BigDecimal.ZERO;
+                    }
+
+                    // Completion ratio
+                    BigDecimal completionRatio = goodConsumed
+                            .divide(mat.getNetRequiredQuantity(), 10, RoundingMode.DOWN);
+
+                    // Units completed
+                    BigDecimal completedByMaterial = completionRatio
+                            .multiply(plannedQty)
+                            .setScale(0, RoundingMode.DOWN);
+
+                    return completedByMaterial.max(BigDecimal.ZERO);
+                })
+                .filter(Objects::nonNull)
+                .min(BigDecimal::compareTo);
+
+
+        // ---- FINAL COMPLETION ----
+        return materialCompletedUnits
+                .map(operationCompletedUnits::min)
+                .orElse(operationCompletedUnits);
+    }
+
+
+    private static LocalDate toLocalDate(Date date) {
+        return date == null
+                ? null
+                : date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    @Override
+    public WorkOrderSummaryDTO getWorkOrderSummary() {
+        return getWorkOrderSummary(LocalDate.now());
+    }
+
+    WorkOrderSummaryDTO getWorkOrderSummary(LocalDate today) {
+        Specification<WorkOrder> spec = (root, query, cb) -> cb.isNull(root.get("deletedDate"));
+        List<WorkOrder> workOrders = workOrderRepository.findAll(spec);
+
+        long overdue = 0;
+        long dueSoon = 0;
+        long ready = 0;
+        long inProgress = 0;
+        long completedToday = 0;
+        long blocked = 0;
+
+        LocalDate dueSoonEnd = today.plusDays(3);
+
+        for (WorkOrder workOrder : workOrders) {
+            WorkOrderStatus status = workOrder.getWorkOrderStatus();
+            boolean activeStatus = status != WorkOrderStatus.COMPLETED
+                    && status != WorkOrderStatus.CLOSED
+                    && status != WorkOrderStatus.CANCELLED;
+
+            LocalDate dueDate = toLocalDate(workOrder.getDueDate());
+            if (dueDate != null && dueDate.isBefore(today) && activeStatus) {
+                overdue++;
+            }
+            if (dueDate != null
+                    && (dueDate.isEqual(today) || dueDate.isAfter(today))
+                    && (dueDate.isEqual(dueSoonEnd) || dueDate.isBefore(dueSoonEnd))
+                    && activeStatus) {
+                dueSoon++;
+            }
+
+            if (status == WorkOrderStatus.IN_PROGRESS) {
+                inProgress++;
+            }
+            if (status == WorkOrderStatus.HOLD) {
+                blocked++;
+            }
+
+            LocalDate plannedEndDate = toLocalDate(workOrder.getPlannedEndDate());
+            if (plannedEndDate != null && plannedEndDate.isEqual(today)) {
+                completedToday++;
+            }
+
+            if (status == WorkOrderStatus.READY_FOR_INSPECTION
+                   ) {
+                ready++;
+            }
+        }
+
+        return new com.nextgenmanager.nextgenmanager.production.dto.WorkOrderSummaryDTO(
+                overdue,
+                dueSoon,
+                ready,
+                inProgress,
+                completedToday,
+                blocked
+        );
     }
 
 
@@ -332,28 +496,40 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     dto.getPlannedQuantity()
             );
 
-            // Calculate the ratio for material recalculation
+            // Calculate ratio
             BigDecimal quantityRatio = dto.getPlannedQuantity().divide(
                     oldQty,
                     10,
-                    java.math.RoundingMode.HALF_UP
+                    RoundingMode.HALF_UP
             );
 
             // Update all material quantities proportionally
             for (WorkOrderMaterial material : materials) {
-                BigDecimal newMaterialQty = material.getRequiredQuantity()
+
+                BigDecimal oldNetQty = material.getNetRequiredQuantity();
+                BigDecimal oldPlannedQty = material.getPlannedRequiredQuantity();
+
+                BigDecimal newNetQty = oldNetQty
                         .multiply(quantityRatio)
-                        .setScale(5, java.math.RoundingMode.HALF_UP);
+                        .setScale(5, RoundingMode.HALF_UP);
+
+                BigDecimal newPlannedQty = oldPlannedQty
+                        .multiply(quantityRatio)
+                        .setScale(5, RoundingMode.HALF_UP);
 
                 logger.debug(
-                        "Recalculating material {} quantity from {} to {} for WorkOrder {}",
+                        "Recalculating material {} | Net: {} -> {} | Planned: {} -> {} | WO {}",
                         material.getComponent().getItemCode(),
-                        material.getRequiredQuantity(),
-                        newMaterialQty,
+                        oldNetQty,
+                        newNetQty,
+                        oldPlannedQty,
+                        newPlannedQty,
                         workOrder.getWorkOrderNumber()
                 );
 
-                material.setRequiredQuantity(newMaterialQty);
+                material.setNetRequiredQuantity(newNetQty);
+                material.setPlannedRequiredQuantity(newPlannedQty);
+
             }
 
             workOrderMaterialRepository.saveAll(materials);
@@ -687,104 +863,109 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         if (workOrder.getWorkOrderStatus() != WorkOrderStatus.RELEASED &&
                 workOrder.getWorkOrderStatus() != WorkOrderStatus.IN_PROGRESS) {
 
-            logger.warn(
-                    "Cannot issue materials for WorkOrder {} due to status {}",
-                    workOrder.getWorkOrderNumber(),
-                    workOrder.getWorkOrderStatus()
-            );
             throw new IllegalStateException(
                     "Materials can only be issued when WorkOrder is RELEASED or IN_PROGRESS"
             );
         }
 
-        // Process each material issue
         for (IssueWorkOrderMaterialDTO.MaterialIssueItem item : issueDTO.getMaterials()) {
 
-            // Fetch the work order material
             WorkOrderMaterial material = workOrderMaterialRepository
                     .findById(item.getWorkOrderMaterialId())
-                    .orElseThrow(() -> {
-                        logger.error("WorkOrderMaterial not found id={}", item.getWorkOrderMaterialId());
-                        return new EntityNotFoundException("WorkOrderMaterial not found");
-                    });
+                    .orElseThrow(() -> new EntityNotFoundException("WorkOrderMaterial not found"));
 
-            // Validate material belongs to this work order
-            if (material.getWorkOrder().getId() != workOrder.getId()) {
-                logger.error(
-                        "Material {} does not belong to WorkOrder {}",
-                        item.getWorkOrderMaterialId(),
-                        workOrder.getWorkOrderNumber()
-                );
+            // Validate material belongs to work order
+            if (!(material.getWorkOrder().getId() ==workOrder.getId())) {
+                throw new IllegalStateException("Material does not belong to this WorkOrder");
+            }
+
+            // ----- SAFE VALUE EXTRACTION -----
+
+            BigDecimal currentIssued = material.getIssuedQuantity() != null
+                    ? material.getIssuedQuantity()
+                    : BigDecimal.ZERO;
+
+            BigDecimal currentScrapped = material.getScrappedQuantity() != null
+                    ? material.getScrappedQuantity()
+                    : BigDecimal.ZERO;
+
+            BigDecimal newIssued = item.getIssuedQuantity() != null
+                    ? item.getIssuedQuantity()
+                    : BigDecimal.ZERO;
+
+            BigDecimal newScrap = item.getScrappedQuantity() != null
+                    ? item.getScrappedQuantity()
+                    : BigDecimal.ZERO;
+
+            if (newIssued.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Issued quantity must be greater than zero");
+            }
+
+            if (newScrap.compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Scrap quantity cannot be negative");
+            }
+
+            // ----- CALCULATIONS -----
+
+            BigDecimal totalIssued = currentIssued.add(newIssued);
+            BigDecimal totalScrapped = currentScrapped.add(newScrap);
+
+            // Prevent over-issue beyond planned quantity
+            if (totalIssued.compareTo(material.getPlannedRequiredQuantity()) > 0) {
                 throw new IllegalStateException(
-                        "Material does not belong to this WorkOrder"
+                        "Issued quantity exceeds planned required quantity"
                 );
             }
 
-//            // Validate issued quantity
-//            if (item.getIssuedQuantity() == null || item.getIssuedQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-//                logger.error("Invalid issued quantity {} for material {}",
-//                        item.getIssuedQuantity(), item.getWorkOrderMaterialId());
-//                throw new IllegalArgumentException(
-//                        "Issued quantity must be greater than zero"
-//                );
-//            }
-
-            // Calculate total issued + scrapped
-            BigDecimal totalIssued = material.getIssuedQuantity().add(item.getIssuedQuantity());
-            BigDecimal totalScrapped = material.getScrappedQuantity() != null ?
-                    material.getScrappedQuantity() : BigDecimal.ZERO;
-
-            if (item.getScrappedQuantity() != null && item.getScrappedQuantity().compareTo(BigDecimal.ZERO) > 0) {
-                totalScrapped = totalScrapped.add(item.getScrappedQuantity());
-            }
-
-            // Validate total doesn't exceed required
-            BigDecimal totalUsed = totalIssued.add(totalScrapped);
-            if (totalIssued.compareTo(material.getRequiredQuantity()) > 0) {
-                logger.error(
-                        "Total issued ({}) exceeds required ({}) for material {}",
-                        totalUsed, material.getRequiredQuantity(), item.getWorkOrderMaterialId()
-                );
+            // Scrap cannot exceed total issued
+            if (totalScrapped.compareTo(totalIssued) > 0) {
                 throw new IllegalStateException(
-                        "Issued quantity exceeds required quantity"
+                        "Scrap quantity cannot exceed issued quantity"
                 );
             }
 
-            // Update material quantities
+            // Update quantities
             material.setIssuedQuantity(totalIssued);
-            if (item.getScrappedQuantity() != null && item.getScrappedQuantity().compareTo(BigDecimal.ZERO) > 0) {
-                material.setScrappedQuantity(totalScrapped);
-            }
+            material.setScrappedQuantity(totalScrapped);
 
-            // Update status if fully issued
-            if (totalIssued.compareTo(material.getRequiredQuantity()) >= 0) {
+            // ----- STATUS BASED ON NET REQUIREMENT -----
+
+            BigDecimal goodConsumed = totalIssued.subtract(totalScrapped);
+
+            if (goodConsumed.compareTo(material.getNetRequiredQuantity()) >= 0) {
                 material.setIssueStatus(MaterialIssueStatus.ISSUED);
+
                 logger.info(
-                        "Material {} fully issued for WorkOrder {}",
+                        "Material {} fully satisfied for WorkOrder {}",
                         material.getComponent().getItemCode(),
                         workOrder.getWorkOrderNumber()
                 );
-            } else {
+
+            } else if (totalIssued.compareTo(BigDecimal.ZERO) > 0) {
                 material.setIssueStatus(MaterialIssueStatus.PARTIAL_ISSUED);
+
                 logger.info(
-                        "Material {} partially issued ({}/{}) for WorkOrder {}",
+                        "Material {} partially issued (Good: {}/{}) for WorkOrder {}",
                         material.getComponent().getItemCode(),
-                        totalIssued,
-                        material.getRequiredQuantity(),
+                        goodConsumed,
+                        material.getNetRequiredQuantity(),
                         workOrder.getWorkOrderNumber()
                 );
+
+            } else {
+                material.setIssueStatus(MaterialIssueStatus.NOT_ISSUED);
             }
 
             workOrderMaterialRepository.save(material);
 
-            // Audit the material issue
+            // Audit
             auditService.record(
                     workOrder,
                     WorkOrderEventType.UPDATED,
                     "materialIssue",
                     material.getComponent().getItemCode(),
                     totalIssued.toString(),
-                    "Material issued: " + material.getComponent().getItemCode() + " qty: " + item.getIssuedQuantity()
+                    "Issued: " + newIssued + ", Scrap: " + newScrap
             );
         }
 
@@ -792,7 +973,13 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 "Materials issued successfully for WorkOrder {}",
                 workOrder.getWorkOrderNumber()
         );
+
+        BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
+        workOrder.setCompletedQuantity(totalCompleted);
+
+        workOrderRepository.save(workOrder);
     }
+
 
     @Transactional
     @Override
@@ -920,8 +1107,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         workOrderOperationRepository.save(operation);
 
         // Update WorkOrder progress
-        BigDecimal totalCompleted = workOrderOperationRepository
-                .sumCompletedQuantityByWorkOrder(workOrder);
+        BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
 
         workOrder.setCompletedQuantity(totalCompleted);
 
@@ -1031,9 +1217,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         }
 
         // Update WorkOrder progress
-        BigDecimal totalCompleted =
-                workOrderOperationRepository
-                        .sumCompletedQuantityByWorkOrder(workOrder);
+        BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
 
         workOrder.setCompletedQuantity(totalCompleted);
         workOrderRepository.save(workOrder);
@@ -1104,12 +1288,12 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     material.getScrappedQuantity() != null ? material.getScrappedQuantity() : BigDecimal.ZERO
             );
 
-            if (totalUsed.compareTo(material.getRequiredQuantity()) < 0) {
+            if (totalUsed.compareTo(material.getNetRequiredQuantity()) < 0) {
                 logger.warn(
                         "Cannot complete WorkOrder {}: material {} has insufficient issued/scrapped qty. Required: {}, Used: {}",
                         workOrder.getWorkOrderNumber(),
                         material.getComponent().getItemCode(),
-                        material.getRequiredQuantity(),
+                        material.getNetRequiredQuantity(),
                         totalUsed
                 );
                 throw new IllegalStateException(
@@ -1119,9 +1303,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         }
 
         // Finalize quantities
-        BigDecimal totalCompleted =
-                workOrderOperationRepository
-                        .sumCompletedQuantityByWorkOrder(workOrder);
+        BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
 
         workOrder.setCompletedQuantity(totalCompleted);
 
@@ -1366,5 +1548,24 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         );
     }
 
+    public List<WorkOrderHistoryDTO> getWorkOrderHistory(int workOrderId){
+            logger.info("Fetching history for WorkOrder id={}", workOrderId);
+            WorkOrder workOrder = workOrderRepository.findById(workOrderId)
+                    .orElseThrow(() -> {
+                        logger.error("WorkOrder not found id={}", workOrderId);
+                        return new EntityNotFoundException("WorkOrder not found");
+                    });
+
+            List<WorkOrderHistoryDTO> history = auditService.getHistoryForWorkOrder(
+                workOrderId
+            );
+
+            logger.info(
+                    "History fetched for WorkOrder {}: {} events",
+                    workOrder.getWorkOrderNumber(),
+                    history.size()
+            );
+            return history;
+    }
 
 }

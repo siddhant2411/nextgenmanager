@@ -18,7 +18,9 @@ public class WorkOrderMaterialDTO {
 
     private InventoryItemDTO component;
 
-    private BigDecimal requiredQuantity;
+    private BigDecimal netRequiredQuantity;
+
+    private BigDecimal plannedRequiredQuantity;
 
     private BigDecimal issuedQuantity;
 

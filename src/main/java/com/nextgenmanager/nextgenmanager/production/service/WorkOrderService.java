@@ -2,15 +2,12 @@ package com.nextgenmanager.nextgenmanager.production.service;
 
 
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
-import com.nextgenmanager.nextgenmanager.production.dto.IssueWorkOrderMaterialDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.PartialOperationCompleteDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderListDTO;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderRequestDTO;
+import com.nextgenmanager.nextgenmanager.production.dto.*;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
 import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public interface WorkOrderService {
 
@@ -51,4 +48,8 @@ public interface WorkOrderService {
     public void cancelWorkOrder(int workOrderId);
 
     public void softDeleteWorkOrder(int workOrderId, String reason);
+
+    public List<WorkOrderHistoryDTO> getWorkOrderHistory(int workOrderId);
+
+    public WorkOrderSummaryDTO getWorkOrderSummary();
 }

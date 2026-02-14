@@ -36,9 +36,17 @@ public class WorkOrderMaterial {
     private InventoryItem component;
 
     // ---- Quantities ----
-    @Column(nullable = false, precision = 15, scale = 5)
-    private BigDecimal requiredQuantity;   // BOM × WO qty
 
+    // 100 (real need)
+    @Column(nullable = false, precision = 15, scale = 5)
+    private BigDecimal netRequiredQuantity;
+
+    // 110 (100 + 10% scrap buffer)
+    @Column(nullable = false, precision = 15, scale = 5)
+    private BigDecimal plannedRequiredQuantity;
+
+    @Column(nullable = false, precision = 8, scale = 4)
+    private BigDecimal scrappercent = BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 15, scale = 5)
     private BigDecimal issuedQuantity = BigDecimal.ZERO;

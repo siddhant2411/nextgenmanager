@@ -6,6 +6,9 @@ import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
 import jakarta.persistence.criteria.*;
 import org.springframework.data.jpa.domain.Specification;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,7 @@ public class GenericSpecification<T> {
                     switch (operator) {
                         case "contains" -> predicates.add(cb.like(stringPath, "%" + lowerValue + "%"));
                         case "=" -> predicates.add(cb.equal(stringPath, lowerValue));
+                        case "!=" -> predicates.add(cb.notEqual(stringPath, lowerValue));
                         default -> throw new IllegalArgumentException("Invalid operator for string field: " + operator);
                     }
                 }
@@ -68,12 +72,21 @@ public class GenericSpecification<T> {
                 // Handle Enums
                 else if (javaType.isEnum()) {
                     Object enumValue = Enum.valueOf((Class<Enum>) javaType, value.toUpperCase());
-                    predicates.add(cb.equal(path, enumValue));
+                    if(operator.equals("="))
+                        predicates.add(cb.equal(path, enumValue));
+                    else if(operator.equals("!="))
+                        predicates.add(cb.notEqual(path, enumValue));
+                     else
+                        throw new IllegalArgumentException("Invalid operator for enum field: " + operator);
                 }
 
                 // Handle Dates
-                else if (javaType == java.util.Date.class || javaType == Timestamp.class) {
-                    Timestamp dateValue = Timestamp.valueOf(value);
+                else if (javaType == java.util.Date.class ||
+                        javaType == Timestamp.class ||
+                        javaType == java.time.LocalDate.class ||
+                        javaType == java.time.LocalDateTime.class) {
+
+                    Timestamp dateValue = parseToTimestamp(value);
                     Expression<java.util.Date> datePath = path.as(java.util.Date.class);
 
                     switch (operator) {
@@ -84,6 +97,7 @@ public class GenericSpecification<T> {
                         case "<=" -> predicates.add(cb.lessThanOrEqualTo(datePath, dateValue));
                     }
                 }
+
 
                 else {
                     predicates.add(cb.equal(path, value));
@@ -103,4 +117,31 @@ public class GenericSpecification<T> {
         }
         return from.get(parts[parts.length - 1]);
     }
+
+
+    private static Timestamp parseToTimestamp(String value) {
+        List<DateTimeFormatter> formatters = List.of(
+                DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss"),
+                DateTimeFormatter.ofPattern("dd-MM-yyyy"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+                DateTimeFormatter.ofPattern("dd-MM-yy"),
+                DateTimeFormatter.ISO_DATE_TIME
+        );
+
+        for (DateTimeFormatter formatter : formatters) {
+            try {
+                if (formatter.toString().contains("H")) {
+                    LocalDateTime ldt = LocalDateTime.parse(value, formatter);
+                    return Timestamp.valueOf(ldt);
+                } else {
+                    LocalDate ld = LocalDate.parse(value, formatter);
+                    return Timestamp.valueOf(ld.atStartOfDay());
+                }
+            } catch (Exception ignored) {}
+        }
+
+        throw new IllegalArgumentException("Invalid date format: " + value);
+    }
+
 }

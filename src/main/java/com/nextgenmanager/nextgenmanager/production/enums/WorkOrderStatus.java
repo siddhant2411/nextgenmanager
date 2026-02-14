@@ -5,7 +5,11 @@ public enum WorkOrderStatus {
     CREATED,
     RELEASED,
     IN_PROGRESS,
+    READY_FOR_INSPECTION,
+    TESTING,
+    INSPECTION_FAILED,
     COMPLETED,
     CLOSED,
-    CANCELLED
+    CANCELLED,
+    HOLD
 }

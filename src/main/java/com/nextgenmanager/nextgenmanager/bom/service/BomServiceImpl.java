@@ -24,16 +24,10 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
-import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderProductionTemplateRepository;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import io.minio.GetObjectResponse;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,8 +40,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -77,8 +69,7 @@ public class BomServiceImpl implements BomService {
     @Autowired
     private InventoryItemService inventoryItemService;
 
-    @Autowired
-    private WorkOrderProductionTemplateRepository workOrderProductionTemplateRepository;
+
 
     @Autowired
     private BomAttachmentRepository bomAttachmentRepository;
@@ -139,12 +130,6 @@ public class BomServiceImpl implements BomService {
         logger.debug("Creating BOM for parent item {}", parentItemId);
 
 
-        if (!bomRepository.findBomByParentInventoryItemId(parentItemId).isEmpty()) {
-            throw new BusinessException(
-                    "A BOM already exists for item: " + bom.getParentInventoryItem().getItemCode() +
-                            ". Create a new BOM version via approval workflow."
-            );
-        }
 
         // Validate parent exists
         inventoryItemRepository.findById(parentItemId)
@@ -166,7 +151,10 @@ public class BomServiceImpl implements BomService {
                     throw new InvalidDataException("BOM cycle detected");
                 }
 
+                pos.setScrapPercentage(Optional.ofNullable(pos.getScrapPercentage()).orElse(BigDecimal.ZERO));
+
                 pos.setParentBom(bom);
+
             }
         }
 
@@ -263,6 +251,7 @@ public class BomServiceImpl implements BomService {
                     activeBom.setBomStatus(BomStatus.INACTIVE);
                     activeBom.setIsActive(false);
                     activeBom.setIsActiveVersion(false);
+                    bom.setEffectiveTo(new Date());
                 }
                 bomRepository.saveAll(activeBOMs);
                 bom.setIsActiveVersion(true);
@@ -450,7 +439,7 @@ public class BomServiceImpl implements BomService {
                 if (checkForCycle(bom, pos.getChildBom())) {
                     throw new InvalidDataException("BOM cycle detected");
                 }
-
+                pos.setScrapPercentage(Optional.ofNullable(pos.getScrapPercentage()).orElse(BigDecimal.ZERO));
                 pos.setParentBom(bom);
             }
         }
@@ -629,6 +618,15 @@ public class BomServiceImpl implements BomService {
             bomCopy.setVersionGroup(bomCopy.getVersionGroup());
 
             Bom newBom = addBom(bomCopy);
+            orginalBom.getPositions().forEach(pos -> {
+                BomPosition posCopy = new BomPosition();
+                posCopy.setChildBom(pos.getChildBom());
+                posCopy.setQuantity(pos.getQuantity());
+                posCopy.setScrapPercentage(pos.getScrapPercentage());
+                posCopy.setParentBom(newBom);
+                bomPositionRepository.save(posCopy);
+            });
+
 
             RoutingDto routingDto = routingService.createOrUpdateRouting(newBom.getId(),routingService.getByBom(orginalBom.getId()),"SYSTEM");
             BomDTO bomDTO = BomMapper.toDto(newBom);
@@ -672,8 +670,18 @@ public class BomServiceImpl implements BomService {
         throw new ResourceNotFoundException("Active BOM not found for item: "+inventoryItem.getItemCode());
     }
 
-    public WorkOrderProductionTemplate getBomWOTemplateByBomId(int id){
-        return bomRepository.findWOTemplateByBomId(id);
+
+
+
+    @Override
+    public List<BomDTO> getBomHistoryByParentInventoryItem(int id){
+        InventoryItem inventoryItem = inventoryItemService.getInventoryItem(id); // to check if inventory item exists
+        List<Bom> boms = bomRepository.findBomByParentInventoryItemId(id);
+        List<BomDTO> bomDTOS = new ArrayList<>();
+        for(Bom bom: boms){
+            bomDTOS.add(BomMapper.toDto(bom));
+        }
+        return bomDTOS;
     }
 
 //    public void recalculateAndUpdateCost(int bomId) {

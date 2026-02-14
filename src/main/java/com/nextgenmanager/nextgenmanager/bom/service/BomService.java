@@ -2,24 +2,19 @@ package com.nextgenmanager.nextgenmanager.bom.service;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.*;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
-import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
-import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import io.minio.GetObjectResponse;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.MalformedURLException;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 public interface BomService {
 
@@ -43,7 +38,6 @@ public interface BomService {
 
     public List<Bom> getBomByParentInventoryItem(int id);
 
-    public WorkOrderProductionTemplate getBomWOTemplateByBomId(int id);
 
     public Page<BomListDTO> filterBom(FilterRequest request);
 
@@ -71,4 +65,6 @@ public interface BomService {
     public Map<Integer, RollupRow> getRolledUpQuantity(int bomId);
 
     public BomDTO getActiveBomByParentInventoryItem(int id);
+
+    public List<BomDTO> getBomHistoryByParentInventoryItem(int id);
 }

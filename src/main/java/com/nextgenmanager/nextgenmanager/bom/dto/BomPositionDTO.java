@@ -4,6 +4,8 @@ package com.nextgenmanager.nextgenmanager.bom.dto;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Getter
 @Setter
 @AllArgsConstructor
@@ -20,6 +22,7 @@ public class BomPositionDTO {
     private UOM uom;
     private int position;
     private double quantity;
+    private BigDecimal scrapPercentage;
     private boolean hasChildBom;
 
 

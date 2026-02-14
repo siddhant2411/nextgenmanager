@@ -9,19 +9,14 @@ import com.nextgenmanager.nextgenmanager.bom.service.BomWorkflowService;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
-import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
-import com.nextgenmanager.nextgenmanager.production.model.Routing;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
-import com.nextgenmanager.nextgenmanager.production.service.WorkOrderProductionTemplateService;
 import io.minio.GetObjectResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -388,4 +383,17 @@ public class BomController {
                 )
                 .body(new InputStreamResource(stream));
     }
+
+    @GetMapping("/{itemId}/bom-history")
+    public ResponseEntity<?> getBomHistoryByInventoryItem(@PathVariable int itemId) {
+        try {
+            List<BomDTO> bomHistory = bomService.getBomHistoryByParentInventoryItem(itemId);
+            return ResponseEntity.ok(bomHistory);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error","No BOM history found for the given inventory item"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error","Something went wrong while fetching BOM history"));
+        }
+    }
+
 }

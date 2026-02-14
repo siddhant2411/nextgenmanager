@@ -14,6 +14,7 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.util.Date;
 
 @Entity
@@ -41,5 +42,7 @@ public class BomPosition {
     private int position;
 
     private double quantity;
+
+    private BigDecimal scrapPercentage;
 
 }

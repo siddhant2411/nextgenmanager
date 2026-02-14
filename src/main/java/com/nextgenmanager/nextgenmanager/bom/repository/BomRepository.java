@@ -1,13 +1,9 @@
 package com.nextgenmanager.nextgenmanager.bom.repository;
 
-import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
-import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -30,8 +26,6 @@ public interface BomRepository extends JpaRepository<Bom,Integer>, JpaSpecificat
     List<Bom> findBomByParentInventoryItemId(@Param("inventoryItemId") int inventoryItemId);
 
 
-    @Query("SELECT w FROM WorkOrderProductionTemplate w WHERE w.bom.id = :bomId")
-    WorkOrderProductionTemplate findWOTemplateByBomId(@Param("bomId") int bomId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT COALESCE(MAX(b.versionNumber), 0) FROM Bom b WHERE b.parentInventoryItem.inventoryItemId = :itemId")
