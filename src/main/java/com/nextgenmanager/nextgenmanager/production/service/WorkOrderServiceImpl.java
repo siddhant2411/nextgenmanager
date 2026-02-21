@@ -462,7 +462,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             List<WorkOrderOperation> operations =
                     workOrderOperationRepository.findByWorkOrderIdOrderBySequence(workOrder.getId());
 
-            if (!operations.isEmpty()) {
+            if (!operations.isEmpty() && ! workOrder.getWorkOrderStatus().equals(WorkOrderStatus.CREATED)) {
                 logger.error(
                         "Quantity change rejected: operations already exist for WorkOrder {}",
                         workOrder.getWorkOrderNumber()

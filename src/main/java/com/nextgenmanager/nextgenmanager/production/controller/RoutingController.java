@@ -8,12 +8,14 @@ import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import jakarta.xml.bind.ValidationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/manufacturing/routing")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
 public class RoutingController {
 
     private final RoutingService routingService;
@@ -27,6 +29,7 @@ public class RoutingController {
     // CREATE or UPDATE Routing (for a BOM)
     // ---------------------------------------------------------------------------
     @PostMapping("/bom/{bomId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<RoutingDto> createOrUpdateRouting(
             @PathVariable Integer bomId,
             @RequestBody RoutingDto routingDto,
@@ -43,6 +46,7 @@ public class RoutingController {
     // UPDATE Operations Only
     // ---------------------------------------------------------------------------
     @PutMapping("/{routingId}/operations")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<Routing> updateOperations(
             @PathVariable Long routingId,
             @RequestBody List<RoutingOperationDto> operations,
@@ -57,6 +61,7 @@ public class RoutingController {
     // APPROVE Routing
     // ---------------------------------------------------------------------------
     @PostMapping("/{routingId}/approve")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<Void> approve(
             @PathVariable Long routingId,
             @RequestHeader("X-Actor") String actor) throws ValidationException {
@@ -69,6 +74,7 @@ public class RoutingController {
     // ACTIVATE Routing
     // ---------------------------------------------------------------------------
     @PostMapping("/{routingId}/activate")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<Void> activate(
             @PathVariable Long routingId,
             @RequestHeader("X-Actor") String actor) throws ValidationException {
@@ -81,6 +87,7 @@ public class RoutingController {
     // OBSOLETE Routing
     // ---------------------------------------------------------------------------
     @PostMapping("/{routingId}/obsolete")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<Void> obsolete(
             @PathVariable Long routingId,
             @RequestHeader("X-Actor") String actor) {
@@ -114,3 +121,4 @@ public class RoutingController {
         return ResponseEntity.ok(routingService.getOperations(routingId));
     }
 }
+

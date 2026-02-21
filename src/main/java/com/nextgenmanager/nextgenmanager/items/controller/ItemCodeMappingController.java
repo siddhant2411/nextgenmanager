@@ -5,12 +5,14 @@ import com.nextgenmanager.nextgenmanager.items.model.ItemCodeMapping;
 import com.nextgenmanager.nextgenmanager.items.repository.ItemCodeMappingRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/item-code-mapping")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER','ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER','ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER')")
 public class ItemCodeMappingController {
 
     @Autowired
@@ -30,12 +32,14 @@ public class ItemCodeMappingController {
 
     // POST create new mapping
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_PURCHASE_ADMIN','ROLE_SALES_ADMIN')")
     public ResponseEntity<ItemCodeMapping> createMapping(@RequestBody ItemCodeMapping mapping) {
         return ResponseEntity.ok(repository.save(mapping));
     }
 
     // PUT update mapping
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_PURCHASE_ADMIN','ROLE_SALES_ADMIN')")
     public ResponseEntity<ItemCodeMapping> updateMapping(@PathVariable int id, @RequestBody ItemCodeMapping updated) {
         return repository.findById((long) id)
                 .map(existing -> {
@@ -49,6 +53,7 @@ public class ItemCodeMappingController {
 
     // DELETE mapping
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_PURCHASE_ADMIN','ROLE_SALES_ADMIN')")
     public ResponseEntity<Object> deleteMapping(@PathVariable int id) {
         return repository.findById((long) id).map(mapping -> {
             repository.delete(mapping);
@@ -56,3 +61,4 @@ public class ItemCodeMappingController {
         }).orElse(ResponseEntity.notFound().build());
     }
 }
+

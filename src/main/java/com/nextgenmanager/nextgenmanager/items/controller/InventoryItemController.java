@@ -19,6 +19,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,7 +34,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/inventory_item")
-
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER')")
 public class InventoryItemController {
 
     @Autowired
@@ -56,6 +57,7 @@ public class InventoryItemController {
             consumes = { MediaType.MULTIPART_FORM_DATA_VALUE },
             produces = MediaType.APPLICATION_JSON_VALUE
     )
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_USER')")
     public ResponseEntity<InventoryItem> addInventoryItem(
             @RequestPart("inventoryItem") InventoryItem inventoryItem,
             @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) {
@@ -114,6 +116,7 @@ public class InventoryItemController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
     public ResponseEntity<?> deleteInventoryItem(@PathVariable int id) {
         logger.debug("Received request to delete inventory item with id: {}", id);
         try {
@@ -131,6 +134,7 @@ public class InventoryItemController {
     @PutMapping(value = "/{id}",
             consumes = { MediaType.MULTIPART_FORM_DATA_VALUE },
             produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN')")
     public ResponseEntity<InventoryItem> editInventoryItem(
             @PathVariable int id,
             @RequestPart("inventoryItem") InventoryItem updatedItem,
@@ -159,6 +163,7 @@ public class InventoryItemController {
     }
 
     @PostMapping(value = "/{id}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
     public ResponseEntity<String> uploadFile(@PathVariable int id, @RequestParam("file") MultipartFile file) {
         try {
             Path uploadPath = Paths.get(UPLOAD_DIR);
@@ -252,3 +257,4 @@ public class InventoryItemController {
 
 
 }
+

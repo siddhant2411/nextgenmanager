@@ -22,6 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -32,6 +33,7 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/bom")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
 
 public class BomController {
 
@@ -138,6 +140,7 @@ public class BomController {
         }
     }
 
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteBom(@PathVariable Integer id) {
         logger.info("Received request to delete BOM with id: {}", id);
@@ -220,10 +223,9 @@ public class BomController {
     }
 
     @PostMapping("/active/search")
-    public Page<BomListDTO> searchActiveBom(@RequestBody String request) {
-        return bomService.searchActiveBom(request);
+    public Page<BomListDTO> searchActiveBom(@RequestBody SearchRequest request) {
+        return bomService.searchActiveBom(request.getQuery());
     }
-
 
     @GetMapping("/positions/{bomId}")
     public ResponseEntity<?> getBomPositions(@PathVariable int bomId){
@@ -246,6 +248,7 @@ public class BomController {
     }
 
     @PostMapping("/changeStatus/{bomId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<?> changeBomStatus(@PathVariable int bomId,@RequestBody BomStatusChangeRequest bomStatusChangeRequest){
         try {
             BomDTO bomDTO = bomService.changeBomStatus(bomId,bomStatusChangeRequest);
@@ -303,6 +306,7 @@ public class BomController {
         }
 
     }
+
 
     @DeleteMapping("{bomId}/delete-attachment/{fileId}")
     public ResponseEntity<?> deleteBomAttachment(@PathVariable int bomId, @PathVariable long fileId){
@@ -397,3 +401,4 @@ public class BomController {
     }
 
 }
+
