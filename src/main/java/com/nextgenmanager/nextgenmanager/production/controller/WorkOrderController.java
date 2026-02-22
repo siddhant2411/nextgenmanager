@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -21,6 +22,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/production/work-order")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
 public class WorkOrderController {
 
     @Autowired
@@ -314,6 +316,7 @@ public class WorkOrderController {
      * }
      */
     @PatchMapping("/material/issue")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<?> issueMaterials(@RequestBody IssueWorkOrderMaterialDTO issueDTO) {
         try {
             logger.debug("Issuing materials for WorkOrder id: {} with {} material items",
@@ -502,6 +505,7 @@ public class WorkOrderController {
      * Reverses any inventory transactions if applicable.
      */
     @PatchMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<?> cancelWorkOrder(@PathVariable int id) {
         try {
             logger.debug("Cancelling WorkOrder id: {}", id);
@@ -537,6 +541,7 @@ public class WorkOrderController {
      * Used for audit trail and compliance purposes.
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
     public ResponseEntity<?> deleteWorkOrder(
             @PathVariable int id,
             @RequestParam(required = false, defaultValue = "No reason provided") String reason) {
@@ -623,3 +628,4 @@ public class WorkOrderController {
                 .body(Map.of("error", e.getMessage()));
     }
 }
+
