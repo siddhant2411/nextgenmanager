@@ -1,8 +1,6 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
-import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
-import com.nextgenmanager.nextgenmanager.production.model.WorkCenter;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

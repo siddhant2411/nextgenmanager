@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.production.model;
 
 
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;

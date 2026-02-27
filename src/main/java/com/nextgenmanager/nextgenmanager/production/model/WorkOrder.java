@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.model;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderSourceType;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;

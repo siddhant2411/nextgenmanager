@@ -3,8 +3,10 @@ package com.nextgenmanager.nextgenmanager.assets.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.nextgenmanager.nextgenmanager.production.model.WorkCenter;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -27,31 +29,34 @@ public class MachineDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
+    private Long id;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false, unique = true, length = 50)
     private String machineCode;
 
     @Column(nullable = false, length = 100)
+    @NotBlank
     private String machineName;
 
     private String description;
 
     // Work center linkage (critical)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "work_center_id")
+    @JoinColumn(name = "workCenterId", nullable = false)
     private WorkCenter workCenter;
 
     // Machine cost rate
-    @Column(precision = 10, scale = 2)
-    private BigDecimal costPerHour;
+    @DecimalMin("0.0")
+    @Column(precision = 10, scale = 2, nullable = false)
+    private BigDecimal costPerHour = BigDecimal.ZERO;
 
-    // Capacity per day for scheduling
-    @Column(precision = 10, scale = 2)
-    private BigDecimal availableHoursPerDay;
 
     // Operational state
-    @Enumerated(EnumType.ORDINAL)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
     private MachineStatus machineStatus = MachineStatus.ACTIVE;
 
     @CreationTimestamp

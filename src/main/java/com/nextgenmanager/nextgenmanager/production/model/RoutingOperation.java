@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
