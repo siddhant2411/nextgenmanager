@@ -6,6 +6,8 @@ import com.nextgenmanager.nextgenmanager.production.dto.WorkCenterResponseDTO;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -13,13 +15,13 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Builder
 public class MachineDetailsResponseDTO {
-    private int id;
+    private long id;
     private String machineCode;
     private String machineName;
     private String description;
     private BigDecimal costPerHour;
-    private BigDecimal availableHoursPerDay;
     private MachineDetails.MachineStatus machineStatus;
     private WorkCenterMachineDetailsDTO workCenter;
+    private LocalDateTime lastUpdate;
 
 }

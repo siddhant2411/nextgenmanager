@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.model;
 
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;

@@ -1,4 +1,4 @@
-package com.nextgenmanager.nextgenmanager.production.model;
+package com.nextgenmanager.nextgenmanager.production.model.workCenter;
 
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
 import jakarta.persistence.*;
@@ -73,6 +73,18 @@ public class WorkCenter {
     @OneToMany(mappedBy = "workCenter", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<MachineDetails> workStations;
 
+    /***
+     * How Scheduling Logic Should Work
+        When checking availability for a date:
+        Get work center shifts for that weekday
+        Check if date exists in holiday table
+        If fullDay → capacity = 0
+        If partial → reduce shift duration
+        Else → normal shift duration
+     ***/
+    @ManyToOne
+    @JoinColumn(name = "holidayCalendarId")
+    private HolidayCalendar holidayCalendar;
 
     public enum WorkCenterStatus {
         ACTIVE,

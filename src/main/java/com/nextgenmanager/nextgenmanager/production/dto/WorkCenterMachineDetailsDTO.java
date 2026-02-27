@@ -1,8 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
 
-import com.nextgenmanager.nextgenmanager.assets.dto.MachineDetailsResponseDTO;
-import com.nextgenmanager.nextgenmanager.production.model.WorkCenter;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import lombok.*;
 
 import java.math.BigDecimal;

@@ -3,7 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.service;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkCenterResponseDTO;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkCenterResponseMapper;
-import com.nextgenmanager.nextgenmanager.production.model.WorkCenter;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkCenterRepository;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class WorkCenterServiceImpl implements WorkCenterService {
@@ -37,86 +39,120 @@ public class WorkCenterServiceImpl implements WorkCenterService {
 
     @Override
     public WorkCenterResponseDTO updateWorkCenter(int id, WorkCenter updatedCenter) {
-        if (workCenterRepository.findById(id).orElseThrow(() ->
-                new ResourceNotFoundException("Work Center does not exist")
-        ).getDeletedDate() != null) {
+        WorkCenter existingCenter = getActiveWorkCenterById(id);
+
+        if (!Objects.equals(existingCenter.getCenterCode(), updatedCenter.getCenterCode())
+                && existsByCenterCode(updatedCenter.getCenterCode())) {
+            throw new ResourceNotFoundException("Work Center code already exists.");
+        }
+
+        existingCenter.setCenterCode(updatedCenter.getCenterCode());
+        existingCenter.setCenterName(updatedCenter.getCenterName());
+        existingCenter.setDescription(updatedCenter.getDescription());
+        existingCenter.setCostPerHour(updatedCenter.getCostPerHour());
+        existingCenter.setAvailableHoursPerDay(updatedCenter.getAvailableHoursPerDay());
+        existingCenter.setWorkCenterStatus(updatedCenter.getWorkCenterStatus());
+        existingCenter.setDepartment(updatedCenter.getDepartment());
+        existingCenter.setLocation(updatedCenter.getLocation());
+        existingCenter.setMaxLoadPercentage(updatedCenter.getMaxLoadPercentage());
+        existingCenter.setSupervisor(updatedCenter.getSupervisor());
+        existingCenter.setAvailableShifts(updatedCenter.getAvailableShifts());
+
+        if (updatedCenter.getWorkStations() != null) {
+            updatedCenter.getWorkStations().forEach(machine -> machine.setWorkCenter(existingCenter));
+            existingCenter.setWorkStations(updatedCenter.getWorkStations());
+        }
+
+        return workCenterResponseMapper.toDTO(workCenterRepository.save(existingCenter));
+    }
+
+    private WorkCenter getActiveWorkCenterById(int id) {
+        WorkCenter workCenter = workCenterRepository.findById(id).orElseThrow(() ->
+                new ResourceNotFoundException("Work Center does not exist"));
+
+        if (workCenter.getDeletedDate() != null) {
             throw new ResourceNotFoundException("Work Center does not exist");
         }
-        return workCenterResponseMapper.toDTO(workCenterRepository.save(updatedCenter));
+
+        return workCenter;
     }
 
     @Override
     public void deleteWorkCenter(int id) {
 
-        WorkCenter workCenter = workCenterRepository.findById(id).orElseThrow(() ->
-                new ResourceNotFoundException("Work Center does not exist"));
-
-        if(workCenter.getDeletedDate()!=null){
-            throw new ResourceNotFoundException("Work Center does not exist");
-        }
+        WorkCenter workCenter = getActiveWorkCenterById(id);
 
         workCenter.setDeletedDate(new Date());
+        workCenterRepository.save(workCenter);
 
     }
 
     @Override
     public WorkCenterResponseDTO getWorkCenterById(int id) {
-        WorkCenter workCenter = workCenterRepository.findById(id).orElseThrow(() ->
-                new ResourceNotFoundException("Work Center does not exist"));
-
-        if(workCenter.getDeletedDate()!=null){
-            throw new ResourceNotFoundException("Work Center does not exist");
-        }
-        return workCenterResponseMapper.toDTO(workCenter);
+        return workCenterResponseMapper.toDTO(getActiveWorkCenterById(id));
 
     }
 
     @Override
     public WorkCenter getWorkCenterEntityById(int id) {
-        WorkCenter workCenter = workCenterRepository.findById(id).orElseThrow(() ->
-                new ResourceNotFoundException("Work Center does not exist"));
-
-        if(workCenter.getDeletedDate()!=null){
-            throw new ResourceNotFoundException("Work Center does not exist");
-        }
-        return workCenter;
+        return getActiveWorkCenterById(id);
 
     }
 
 
     @Override
     public WorkCenterResponseDTO getWorkCenterByCode(String centerCode) {
-        return null;
+        WorkCenter workCenter = workCenterRepository.findByCenterCode(centerCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Work Center does not exist"));
+
+        if (workCenter.getDeletedDate() != null) {
+            throw new ResourceNotFoundException("Work Center does not exist");
+        }
+
+        return workCenterResponseMapper.toDTO(workCenter);
     }
 
     @Override
     public List<WorkCenter> getAllWorkCenters() {
-        return List.of();
+        return workCenterRepository.findAll()
+                .stream()
+                .filter(workCenter -> workCenter.getDeletedDate() == null)
+                .collect(Collectors.toList());
     }
 
     @Override
     public List<WorkCenter> getAllActiveWorkCenters() {
-        return List.of();
+        return workCenterRepository.findAllActive();
     }
 
     @Override
     public List<WorkCenter> searchByNameOrCode(String query) {
-        return List.of();
+        return workCenterRepository.search(query)
+                .stream()
+                .filter(workCenter -> workCenter.getDeletedDate() == null)
+                .collect(Collectors.toList());
     }
 
     @Override
     public boolean existsByCenterCode(String centerCode) {
-        return false;
+        return workCenterRepository.findByCenterCode(centerCode)
+                .map(workCenter -> workCenter.getDeletedDate() == null)
+                .orElse(false);
     }
 
     @Override
     public WorkCenter updateStatus(int id, WorkCenter.WorkCenterStatus status) {
-        return null;
+        WorkCenter workCenter = getActiveWorkCenterById(id);
+        workCenter.setWorkCenterStatus(status);
+        return workCenterRepository.save(workCenter);
     }
 
     @Override
     public List<WorkCenter> getCentersByStatus(WorkCenter.WorkCenterStatus status) {
-        return List.of();
+        return workCenterRepository.findByWorkCenterStatus(status)
+                .stream()
+                .filter(workCenter -> workCenter.getDeletedDate() == null)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -129,8 +165,8 @@ public class WorkCenterServiceImpl implements WorkCenterService {
             if (search != null && !search.isEmpty()) {
                 Predicate centerName = cb.like(cb.lower(root.get("centerName")), "%" + search.toLowerCase() + "%");
                 Predicate centerCode = cb.like(cb.lower(root.get("centerCode")), "%" + search.toLowerCase() + "%");
-                predicate = cb.and(predicate, centerName);
-                predicate = cb.and(predicate, centerCode);
+                Predicate textMatch = cb.or(centerName, centerCode);
+                predicate = cb.and(predicate, textMatch);
             }
             return predicate;
         };

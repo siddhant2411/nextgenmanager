@@ -1,6 +1,6 @@
 package com.nextgenmanager.nextgenmanager.production.repository;
 
-import com.nextgenmanager.nextgenmanager.production.model.WorkCenter;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;

@@ -28,7 +28,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -57,6 +60,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
+@Data
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
@@ -84,44 +88,40 @@ public class AuthController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username and password are required");
         }
 
-        try {
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.username().trim(), request.password())
-            );
 
-            UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-            List<String> roles = userDetails.getAuthorities().stream()
-                    .map(GrantedAuthority::getAuthority)
-                    .toList();
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.username().trim(), request.password())
+        );
 
-            String accessToken = jwtService.generateAccessToken(Map.of("roles", roles), userDetails);
-            String refreshToken = jwtService.generateRefreshToken(userDetails);
-            AppUser appUser = appUserRepository.findByUsernameAndDeletedDateIsNull(userDetails.getUsername())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
-            refreshTokenService.issueToken(
-                    appUser,
-                    refreshToken,
-                    jwtService.extractClaim(refreshToken, Claims::getExpiration),
-                    userDetails.getUsername()
-            );
-            updateLastLoginDate(userDetails.getUsername());
-            logger.info("Login successful for user: {}", userDetails.getUsername());
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        List<String> roles = userDetails.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .toList();
 
-            AuthLoginResponse response = new AuthLoginResponse(
-                    accessToken,
-                    refreshToken,
-                    "Bearer",
-                    jwtService.getAccessTokenExpirationSeconds(),
-                    jwtService.getRefreshTokenExpirationSeconds(),
-                    userDetails.getUsername(),
-                    roles
-            );
-            return ResponseEntity.ok(response);
-        } catch (AuthenticationException ex) {
-            String attemptedUser = request.username() == null ? "UNKNOWN" : request.username().trim();
-            logger.warn("Login failed for user: {}", attemptedUser);
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
-        }
+        String accessToken = jwtService.generateAccessToken(Map.of("roles", roles), userDetails);
+        String refreshToken = jwtService.generateRefreshToken(userDetails);
+        AppUser appUser = appUserRepository.findByUsernameAndDeletedDateIsNull(userDetails.getUsername())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
+        refreshTokenService.issueToken(
+                appUser,
+                refreshToken,
+                jwtService.extractClaim(refreshToken, Claims::getExpiration),
+                userDetails.getUsername()
+        );
+        updateLastLoginDate(userDetails.getUsername());
+        logger.info("Login successful for user: {}", userDetails.getUsername());
+
+        AuthLoginResponse response = new AuthLoginResponse(
+                accessToken,
+                refreshToken,
+                "Bearer",
+                jwtService.getAccessTokenExpirationSeconds(),
+                jwtService.getRefreshTokenExpirationSeconds(),
+                userDetails.getUsername(),
+                roles
+        );
+        return ResponseEntity.ok(response);
+
     }
 
     @PostMapping("/refresh")
