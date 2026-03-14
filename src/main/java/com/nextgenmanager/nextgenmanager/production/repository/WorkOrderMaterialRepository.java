@@ -23,4 +23,10 @@ public interface WorkOrderMaterialRepository extends JpaRepository<WorkOrderMate
 
     List<WorkOrderMaterial> findByWorkOrder(WorkOrder workOrder);
 
+    List<WorkOrderMaterial> findByWorkOrderOperationId(Long operationId);
+
+    List<WorkOrderMaterial> findByWorkOrderAndWorkOrderOperationIsNullAndIssueStatusNot(
+            WorkOrder workOrder,
+            MaterialIssueStatus issueStatus
+    );
 }

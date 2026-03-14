@@ -301,6 +301,12 @@ public class MachineDetailsServiceImpl implements MachineDetailsService {
         machineStatusHistoryRepository.save(history);
     }
 
+    @Override
+    public MachineDetails getMachineDetailsEntityById(long id) {
+        return machineDetailsRepository.findByIdAndDeletedDateIsNull(id)
+                .orElseThrow(() -> new ResourceNotFoundException("MachineDetails not found for ID: " + id));
+    }
+
     private String getCurrentActor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null

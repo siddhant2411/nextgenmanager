@@ -49,7 +49,8 @@ public class WorkCenterServiceImpl implements WorkCenterService {
         existingCenter.setCenterCode(updatedCenter.getCenterCode());
         existingCenter.setCenterName(updatedCenter.getCenterName());
         existingCenter.setDescription(updatedCenter.getDescription());
-        existingCenter.setCostPerHour(updatedCenter.getCostPerHour());
+        existingCenter.setMachineCostPerHour(updatedCenter.getMachineCostPerHour());
+        existingCenter.setOverheadPercentage(updatedCenter.getOverheadPercentage());
         existingCenter.setAvailableHoursPerDay(updatedCenter.getAvailableHoursPerDay());
         existingCenter.setWorkCenterStatus(updatedCenter.getWorkCenterStatus());
         existingCenter.setDepartment(updatedCenter.getDepartment());

@@ -2,6 +2,8 @@ package com.nextgenmanager.nextgenmanager.items.model;
 
 public enum ItemType {
     RAW_MATERIAL,
-    ASSEMBLY,
-    FINISHED_GOOD
+    SEMI_FINISHED,
+    FINISHED_GOOD,
+    SUB_CONTRACTED,
+    CONSUMABLE
 }

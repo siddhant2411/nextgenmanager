@@ -23,6 +23,9 @@ import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
+import com.nextgenmanager.nextgenmanager.production.model.Routing;
+import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import io.minio.GetObjectResponse;
@@ -81,6 +84,8 @@ public class BomServiceImpl implements BomService {
     @Autowired
     private RoutingService routingService;
 
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.bom.repository.BomAuditRepository bomAuditRepository;
 
     private final  DomainEventPublisher domainEventPublisher;
 
@@ -96,9 +101,9 @@ public class BomServiceImpl implements BomService {
     );
 
     private static final Map<BomStatus, Set<BomStatus>> allowedTransitions = Map.of(
-            BomStatus.DRAFT, Set.of(BomStatus.PENDING_APPROVAL,BomStatus.ARCHIVED),
-            BomStatus.PENDING_APPROVAL, Set.of(BomStatus.APPROVED),
-            BomStatus.APPROVED, Set.of(BomStatus.ACTIVE),
+            BomStatus.DRAFT, Set.of(BomStatus.PENDING_APPROVAL,BomStatus.ARCHIVED,BomStatus.APPROVED,BomStatus.ACTIVE),
+            BomStatus.PENDING_APPROVAL, Set.of(BomStatus.APPROVED,BomStatus.ACTIVE,BomStatus.ARCHIVED),
+            BomStatus.APPROVED, Set.of(BomStatus.ACTIVE,BomStatus.ARCHIVED),
             BomStatus.ACTIVE, Set.of(BomStatus.INACTIVE, BomStatus.OBSOLETE),
             BomStatus.INACTIVE, Set.of(BomStatus.ACTIVE),
             BomStatus.OBSOLETE, Set.of(BomStatus.ARCHIVED),
@@ -152,6 +157,9 @@ public class BomServiceImpl implements BomService {
                 }
 
                 pos.setScrapPercentage(Optional.ofNullable(pos.getScrapPercentage()).orElse(BigDecimal.ZERO));
+
+                // Routing doesn't exist yet at creation — clear any supplied reference
+                pos.setRoutingOperation(null);
 
                 pos.setParentBom(bom);
 
@@ -426,6 +434,10 @@ public class BomServiceImpl implements BomService {
 
         // Validate positions
         if (bom.getPositions() != null) {
+
+            // Resolve BOM's routing once (null if routing not created yet)
+            Long bomRoutingId = routingService.findRoutingIdByBom(bomId);
+
             for (BomPosition pos : bom.getPositions()) {
 
                 if (pos.getChildBom() == null) {
@@ -439,19 +451,45 @@ public class BomServiceImpl implements BomService {
                 if (checkForCycle(bom, pos.getChildBom())) {
                     throw new InvalidDataException("BOM cycle detected");
                 }
+
                 pos.setScrapPercentage(Optional.ofNullable(pos.getScrapPercentage()).orElse(BigDecimal.ZERO));
-                pos.setParentBom(bom);
+
+                // Validate routing operation assignment
+                if (pos.getRoutingOperation() != null) {
+                    if (bomRoutingId == null) {
+                        throw new InvalidDataException(
+                                "Cannot assign a routing operation to position " + pos.getPosition() +
+                                ": this BOM has no routing yet. Create the routing first."
+                        );
+                    }
+                    Long opRoutingId = routingService.getRoutingIdForOperation(
+                            pos.getRoutingOperation().getId()
+                    );
+                    if (!bomRoutingId.equals(opRoutingId)) {
+                        throw new InvalidDataException(
+                                "Routing operation id=" + pos.getRoutingOperation().getId() +
+                                " does not belong to this BOM's routing."
+                        );
+                    }
+                }
+
+                pos.setParentBom(existingBom);
             }
         }
 
+        // Merge only editable fields into existingBom — protects approval/audit fields
+        existingBom.setBomName(bom.getBomName());
+        existingBom.setDescription(bom.getDescription());
+        existingBom.setParentInventoryItem(bom.getParentInventoryItem());
+        existingBom.setEffectiveFrom(bom.getEffectiveFrom());
+        existingBom.setEcoNumber(bom.getEcoNumber());
+        existingBom.setChangeReason(bom.getChangeReason());
+        existingBom.getPositions().clear();
+        if (bom.getPositions() != null) {
+            existingBom.getPositions().addAll(bom.getPositions());
+        }
 
-        bom.setVersionGroup(existingBom.getVersionGroup());
-        bom.setVersionNumber(existingBom.getVersionNumber());
-        bom.setRevision(existingBom.getRevision());
-        bom.setBomStatus(existingBom.getBomStatus());
-        bom.setIsActiveVersion(existingBom.getIsActiveVersion());
-
-        Bom saved = bomRepository.save(bom);
+        Bom saved = bomRepository.save(existingBom);
 
         // Publish modification event
         domainEventPublisher.publish(
@@ -621,9 +659,12 @@ public class BomServiceImpl implements BomService {
             orginalBom.getPositions().forEach(pos -> {
                 BomPosition posCopy = new BomPosition();
                 posCopy.setChildBom(pos.getChildBom());
+                posCopy.setPosition(pos.getPosition());
                 posCopy.setQuantity(pos.getQuantity());
                 posCopy.setScrapPercentage(pos.getScrapPercentage());
                 posCopy.setParentBom(newBom);
+                // routingOperation intentionally left null: the new routing will have
+                // different operation IDs; the user must re-assign after duplication.
                 bomPositionRepository.save(posCopy);
             });
 
@@ -682,6 +723,40 @@ public class BomServiceImpl implements BomService {
             bomDTOS.add(BomMapper.toDto(bom));
         }
         return bomDTOS;
+    }
+
+
+    @Override
+    public List<ChangeLogDto> getChangeLogForBom(int bomId) {
+        return bomAuditRepository.findByBomIdOrderByChangedAtDesc(bomId)
+                .stream()
+                .map(audit -> {
+                    ChangeLogDto dto = new ChangeLogDto();
+                    dto.setId(audit.getId() != null ? audit.getId().intValue() : null);
+                    dto.setBomId(audit.getBomId());
+
+                    // Build action description from status change
+                    if (audit.getOldStatus() != null && audit.getNewStatus() != null) {
+                        dto.setAction(audit.getOldStatus().name() + " → " + audit.getNewStatus().name());
+                    } else if (audit.getNewStatus() != null) {
+                        dto.setAction(audit.getNewStatus().name());
+                    }
+
+                    dto.setDescription(audit.getComment());
+                    dto.setChangedBy(audit.getChangedBy());
+                    dto.setChangedAt(audit.getChangedAt() != null
+                            ? Date.from(audit.getChangedAt()) : null);
+
+                    // Field-level change info
+                    dto.setFieldName("bomStatus");
+                    dto.setOldValue(audit.getOldStatus() != null ? audit.getOldStatus().name() : null);
+                    dto.setNewValue(audit.getNewStatus() != null ? audit.getNewStatus().name() : null);
+
+                    dto.setComments(audit.getComment());
+                    dto.setUserName(audit.getChangedBy());
+                    return dto;
+                })
+                .toList();
     }
 
 //    public void recalculateAndUpdateCost(int bomId) {
@@ -770,6 +845,42 @@ public class BomServiceImpl implements BomService {
 
         return boms.map(bomListMapper::toDTO);
 
+    }
+
+    @Override
+    public Page<BomListDTO> getBomsUsingInventoryItem(
+            int inventoryItemId,
+            int page,
+            int size,
+            String sortBy,
+            String sortDir
+    ) {
+        inventoryItemService.getInventoryItem(inventoryItemId);
+
+        Sort.Direction direction = Sort.Direction.fromString(sortDir);
+        if (sortBy == null || sortBy.isBlank()) {
+            sortBy = "id";
+        }
+        if (JOIN_FIELD_MAP.containsKey(sortBy)) {
+            sortBy = JOIN_FIELD_MAP.get(sortBy);
+        }
+        Sort sort = Sort.by(direction, sortBy);
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        Specification<Bom> spec = (root, query, cb) -> {
+            query.distinct(true);
+            var positions = root.join("positions");
+            var childBom = positions.join("childBom");
+            var childItem = childBom.join("parentInventoryItem");
+            return cb.equal(childItem.get("inventoryItemId"), inventoryItemId);
+        };
+
+        spec = spec.and(BomSpecifications.isNotDeleted());
+        spec = spec.and(BomSpecifications.hasIsActiveVersion(true));
+        spec = spec.and(BomSpecifications.hasIsActive(true));
+
+        Page<Bom> boms = bomRepository.findAll(spec, pageable);
+        return boms.map(bomListMapper::toDTO);
     }
 
 
@@ -948,5 +1059,172 @@ public class BomServiceImpl implements BomService {
     }
 
 
+    // ----------------------------------------------------------
+    // BOM COST BREAKDOWN
+    // ----------------------------------------------------------
+    @Override
+    public BomCostBreakdownDTO getBomCostBreakdown(int bomId) {
+
+        Bom bom = getBom(bomId);
+        InventoryItem parentItem = bom.getParentInventoryItem();
+
+        // ── Material Costs ──
+        List<BomPosition> positions = getBomPositions(bomId);
+        List<MaterialCostLineDTO> materialLines = new ArrayList<>();
+        BigDecimal totalMaterialCost = BigDecimal.ZERO;
+
+        for (BomPosition pos : positions) {
+            if (pos.getChildBom() == null || pos.getChildBom().getParentInventoryItem() == null) {
+                continue;
+            }
+
+            InventoryItem item = inventoryItemService.getInventoryItem(
+                    pos.getChildBom().getParentInventoryItem().getInventoryItemId());
+
+            BigDecimal qty = BigDecimal.valueOf(pos.getQuantity());
+            BigDecimal scrap = pos.getScrapPercentage() != null ? pos.getScrapPercentage() : BigDecimal.ZERO;
+            BigDecimal effectiveQty = qty.multiply(
+                    BigDecimal.ONE.add(scrap.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP))
+            );
+
+            BigDecimal unitCost = Optional.ofNullable(item.getProductFinanceSettings())
+                    .map(fin -> fin.getStandardCost() != null ? BigDecimal.valueOf(fin.getStandardCost()) : BigDecimal.ZERO)
+                    .orElse(BigDecimal.ZERO);
+
+            BigDecimal lineCost = effectiveQty.multiply(unitCost).setScale(2, RoundingMode.HALF_UP);
+
+            MaterialCostLineDTO line = MaterialCostLineDTO.builder()
+                    .positionId(pos.getId())
+                    .itemCode(item.getItemCode())
+                    .itemName(item.getName())
+                    .uom(item.getUom() != null ? item.getUom().name() : null)
+                    .quantity(pos.getQuantity())
+                    .scrapPercentage(scrap)
+                    .effectiveQuantity(effectiveQty.setScale(4, RoundingMode.HALF_UP))
+                    .unitCost(unitCost)
+                    .totalCost(lineCost)
+                    .routingOperationId(pos.getRoutingOperation() != null ? pos.getRoutingOperation().getId() : null)
+                    .routingOperationName(pos.getRoutingOperation() != null ? pos.getRoutingOperation().getName() : null)
+                    .build();
+
+            materialLines.add(line);
+            totalMaterialCost = totalMaterialCost.add(lineCost);
+        }
+
+        // ── Operation Costs ──
+        List<OperationCostLineDTO> operationLines = new ArrayList<>();
+        BigDecimal totalOperationCost = BigDecimal.ZERO;
+
+        try {
+            Routing routing = routingService.getRoutingEntityByBom(bomId);
+            if (routing != null && routing.getOperations() != null) {
+                for (RoutingOperation op : routing.getOperations()) {
+                    OperationCostLineDTO opLine = calculateOperationCost(op);
+                    operationLines.add(opLine);
+                    totalOperationCost = totalOperationCost.add(opLine.getTotalCost());
+                }
+            }
+        } catch (ResourceNotFoundException e) {
+            // No routing exists for this BOM — operation costs stay empty
+            logger.debug("No routing found for BOM {}, skipping operation costs", bomId);
+        }
+
+        return BomCostBreakdownDTO.builder()
+                .bomId(bomId)
+                .bomName(bom.getBomName())
+                .parentItemCode(parentItem.getItemCode())
+                .parentItemName(parentItem.getName())
+                .materialCosts(materialLines)
+                .totalMaterialCost(totalMaterialCost.setScale(2, RoundingMode.HALF_UP))
+                .operationCosts(operationLines)
+                .totalOperationCost(totalOperationCost.setScale(2, RoundingMode.HALF_UP))
+                .totalCost(totalMaterialCost.add(totalOperationCost).setScale(2, RoundingMode.HALF_UP))
+                .build();
+    }
+
+    /**
+     * Calculates cost for a single routing operation based on its CostType.
+     *
+     * CALCULATED: (machineCost + laborCost) × (1 + overhead%/100)
+     *   machineCost = machineRate × totalTime
+     *   laborCost   = laborRate × numberOfOperators × totalTime
+     *
+     * FIXED_RATE / SUB_CONTRACTED: fixedCostPerUnit
+     */
+    private OperationCostLineDTO calculateOperationCost(RoutingOperation op) {
+
+        CostType costType = op.getCostType() != null ? op.getCostType() : CostType.CALCULATED;
+        BigDecimal setupTime = op.getSetupTime() != null ? op.getSetupTime() : BigDecimal.ZERO;
+        BigDecimal runTime = op.getRunTime() != null ? op.getRunTime() : BigDecimal.ZERO;
+        BigDecimal totalTime = setupTime.add(runTime);
+
+        OperationCostLineDTO.OperationCostLineDTOBuilder builder = OperationCostLineDTO.builder()
+                .operationId(op.getId())
+                .sequenceNumber(op.getSequenceNumber())
+                .operationName(op.getName())
+                .costType(costType)
+                .setupTime(setupTime)
+                .runTime(runTime)
+                .totalTime(totalTime);
+
+        // Work center info
+        if (op.getWorkCenter() != null) {
+            builder.workCenterName(op.getWorkCenter().getCenterName());
+            builder.overheadPercentage(op.getWorkCenter().getOverheadPercentage());
+        }
+
+        // Machine info — prefer operation-level machine, fall back to workCenter rate
+        BigDecimal machineCostRate = BigDecimal.ZERO;
+        if (op.getMachineDetails() != null) {
+            builder.machineName(op.getMachineDetails().getMachineName());
+            machineCostRate = op.getMachineDetails().getCostPerHour() != null
+                    ? op.getMachineDetails().getCostPerHour() : BigDecimal.ZERO;
+        } else if (op.getWorkCenter() != null && op.getWorkCenter().getMachineCostPerHour() != null) {
+            machineCostRate = op.getWorkCenter().getMachineCostPerHour();
+        }
+        builder.machineCostRate(machineCostRate);
+
+        // Labor info
+        BigDecimal laborCostRate = BigDecimal.ZERO;
+        int numOperators = op.getNumberOfOperators() != null ? op.getNumberOfOperators() : 1;
+        builder.numberOfOperators(numOperators);
+        if (op.getLaborRole() != null) {
+            builder.laborRoleName(op.getLaborRole().getRoleName());
+            laborCostRate = op.getLaborRole().getCostPerHour() != null
+                    ? op.getLaborRole().getCostPerHour() : BigDecimal.ZERO;
+        }
+        builder.laborCostRate(laborCostRate);
+
+        BigDecimal totalCost;
+
+        if (costType == CostType.CALCULATED) {
+            BigDecimal machineCost = machineCostRate.multiply(totalTime);
+            BigDecimal laborCost = laborCostRate
+                    .multiply(BigDecimal.valueOf(numOperators))
+                    .multiply(totalTime);
+            BigDecimal subtotal = machineCost.add(laborCost);
+
+            BigDecimal overheadPct = (op.getWorkCenter() != null && op.getWorkCenter().getOverheadPercentage() != null)
+                    ? op.getWorkCenter().getOverheadPercentage()
+                    : BigDecimal.ZERO;
+            BigDecimal overheadCost = subtotal.multiply(overheadPct)
+                    .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+
+            totalCost = subtotal.add(overheadCost).setScale(2, RoundingMode.HALF_UP);
+
+            builder.machineCost(machineCost.setScale(2, RoundingMode.HALF_UP))
+                    .laborCost(laborCost.setScale(2, RoundingMode.HALF_UP))
+                    .subtotal(subtotal.setScale(2, RoundingMode.HALF_UP))
+                    .overheadCost(overheadCost.setScale(2, RoundingMode.HALF_UP));
+        } else {
+            // FIXED_RATE or SUB_CONTRACTED
+            totalCost = op.getFixedCostPerUnit() != null
+                    ? op.getFixedCostPerUnit().setScale(2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+        }
+
+        builder.totalCost(totalCost);
+        return builder.build();
+    }
 
 }

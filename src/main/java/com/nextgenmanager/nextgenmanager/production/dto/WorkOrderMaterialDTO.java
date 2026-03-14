@@ -28,4 +28,10 @@ public class WorkOrderMaterialDTO {
 
     private MaterialIssueStatus issueStatus;
 
+    /** ID of the work-order operation this material is gated behind. Null = no gate. */
+    private Long workOrderOperationId;
+
+    /** Name of that operation, for display. Null when not gated. */
+    private String operationName;
+
 }

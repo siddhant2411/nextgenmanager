@@ -35,4 +35,16 @@ public interface RoutingService {
     RoutingDto getRouting(Long id);
 
     List<RoutingOperationDto> getOperations(Long routingId);
+
+    /**
+     * Returns the routing ID for the given BOM, or null if no routing exists yet.
+     * Used by BomServiceImpl to validate routingOperation assignments on positions.
+     */
+    Long findRoutingIdByBom(int bomId);
+
+    /**
+     * Returns the routing ID that owns the given operation.
+     * Used by BomServiceImpl to verify an operation belongs to this BOM's routing.
+     */
+    Long getRoutingIdForOperation(Long operationId);
 }

@@ -24,11 +24,22 @@ public class ContactPersonDetail {
 
     private String personName;
 
+    private String designation;
+
+    private String department;
+
     @Email
     private String emailId;
 
     @Size(min = 8, max = 15)
     private String phoneNumber;
+
+    @Column(length = 15)
+    private String whatsappNumber;
+
+    /** Primary contact person for this company — used as default in communications. */
+    @Column(nullable = false)
+    private boolean isPrimary = false;
 
     @ManyToOne
     @JoinColumn(name = "contact_id", referencedColumnName = "id")

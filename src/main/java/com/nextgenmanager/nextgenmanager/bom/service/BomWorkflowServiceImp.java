@@ -37,7 +37,7 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
         logger.debug("Received request to add new BOM");
         try {
 
-            Bom savedBom = bomService.addBom(bomRoutingRequestMapper.getBom());
+            Bom savedBom = bomService.addBom(bomRoutingRequestMapper.toBomEntity());
             logger.debug("BOM saved with ID: {}", savedBom.getId());
 
             // Create associated WorkOrderProductionTemplate
@@ -69,7 +69,7 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
     public BOMRoutingMapper updateBomWithTemplate(int bomId,BOMRoutingRequestMapper bomTemplateMapper) {
         logger.debug("Received request to update BOM with id: {}", bomId);
         try {
-            Bom bomToUpdate = bomTemplateMapper.getBom();
+            Bom bomToUpdate = bomTemplateMapper.toBomEntity();
             bomToUpdate.setId(bomId);
             Bom updatedBom = bomService.editBom(bomId,bomToUpdate);
 
@@ -91,3 +91,4 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
 
     }
 }
+

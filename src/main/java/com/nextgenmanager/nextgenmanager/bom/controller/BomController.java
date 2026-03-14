@@ -106,7 +106,7 @@ public class BomController {
 
         try {
 
-            Bom bom = bomService.addBom(bomRoutingRequestMapper.getBom());
+            Bom bom = bomService.addBom(bomRoutingRequestMapper.toBomEntity());
             RoutingDto routingDto = routingService.createOrUpdateRouting(bom.getId(),routingMapper.toDTO(bomRoutingRequestMapper.getRouting()),"SYSTEM");
 
             BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
@@ -125,7 +125,7 @@ public class BomController {
     @PutMapping("/{id}")
     public ResponseEntity<?> updateBom(@PathVariable Integer id, @RequestBody BOMRoutingRequestMapper bomRoutingRequestMapper) {
         try{
-            Bom bom = bomService.editBom(id,bomRoutingRequestMapper.getBom());
+            Bom bom = bomService.editBom(id,bomRoutingRequestMapper.toBomEntity());
             RoutingDto routingDto = routingService.createOrUpdateRouting(bom.getId(),routingMapper.toDTO(bomRoutingRequestMapper.getRouting()),"SYSTEM");
 
             BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
@@ -400,5 +400,43 @@ public class BomController {
         }
     }
 
+
+    @GetMapping("/{bomId}/change-log")
+    public ResponseEntity<List<ChangeLogDto>> getChangeLog(@PathVariable("bomId") int bomId) {
+        List<ChangeLogDto> log = bomService.getChangeLogForBom(bomId);
+        return ResponseEntity.ok(log);
+    }
+
+    @GetMapping("/{bomId}/cost-breakdown")
+    public ResponseEntity<?> getBomCostBreakdown(@PathVariable int bomId) {
+        try {
+            BomCostBreakdownDTO breakdown = bomService.getBomCostBreakdown(bomId);
+            return ResponseEntity.ok(breakdown);
+        } catch (ResourceNotFoundException e) {
+            logger.error("BOM not found for cost breakdown, ID: {}", bomId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error calculating cost breakdown for BOM {}: {}", bomId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to calculate cost breakdown: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/where-used/{itemId}")
+    public ResponseEntity<?> getUsedByBoms(
+            @PathVariable int itemId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "15") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir
+        ){
+
+            Page<BomListDTO> usedByBoms = bomService.getBomsUsingInventoryItem(itemId,page,size,sortBy,sortDir);
+            return ResponseEntity.ok(usedByBoms);
+
+    }
 }
+
+
 

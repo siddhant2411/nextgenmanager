@@ -17,7 +17,6 @@ import org.springframework.data.domain.*;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring5.SpringTemplateEngine;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
@@ -38,7 +37,7 @@ public class QuotationServiceImp implements QuotationService {
     Logger logger = LoggerFactory.getLogger(QuotationServiceImp.class);
 
     @Override
-    public Quotation getQuotationById(int id) {
+    public Quotation getQuotationById(Long id) {
         logger.info("Fetching Quotation with ID: {}", id);
 
         Quotation quotation = quotationRepository.findByActiveId(id);
@@ -75,7 +74,7 @@ public class QuotationServiceImp implements QuotationService {
                 enqNoFilter, netAmountFilter, totalAmountFilter);
 
         return activeQuotations.map(record -> new QuotationDisplayDTO(
-                ((Number) record[0]).intValue(),
+                ((Number) record[0]).longValue(),
                 record[1].toString(),
                 ((java.sql.Date) record[2]).toLocalDate(),
                 record[3].toString(),
@@ -94,7 +93,7 @@ public class QuotationServiceImp implements QuotationService {
     }
 
     @Override
-    public ResponseEntity<byte[]> downloadQuotationPdf(int id) {
+    public ResponseEntity<byte[]> downloadQuotationPdf(Long id) {
         String html = parseQuotationTemplate(id);
         String qtnNo = getQuotationById(id).getQtnNo();
         byte[] pdf = generateQuotationPdf(html);
@@ -111,7 +110,7 @@ public class QuotationServiceImp implements QuotationService {
                 .body(pdf);
     }
 
-    private String parseQuotationTemplate(int id) {
+    private String parseQuotationTemplate(Long id) {
         try {
             // Initialize template resolver
             ClassLoaderTemplateResolver templateResolver = new ClassLoaderTemplateResolver();
@@ -132,7 +131,10 @@ public class QuotationServiceImp implements QuotationService {
                 Contact c = quotation.getEnquiry().getContact();
                 if (c != null && c.getAddresses() != null && !c.getAddresses().isEmpty()) {
                     ContactAddress addr = c.getAddresses().get(0);
-                    companyAddress = addr.toFormattedString();  // see next step
+                    companyAddress = java.util.stream.Stream.of(addr.getStreet1(), addr.getStreet2(),
+                            addr.getCity(), addr.getState(), addr.getPinCode(), addr.getCountry())
+                            .filter(s -> s != null && !s.isBlank())
+                            .collect(java.util.stream.Collectors.joining(", "));
                 }
             }
             ContactPersonDetail contactInfo = (quotation.getEnquiry() != null && quotation.getEnquiry().getContact() != null &&
@@ -212,7 +214,7 @@ public class QuotationServiceImp implements QuotationService {
 
     @Transactional
     @Override
-    public Quotation updateQuotation(Quotation quotation, int id) throws Exception {
+    public Quotation updateQuotation(Quotation quotation, Long id) throws Exception {
         // 1) Load existing so Hibernate can merge
         Quotation existing = quotationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Quotation not found with ID: " + id));
@@ -253,7 +255,7 @@ public class QuotationServiceImp implements QuotationService {
 
 
     @Override
-    public void deleteQuotation(int id) {
+    public void deleteQuotation(Long id) {
         Quotation quotation = quotationRepository.findById(id).orElseThrow(() ->
                 new RuntimeException("Quotation not found with ID: " + id));
 
@@ -286,7 +288,7 @@ public class QuotationServiceImp implements QuotationService {
 
         BigDecimal discountedNet = netAmount.subtract(discountAmount);
 
-        BigDecimal pandfChanrges = BigDecimal.valueOf(quotation.getPandfchargesPercentage().doubleValue() * 0.01 * discountedNet.doubleValue());
+        BigDecimal pandfChanrges = BigDecimal.valueOf(quotation.getPackagingAndForwardingChargesPercentage().doubleValue() * 0.01 * discountedNet.doubleValue());
         BigDecimal gstAmount = discountedNet.add(pandfChanrges)
                 .multiply(quotation.getGstPercentage())
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
@@ -308,7 +310,7 @@ public class QuotationServiceImp implements QuotationService {
     }
 
     @Override
-    public List<Quotation> getQuotationsByEnquiryId(int enquiryId) {
+    public List<Quotation> getQuotationsByEnquiryId(Long enquiryId) {
         return quotationRepository.findByEnquiryId(enquiryId);
     }
 }

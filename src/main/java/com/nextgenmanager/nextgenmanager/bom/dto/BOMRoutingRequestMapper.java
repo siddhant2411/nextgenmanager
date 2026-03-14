@@ -12,7 +12,11 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class BOMRoutingRequestMapper {
 
-    private Bom bom;
+    private BomRequestDTO bom;
 
     private Routing routing;
+
+    public Bom toBomEntity() {
+        return bom != null ? bom.toEntity() : null;
+    }
 }

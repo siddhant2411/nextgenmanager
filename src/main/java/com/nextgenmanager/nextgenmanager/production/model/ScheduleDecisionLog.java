@@ -1,20 +1,21 @@
 package com.nextgenmanager.nextgenmanager.production.model;
 
-import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
+import java.util.Date;
 
 @Entity
-@Table(name = "ScheduleDecisionLog",
+@Table(name = "scheduleDecisionLog",
         indexes = {
-            @Index(name="idx_sdl_machine_time", columnList="machineId, scheduledStart")
-        }
-)
+                @Index(name = "idx_sdl_wo", columnList = "workOrderId"),
+                @Index(name = "idx_sdl_wc_date", columnList = "workCenterId, scheduledDate")
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -25,19 +26,32 @@ public class ScheduleDecisionLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "orderId", nullable = false)
-    private Long orderId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workOrderId")
+    private WorkOrder workOrder;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "machineId", nullable = false)
-    private MachineDetails machine;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workOrderOperationId")
+    private WorkOrderOperation workOrderOperation;
 
-    @Column(name = "scheduledStart")
-    private LocalDateTime scheduledStart;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workCenterId")
+    private WorkCenter workCenter;
 
-    @Column(name = "scheduledEnd")
-    private LocalDateTime scheduledEnd;
+    private Date scheduledDate;
+
+    private int availableMinutes;
+
+    private int consumedMinutes;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "machineId")
+    private com.nextgenmanager.nextgenmanager.assets.model.MachineDetails machine;
 
     @Column(length = 1000)
     private String reason;
+
+    @CreationTimestamp
+    @Column(updatable = false)
+    private Date createdAt;
 }

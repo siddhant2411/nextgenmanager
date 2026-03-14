@@ -24,4 +24,6 @@ public interface MachineDetailsService {
     public void deleteMachineDetails(long id);
 
     public Page<MachineDetailsResponseDTO> filterMachineDetails(FilterRequest filterRequest);
+
+    public MachineDetails getMachineDetailsEntityById(long id);
 }

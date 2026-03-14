@@ -34,9 +34,13 @@ public class WorkCenter {
     @Column(length = 500)
     private String description;
 
-    // Standard hourly cost for labor + machine at this center
+    // Machine hourly rate at this center (labor cost comes from LaborRole)
     @Column(precision = 10, scale = 2)
-    private BigDecimal costPerHour;
+    private BigDecimal machineCostPerHour;
+
+    // Overhead percentage applied on top of (machine + labor) cost
+    @Column(precision = 5, scale = 2, nullable = false)
+    private BigDecimal overheadPercentage = BigDecimal.ZERO;
 
     // How many hours per day this center normally operates
     @Column(precision = 10, scale = 2)
@@ -69,6 +73,9 @@ public class WorkCenter {
             joinColumns = @JoinColumn(name = "workCenterId")
     )
     private List<String> availableShifts;
+
+    @OneToMany(mappedBy = "workCenter", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<WorkCenterShift> shifts;
 
     @OneToMany(mappedBy = "workCenter", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<MachineDetails> workStations;
