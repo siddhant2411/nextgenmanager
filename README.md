@@ -431,7 +431,7 @@ Each backend module follows: **Model > Repository > Service (Interface + Impl) >
 
 **Need help setting up?** Have questions or want to discuss a use case?
 
-- **Email:** siddhantmavani1@gmail.com
+- **Email:** animetraversing2411@gmail.com
 - **GitHub Issues:** [Open an issue](https://github.com/siddhant2411/nextgenmanager/issues) for bugs or feature requests
 
 ### Commercial Support
@@ -444,7 +444,7 @@ NextGenManager is free and open-source, and always will be. However, if you need
 - **Training and onboarding** for your team
 - **Hosted/managed version** so you don't have to maintain servers
 
-Reach out at **siddhantmavani1@gmail.com** for commercial support plans.
+Reach out at **animetraversing2411@gmail.com** for commercial support plans.
 
 ## Contributing
 
