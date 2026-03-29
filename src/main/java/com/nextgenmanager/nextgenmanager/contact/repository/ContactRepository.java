@@ -17,9 +17,11 @@ public interface ContactRepository extends JpaRepository<Contact, Integer> {
 
     Optional<Contact> findByContactCodeAndDeletedDateIsNull(String contactCode);
 
-    /** Full search with optional filters — used on the Contact list page. */
+    /** Full search with optional filters — used on the Contact list page.
+     *  When filtering by VENDOR or CUSTOMER, contacts of type BOTH are also included. */
     @Query("SELECT c FROM Contact c WHERE c.deletedDate IS NULL " +
-           "AND (:type IS NULL OR c.contactType = :type) " +
+           "AND (:type IS NULL OR c.contactType = :type OR " +
+           "     (c.contactType = 'BOTH' AND :type IS NOT NULL)) " +
            "AND (COALESCE(:query, '') = '' OR " +
            "     LOWER(c.companyName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "     LOWER(c.contactCode) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

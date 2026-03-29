@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.contact.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,5 +18,6 @@ public class ContactPersonDetailDTO {
     private String emailId;
     private String phoneNumber;
     private String whatsappNumber;
+    @JsonProperty("isPrimary")
     private boolean isPrimary;
 }

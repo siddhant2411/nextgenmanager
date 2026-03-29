@@ -25,6 +25,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -65,9 +66,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         double availableQty;
 
         if (item.getUom() == UOM.NOS) {
-            availableQty = inventoryInstanceRepository.countAvailableInInventory(itemId,InventoryInstanceStatus.AVAILABLE.name());
+            availableQty = inventoryInstanceRepository.countAvailableInInventory(itemId, InventoryInstanceStatus.AVAILABLE.name());
         } else {
-            availableQty = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(itemId);
+            Number rawQty = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(itemId);
+            availableQty = rawQty != null ? rawQty.doubleValue() : 0.0;
         }
 
         item.getProductInventorySettings().setAvailableQuantity(availableQty);
@@ -100,34 +102,28 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
         List<InventoryInstance> instances = new ArrayList<>();
         Date now = new Date();
+        BigDecimal standardCost = item.getProductFinanceSettings() != null
+                ? BigDecimal.valueOf(item.getProductFinanceSettings().getStandardCost())
+                : BigDecimal.ZERO;
 
         if (isUnitByNos(dbItem)) {
             for (int i = 0; i < (int) qty; i++) {
                 InventoryInstance inst = new InventoryInstance();
                 inst.setInventoryItem(dbItem);
                 inst.setEntryDate(now);
-                inst.setQuantity(1);
-                inst.setCostPerUnit(
-                        template.getCostPerUnit() != null ? template.getCostPerUnit() : item.getProductFinanceSettings().getStandardCost()
-                );
-                inst.setSellPricePerUnit(
-                        template.getSellPricePerUnit()  != null ?
-                                template.getSellPricePerUnit() : item.getProductFinanceSettings().getStandardCost());
+                inst.setQuantity(BigDecimal.ONE);
+                inst.setCostPerUnit(template.getCostPerUnit() != null ? template.getCostPerUnit() : standardCost);
+                inst.setSellPricePerUnit(template.getSellPricePerUnit() != null ? template.getSellPricePerUnit() : standardCost);
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
                 instances.add(inst);
-
             }
         } else {
             InventoryInstance inst = new InventoryInstance();
             inst.setInventoryItem(dbItem);
             inst.setEntryDate(now);
-            inst.setQuantity(qty);
-            inst.setCostPerUnit(
-                    template.getCostPerUnit() != null ? template.getCostPerUnit() : item.getProductFinanceSettings().getStandardCost()
-            );
-            inst.setSellPricePerUnit(
-                    template.getSellPricePerUnit()  != null ?
-                            template.getSellPricePerUnit() : item.getProductFinanceSettings().getStandardCost());
+            inst.setQuantity(BigDecimal.valueOf(qty));
+            inst.setCostPerUnit(template.getCostPerUnit() != null ? template.getCostPerUnit() : standardCost);
+            inst.setSellPricePerUnit(template.getSellPricePerUnit() != null ? template.getSellPricePerUnit() : standardCost);
             inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
             instances.add(inst);
         }
@@ -172,7 +168,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
             if (inst != null) {
                 inst.setBookedDate(now);
-                inst.setQuantity(qty);
+                inst.setQuantity(BigDecimal.valueOf(qty));
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.BOOKED);
                 booked.add(inst);
                 logger.info("Booked bulk instance ID: {} with quantity: {}", inst.getId(), qty);
@@ -207,44 +203,43 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         if (isUnitByNos(dbItem)) {
             logger.debug("Item ID: {} is UOM.NOS. Fetching up to {} available instances.", dbItem.getInventoryItemId(), (int) qty);
             List<InventoryInstance> available = request.getRequestedInstances();
-            int count =0;
+            int count = 0;
             for (InventoryInstance inst : available) {
-                if(count>=qty){
+                if (count >= (int) qty) {
                     break;
                 }
-                if(inst.getInventoryItem().equals(dbItem)){
+                if (inst.getInventoryItem().equals(dbItem)) {
                     inst.setConsumed(true);
                     inst.setConsumeDate(now);
-                    inst.setQuantity(0);
+                    inst.setQuantity(BigDecimal.ZERO);
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
                     consumed.add(inst);
                     count++;
                 }
-
             }
 
             logger.info("Consumed {} NOS instance(s) for item ID: {}", consumed.size(), dbItem.getInventoryItemId());
         } else {
             logger.debug("Item ID: {} is bulk. Attempting to consume quantity: {}", dbItem.getInventoryItemId(), qty);
             List<InventoryInstance> instanceList = request.getRequestedInstances();
+            double remainingQty = qty;
             for (InventoryInstance instance : instanceList) {
                 if (!instance.getInventoryItem().equals(dbItem)) continue;
-                if (qty <= 0) break;
+                if (remainingQty <= 0) break;
 
-                double availableQty = instance.getQuantity();
-                double toConsume = Math.min(qty, availableQty);
+                BigDecimal availableQty = instance.getQuantity();
+                BigDecimal toConsume = BigDecimal.valueOf(remainingQty).min(availableQty);
 
                 instance.setConsumeDate(now);
-                instance.setQuantity(availableQty - toConsume);
-                instance.setConsumed(instance.getQuantity() == 0);
-                if (instance.getQuantity() == 0) {
+                BigDecimal newQty = availableQty.subtract(toConsume);
+                instance.setQuantity(newQty);
+                instance.setConsumed(newQty.compareTo(BigDecimal.ZERO) == 0);
+                if (newQty.compareTo(BigDecimal.ZERO) == 0) {
                     instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
                 }
                 consumed.add(instance);
 
-                qty -= toConsume;
-
-
+                remainingQty -= toConsume.doubleValue();
             }
 
 
@@ -323,24 +318,26 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 InventoryInstance inst = new InventoryInstance();
                 inst.setInventoryItem(dbItem);
                 inst.setEntryDate(now);
-                inst.setQuantity(1);
+                inst.setQuantity(BigDecimal.ONE);
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
                 inst.setInventoryRequest(request);
                 resultInstances.add(inst);
             }
 
         } else {
-            double availableQty = availableInstances.stream()
-                    .mapToDouble(InventoryInstance::getQuantity)
-                    .sum();
+            BigDecimal availableQty = availableInstances.stream()
+                    .map(InventoryInstance::getQuantity)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            if (availableQty >= qty) {
+            BigDecimal requestedQty = BigDecimal.valueOf(qty);
+
+            if (availableQty.compareTo(requestedQty) >= 0) {
                 // enough available, just mark as requested
-                double qtyToBook = qty;
+                BigDecimal qtyToBook = requestedQty;
                 for (InventoryInstance inst : availableInstances) {
-                    if (qtyToBook <= 0) break;
-                    double instQty = inst.getQuantity();
-                    double usedQty = Math.min(instQty, qtyToBook);
+                    if (qtyToBook.compareTo(BigDecimal.ZERO) <= 0) break;
+                    BigDecimal instQty = inst.getQuantity();
+                    BigDecimal usedQty = instQty.min(qtyToBook);
 
                     inst.setQuantity(usedQty);
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
@@ -348,11 +345,11 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     inst.setInventoryRequest(request);
                     resultInstances.add(inst);
 
-                    qtyToBook -= usedQty;
+                    qtyToBook = qtyToBook.subtract(usedQty);
                 }
             } else {
                 // not enough available, book what you can and create pending
-                double qtyToRequest = qty - availableQty;
+                BigDecimal qtyToRequest = requestedQty.subtract(availableQty);
 
                 for (InventoryInstance inst : availableInstances) {
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
@@ -416,7 +413,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         InventoryInstance existing = getInventoryInstanceById(updated.getId());
         boolean modified = false;
 
-        if (updated.getQuantity() != existing.getQuantity()) {
+        if (updated.getQuantity() != null && updated.getQuantity().compareTo(existing.getQuantity()) != 0) {
             logger.debug("Updating quantity for instance ID {}: {} -> {}", existing.getId(), existing.getQuantity(), updated.getQuantity());
             existing.setQuantity(updated.getQuantity());
             modified = true;
@@ -506,9 +503,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
             Page<InventoryPresentDTO> inventoryPresentDTOPage = inventoryListWithCount.map(record -> {
                 try {
-                    int inventoryItemRef = (int) record[0];
-                    double totalQuantity = (double) record[6];
-                    double totalCost = (double) record[7];
+                    int inventoryItemRef = ((Number) record[0]).intValue();
+                    double totalQuantity = ((Number) record[6]).doubleValue();
+                    double totalCost = ((Number) record[7]).doubleValue();
 
                     InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(inventoryItemRef);
                     if (inventoryItem == null) {
@@ -570,12 +567,17 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             // Apply quantity filter
             List<GroupedInventoryItem> groupedList = groupedByItem.values().stream()
                     .filter(instances -> {
-                        double sum = instances.stream().mapToDouble(InventoryInstance::getQuantity).sum();
+                        BigDecimal sum = instances.stream()
+                                .map(InventoryInstance::getQuantity)
+                                .filter(Objects::nonNull)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
                         if (filterType == null || totalQuantityCondition == null) return true;
+
+                        BigDecimal targetQuantity = BigDecimal.valueOf(totalQuantityCondition);
                         return switch (filterType) {
-                            case "=" -> sum == totalQuantityCondition;
-                            case ">" -> sum > totalQuantityCondition;
-                            case "<" -> sum < totalQuantityCondition;
+                            case "=" -> sum.compareTo(targetQuantity) == 0;
+                            case ">" -> sum.compareTo(targetQuantity) > 0;
+                            case "<" -> sum.compareTo(targetQuantity) < 0;
                             default -> true;
                         };
                     })
@@ -644,7 +646,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         summary.put("available", inventoryInstanceRepository
                 .findAll().stream()
                 .filter(i -> i.getInventoryInstanceStatus() == InventoryInstanceStatus.AVAILABLE)
-                .mapToDouble(InventoryInstance::getQuantity).sum());
+                .map(InventoryInstance::getQuantity)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
 
         summary.put("requested", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED.name()));
         summary.put("booked", inventoryInstanceRepository.countByInventoryInstanceStatus(InventoryInstanceStatus.BOOKED.name()));
@@ -786,13 +790,13 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         logger.info("Received request to add inventory: {}", request);
 
         int inventoryItemId = request.getInventoryItemId();
-        double addedQty = request.getQuantity();
-        double costPerUnit = request.getCostPerUnit();
+        BigDecimal addedQty = BigDecimal.valueOf(request.getQuantity());
+        BigDecimal costPerUnit = BigDecimal.valueOf(request.getCostPerUnit());
         long referenceId = request.getReferenceId();
         String createdBy = request.getCreatedBy();
         ProcurementDecision procurementDecision = request.getProcurementDecision();
 
-        if (addedQty <= 0) {
+        if (addedQty.compareTo(BigDecimal.ZERO) <= 0) {
             logger.warn("Attempted to add invalid quantity: {}", addedQty);
             throw new IllegalArgumentException("Added quantity must be greater than zero.");
         }
@@ -808,9 +812,11 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         List<InventoryInstance> resultInstances = new ArrayList<>();
         Date now = new Date();
 
-        double finalCost = costPerUnit > 0 ? costPerUnit :
-                dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost() : 0;
-        double finalPrice = dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost() : 0;
+        BigDecimal defaultStandardCost = Optional.ofNullable(dbItem.getProductFinanceSettings().getStandardCost())
+                .map(BigDecimal::valueOf)
+                .orElse(BigDecimal.ZERO);
+        BigDecimal finalCost = costPerUnit.compareTo(BigDecimal.ZERO) > 0 ? costPerUnit : defaultStandardCost;
+        BigDecimal finalPrice = defaultStandardCost;
 
         try {
             // =========================================
@@ -820,10 +826,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     .inventoryInstanceByStatus(
                             inventoryItemId,
                             InventoryInstanceStatus.PENDING.name(),
-                            addedQty // qty parameter, as per your existing query
+                            addedQty.doubleValue() // qty parameter, as per your existing query
                     );
 
-            double remainingQty = addedQty;
+            BigDecimal remainingQty = addedQty;
 
             if (!pendingInstances.isEmpty()) {
                 logger.info("Found {} pending instances to fill", pendingInstances.size());
@@ -835,18 +841,18 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                         inst.setCostPerUnit(finalCost);
                         inst.setSellPricePerUnit(finalPrice);
                         resultInstances.add(inst);
-                        remainingQty -= 1;
-                        if (remainingQty <= 0) break;
+                        remainingQty = remainingQty.subtract(BigDecimal.ONE);
+                        if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) break;
                     } else {
                         // For quantity-based instance, assume full quantity is pending
-                        double canFill = Math.min(inst.getQuantity(), remainingQty);
+                        BigDecimal canFill = inst.getQuantity().min(remainingQty);
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
                         inst.setEntryDate(now);
                         inst.setCostPerUnit(finalCost);
                         inst.setSellPricePerUnit(finalPrice);
                         resultInstances.add(inst);
-                        remainingQty -= canFill;
-                        if (remainingQty <= 0) break;
+                        remainingQty = remainingQty.subtract(canFill);
+                        if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) break;
                     }
                 }
 
@@ -857,16 +863,16 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             // =========================================
             // STEP 2: CREATE NEW INSTANCES IF STILL NEEDED
             // =========================================
-            if (remainingQty > 0) {
+            if (remainingQty.compareTo(BigDecimal.ZERO) > 0) {
                 logger.info("Still need to add {} new units", remainingQty);
 
                 if (isUnitByNos(dbItem)) {
-                    int unitCount = (int) remainingQty;
+                    int unitCount = remainingQty.intValue();
                     for (int i = 0; i < unitCount; i++) {
                         InventoryInstance inst = new InventoryInstance();
                         inst.setInventoryItem(dbItem);
                         inst.setEntryDate(now);
-                        inst.setQuantity(1);
+                        inst.setQuantity(BigDecimal.ONE);
                         inst.setCostPerUnit(finalCost);
                         inst.setSellPricePerUnit(finalPrice);
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
@@ -947,8 +953,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 .map(req -> {
                     InventoryItem item = req.getInventoryItem();
                     double totalQty = req.getRequestedInstances().stream()
-                            .mapToDouble(InventoryInstance::getQuantity)
-                            .sum();
+                            .map(InventoryInstance::getQuantity)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .doubleValue();
                     double requestQty = req.getRequestedInstances().stream()
                             .filter(inst -> inst.getInventoryInstanceStatus() == InventoryInstanceStatus.REQUESTED)
                             .count();
@@ -1055,10 +1063,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         logger.info("Received request to add inventory to existing procurement {}: {}", procurementOrderId, request);
 
         int inventoryItemId = request.getInventoryItemId();
-        double addedQty = request.getQuantity();
-        double costPerUnit = request.getCostPerUnit();
+        BigDecimal addedQty = BigDecimal.valueOf(request.getQuantity());
+        BigDecimal costPerUnit = BigDecimal.valueOf(request.getCostPerUnit());
 
-        if (addedQty <= 0) {
+        if (addedQty.compareTo(BigDecimal.ZERO) <= 0) {
             logger.warn("Attempted to add invalid quantity: {}", addedQty);
             throw new IllegalArgumentException("Added quantity must be greater than zero.");
         }
@@ -1078,9 +1086,11 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         List<InventoryInstance> resultInstances = new ArrayList<>();
         Date now = new Date();
 
-        double finalCost = costPerUnit > 0 ? costPerUnit :
-                dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost(): 0;
-        double finalPrice = dbItem.getProductFinanceSettings().getStandardCost() != null ? dbItem.getProductFinanceSettings().getStandardCost() : 0;
+        BigDecimal defaultStandardCost = Optional.ofNullable(dbItem.getProductFinanceSettings().getStandardCost())
+                .map(BigDecimal::valueOf)
+                .orElse(BigDecimal.ZERO);
+        BigDecimal finalCost = costPerUnit.compareTo(BigDecimal.ZERO) > 0 ? costPerUnit : defaultStandardCost;
+        BigDecimal finalPrice = defaultStandardCost;
 
         try {
             // =========================================
@@ -1090,10 +1100,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     .inventoryInstanceByStatus(
                             inventoryItemId,
                             InventoryInstanceStatus.PENDING.name(),
-                            addedQty
+                            addedQty.doubleValue()
                     );
 
-            double remainingQty = addedQty;
+            BigDecimal remainingQty = addedQty;
 
             if (!pendingInstances.isEmpty()) {
                 logger.info("Found {} pending instances to fill", pendingInstances.size());
@@ -1105,17 +1115,17 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                         inst.setCostPerUnit(finalCost);
                         inst.setSellPricePerUnit(finalPrice);
                         resultInstances.add(inst);
-                        remainingQty -= 1;
-                        if (remainingQty <= 0) break;
+                        remainingQty = remainingQty.subtract(BigDecimal.ONE);
+                        if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) break;
                     } else {
-                        double canFill = Math.min(inst.getQuantity(), remainingQty);
+                        BigDecimal canFill = inst.getQuantity().min(remainingQty);
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
                         inst.setEntryDate(now);
                         inst.setCostPerUnit(finalCost);
                         inst.setSellPricePerUnit(finalPrice);
                         resultInstances.add(inst);
-                        remainingQty -= canFill;
-                        if (remainingQty <= 0) break;
+                        remainingQty = remainingQty.subtract(canFill);
+                        if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) break;
                     }
                 }
 
@@ -1126,16 +1136,16 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             // =========================================
             // STEP 2: CREATE NEW INSTANCES IF STILL NEEDED
             // =========================================
-            if (remainingQty > 0) {
+            if (remainingQty.compareTo(BigDecimal.ZERO) > 0) {
                 logger.info("Still need to add {} new units", remainingQty);
 
                 if (isUnitByNos(dbItem)) {
-                    int unitCount = (int) remainingQty;
+                    int unitCount = remainingQty.intValue();
                     for (int i = 0; i < unitCount; i++) {
                         InventoryInstance inst = new InventoryInstance();
                         inst.setInventoryItem(dbItem);
                         inst.setEntryDate(now);
-                        inst.setQuantity(1);
+                        inst.setQuantity(BigDecimal.ONE);
                         inst.setCostPerUnit(finalCost);
                         inst.setSellPricePerUnit(finalPrice);
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);

@@ -11,7 +11,7 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class EnquiryTableDTO {
 
-    private int id;
+    private Long id;
     private String enqNo;
     private LocalDate enqDate;
     private String companyName;

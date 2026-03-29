@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Transactional
@@ -206,7 +207,7 @@ public class ContactServiceImp implements ContactService {
                     .filter(ContactAddress::isDefault)
                     .findFirst()
                     .or(() -> c.getAddresses().stream().findFirst())
-                    .map(a -> List.of(a.getCity(), a.getState()).stream()
+                    .map(a -> Stream.of(a.getCity(), a.getState())
                             .filter(s -> s != null && !s.isBlank())
                             .collect(Collectors.joining(", ")))
                     .orElse(null);

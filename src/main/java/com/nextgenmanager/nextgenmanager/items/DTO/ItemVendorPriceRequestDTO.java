@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.items.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nextgenmanager.nextgenmanager.items.model.PriceType;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
@@ -39,6 +40,7 @@ public class ItemVendorPriceRequestDTO {
     private Date validTo;
 
     /** Setting true will clear the preferred flag on any existing preferred entry for this item+priceType. */
+    @JsonProperty("isPreferredVendor")
     private boolean isPreferredVendor = false;
 
     private boolean gstRegistered = true;

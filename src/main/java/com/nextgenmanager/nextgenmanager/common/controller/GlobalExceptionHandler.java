@@ -173,16 +173,59 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(error);
     }
 
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ApiError> handleDatabaseError(
-            DataIntegrityViolationException ex,
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiError> handleIllegalState(
+            IllegalStateException ex,
             HttpServletRequest request) {
+
+        String message = Optional.ofNullable(ex.getMessage())
+                .filter(m -> !m.isBlank())
+                .orElse("Operation not allowed in the current state");
 
         ApiError error = new ApiError(
                 OffsetDateTime.now(),
                 HttpStatus.CONFLICT.value(),
                 HttpStatus.CONFLICT.getReasonPhrase(),
-                "Database constraint violation",
+                message,
+                request.getRequestURI()
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> handleDatabaseError(
+            DataIntegrityViolationException ex,
+            HttpServletRequest request) {
+
+        String rootMessage = ex.getMostSpecificCause() != null
+                ? ex.getMostSpecificCause().getMessage()
+                : "";
+
+        String userMessage;
+        if (rootMessage.contains("sales_order") && rootMessage.contains("ordernumber")) {
+            userMessage = "A sales order with this order number already exists.";
+        } else if (rootMessage.contains("workorder") && rootMessage.contains("workordernumber")) {
+            userMessage = "A work order with this number already exists.";
+        } else if (rootMessage.contains("enquiry") && rootMessage.contains("enqno")) {
+            userMessage = "An enquiry with this number already exists.";
+        } else if (rootMessage.contains("quotation") && rootMessage.contains("qtnno")) {
+            userMessage = "A quotation with this number already exists.";
+        } else if (rootMessage.contains("inventoryitem") && rootMessage.contains("itemcode")) {
+            userMessage = "An item with this item code already exists.";
+        } else if (rootMessage.contains("contact") && rootMessage.contains("gstnumber")) {
+            userMessage = "A contact with this GST number already exists.";
+        } else if (rootMessage.contains("unique") || rootMessage.contains("duplicate")) {
+            userMessage = "A record with the same unique value already exists.";
+        } else {
+            userMessage = "This operation could not be completed due to a data conflict.";
+        }
+
+        ApiError error = new ApiError(
+                OffsetDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                userMessage,
                 request.getRequestURI()
         );
 

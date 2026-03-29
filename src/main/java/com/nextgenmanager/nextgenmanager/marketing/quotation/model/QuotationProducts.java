@@ -21,7 +21,7 @@ public class QuotationProducts {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId", nullable = true)

@@ -16,7 +16,7 @@ public class EnquiryConversationRecord {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
+    private Long id;
 
     private String conversation;
 

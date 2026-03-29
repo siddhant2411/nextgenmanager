@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.contact.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,6 +25,7 @@ public class ContactAddress {
     @Column(length = 20)
     private AddressType addressType = AddressType.BILLING;
 
+    @JsonProperty("isDefault")
     @Column(nullable = false)
     private boolean isDefault = false;
 

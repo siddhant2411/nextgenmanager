@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.items.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nextgenmanager.nextgenmanager.items.model.PriceType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -36,6 +37,7 @@ public class ItemVendorPriceDTO {
     private Date validFrom;
     private Date validTo;
 
+    @JsonProperty("isPreferredVendor")
     private boolean isPreferredVendor;
     private boolean gstRegistered;
     private String paymentTerms;

@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.contact.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
@@ -38,6 +39,7 @@ public class ContactPersonDetail {
     private String whatsappNumber;
 
     /** Primary contact person for this company — used as default in communications. */
+    @JsonProperty("isPrimary")
     @Column(nullable = false)
     private boolean isPrimary = false;
 

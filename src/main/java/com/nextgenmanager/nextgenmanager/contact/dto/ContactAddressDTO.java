@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.contact.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nextgenmanager.nextgenmanager.contact.model.AddressType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,6 +14,7 @@ import lombok.NoArgsConstructor;
 public class ContactAddressDTO {
     private int id;
     private AddressType addressType;
+    @JsonProperty("isDefault")
     private boolean isDefault;
     private String street1;
     private String street2;

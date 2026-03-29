@@ -11,7 +11,9 @@ import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.mapper.InventoryItemMapper;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemCode;
+import com.nextgenmanager.nextgenmanager.items.model.ItemCodeSeries;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.items.repository.ItemCodeSeriesRepository;
 import com.nextgenmanager.nextgenmanager.items.spec.InventoryItemSpecification;
 import com.nextgenmanager.nextgenmanager.production.repository.ItemCodeRepository;
 import okio.FileMetadata;
@@ -44,6 +46,9 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     private ItemCodeRepository itemCodeRepository;
 
     @Autowired
+    private ItemCodeSeriesRepository itemCodeSeriesRepository;
+
+    @Autowired
     private InventoryItemCodeGenerator codeGenerator;
 
     @Autowired
@@ -71,13 +76,24 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     private static final Logger logger = LoggerFactory.getLogger(InventoryItem.class);
 
     @Override
+    @Transactional
     public InventoryItem addInventoryItem(InventoryItem inventoryItem) {
         logger.debug("Adding inventory item: {}", inventoryItem);
         try {
-            // Optionally generate item code here using helper
-            if(Objects.equals(inventoryItem.getItemCode(), "")) {
-                String generatedCode = codeGenerator.generateItemCode(inventoryItem);
-                inventoryItem.setItemCode(generatedCode);
+            // Generate item code if not provided
+            if (inventoryItem.getItemCode() == null || inventoryItem.getItemCode().isBlank()) {
+                if (inventoryItem.getSeriesId() != null) {
+                    // Series-based generation: use pessimistic lock to atomically increment
+                    ItemCodeSeries series = itemCodeSeriesRepository.findByIdWithLock(inventoryItem.getSeriesId())
+                            .orElseThrow(() -> new IllegalArgumentException("Item code series not found: " + inventoryItem.getSeriesId()));
+                    String generatedCode = series.consumeNextCode();
+                    itemCodeSeriesRepository.save(series);
+                    inventoryItem.setItemCode(generatedCode);
+                } else {
+                    // Legacy year-sequence generator
+                    String generatedCode = codeGenerator.generateItemCode(inventoryItem);
+                    inventoryItem.setItemCode(generatedCode);
+                }
             }
 
             InventoryItem savedInventoryItem = inventoryItemRepository.save(inventoryItem);

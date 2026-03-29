@@ -1,7 +1,5 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
-import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
@@ -11,7 +9,6 @@ import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryConversationRecord;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
 import jakarta.persistence.EntityNotFoundException;
-import org.hibernate.service.spi.ServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +34,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     InventoryItemRepository inventoryItemRepository;
 
     @Override
-    public Enquiry getEnquiry(int id) {
+    public Enquiry getEnquiry(Long id) {
         logger.info("Fetching Enquiry with ID: {}", id);
         try {
             return enquiryRepository.getActiveEnquiryById(id);
@@ -65,7 +62,7 @@ public class EnquiryServiceImpl implements EnquiryService {
 
         return allActiveEnquires.map(record -> {
             try {
-                int enquiryId = (int) record[0];
+                Long enquiryId = ((Number) record[0]).longValue();
                 String fetchedEnqNo = record[1].toString();
                 LocalDate fetchedEnqDate = ((java.sql.Date) record[2]).toLocalDate();
                 String fetchedCompanyName = record[3].toString();
@@ -101,7 +98,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
-    public Enquiry updateEnquiry(Enquiry updatedEnquiry, int id) {
+    public Enquiry updateEnquiry(Enquiry updatedEnquiry, Long id) {
         logger.info("Updating Enquiry with ID: {}", id);
         Enquiry existingEnquiry = getEnquiry(id);
         try {
@@ -143,16 +140,16 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     private void updateEnquiredProducts(Enquiry existingEnquiry, List<EnquiredProducts> updatedProducts) {
-        Set<Integer> updatedProductIds = updatedProducts.stream()
+        Set<Long> updatedProductIds = updatedProducts.stream()
                 .map(EnquiredProducts::getId)
-                .filter(id -> id > 0)
+                .filter(id -> id != null && id > 0)
                 .collect(Collectors.toSet());
 
         existingEnquiry.getEnquiredProducts().removeIf(product -> !updatedProductIds.contains(product.getId()));
 
         if (updatedProducts != null) {
             for (EnquiredProducts product : updatedProducts) {
-                if (product.getId() > 0) {
+                if (product.getId() != null && product.getId() > 0) {
                     existingEnquiry.getEnquiredProducts().stream()
                             .filter(p -> p.getId() == product.getId())
                             .findFirst()
@@ -198,7 +195,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
-    public void deleteEnquiry(int id) {
+    public void deleteEnquiry(Long id) {
         logger.info("Deleting Enquiry with ID: {}", id);
         Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
         try {
@@ -215,7 +212,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
-    public void closeEnquiry(int id, String closeReason) {
+    public void closeEnquiry(Long id, String closeReason) {
         logger.info("Closing Enquiry with ID: {}", id);
         Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
         try {

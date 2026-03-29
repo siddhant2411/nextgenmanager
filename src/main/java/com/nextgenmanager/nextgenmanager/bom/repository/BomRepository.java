@@ -22,7 +22,12 @@ public interface BomRepository extends JpaRepository<Bom,Integer>, JpaSpecificat
     Page<Bom> findAllActiveBom(Pageable pageable);
 
 
-    @Query("SELECT b FROM Bom b WHERE b.parentInventoryItem.inventoryItemId = :inventoryItemId AND deletedDate IS NULL")
+    @Query("SELECT b FROM Bom b " +
+           "JOIN FETCH b.parentInventoryItem pi " +
+           "LEFT JOIN FETCH pi.productSpecification " +
+           "LEFT JOIN FETCH pi.productInventorySettings " +
+           "LEFT JOIN FETCH pi.productFinanceSettings " +
+           "WHERE pi.inventoryItemId = :inventoryItemId AND b.deletedDate IS NULL")
     List<Bom> findBomByParentInventoryItemId(@Param("inventoryItemId") int inventoryItemId);
 
 

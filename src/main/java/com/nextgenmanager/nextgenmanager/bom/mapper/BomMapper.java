@@ -86,6 +86,8 @@ public class BomMapper {
                 .itemCode(item.getItemCode())
                 .itemType(item.getItemType())
                 .uom(item.getUom())
+                .purchased(item.getProductInventorySettings().isPurchased())
+                .manufactured(item.getProductInventorySettings().isManufactured())
                 .build();
     }
 

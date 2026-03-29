@@ -34,7 +34,10 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/inventory_item")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER')")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+        "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
+        "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
+        "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
 public class InventoryItemController {
 
     @Autowired
