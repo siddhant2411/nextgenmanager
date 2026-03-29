@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.model;
 
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderPriority;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderSourceType;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
@@ -17,6 +18,7 @@ import org.hibernate.annotations.Where;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
+import com.nextgenmanager.nextgenmanager.production.model.Routing;
 
 @Entity
 @Getter
@@ -42,6 +44,10 @@ public class WorkOrder {
     @Enumerated(EnumType.STRING)  // Use STRING instead of ORDINAL for safety
     private WorkOrderStatus workOrderStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private WorkOrderPriority priority = WorkOrderPriority.NORMAL;
+
     private BigDecimal plannedQuantity;
 
     private BigDecimal completedQuantity;
@@ -66,6 +72,9 @@ public class WorkOrder {
     @OneToMany(mappedBy = "workOrder", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WorkOrderOperation> operations;
 
+    @OneToMany(mappedBy = "workOrder", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<WorkOrderTestResult> testResults;
+
     @Enumerated(EnumType.STRING)
     private WorkOrderSourceType sourceType;
 
@@ -85,6 +94,25 @@ public class WorkOrder {
     private Date actualStartDate;
 
     private Date actualEndDate;
+
+    // ---- Scheduling & Estimation Fields ----
+
+    /** Estimated total production time in minutes (sum of all ops: setup + run × qty) */
+    @Column(precision = 15, scale = 2)
+    private BigDecimal estimatedProductionMinutes;
+
+    /** Estimated total cost (material + labor + machine + overhead) */
+    @Column(precision = 15, scale = 2)
+    private BigDecimal estimatedTotalCost;
+
+    /** Whether this WO was auto-scheduled or manually dated */
+    private Boolean autoScheduled = false;
+
+    /** Who/what last scheduled it */
+    @Column(length = 100)
+    private String scheduledBy;
+
+    private Date scheduledAt;
 
     @CreationTimestamp
     @Column(updatable = false)

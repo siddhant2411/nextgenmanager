@@ -2,5 +2,5 @@ package com.nextgenmanager.nextgenmanager.production.enums;
 
 public enum OperationStatus {
 
-    PLANNED, READY, IN_PROGRESS, COMPLETED, HOLD, CANCELLED
+    PLANNED, WAITING_FOR_DEPENDENCY, READY, IN_PROGRESS, COMPLETED, HOLD, CANCELLED
 }

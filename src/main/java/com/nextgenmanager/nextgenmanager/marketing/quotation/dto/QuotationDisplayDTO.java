@@ -12,7 +12,7 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class QuotationDisplayDTO {
 
-    private int id;
+    private Long id;
     private String qtnNo;
     private LocalDate qtnDate;
     private String enqNo;

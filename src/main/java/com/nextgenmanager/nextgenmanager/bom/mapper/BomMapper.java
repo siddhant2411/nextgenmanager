@@ -1,15 +1,12 @@
 package com.nextgenmanager.nextgenmanager.bom.mapper;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
-import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionResponse;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
 
 import java.util.Collections;
 import java.util.stream.Collectors;
@@ -58,7 +55,8 @@ public class BomMapper {
         InventoryItem item = child.getParentInventoryItem();
 
         return BomPositionDTO.builder()
-                .id(child.getId())
+                .positionId(position.getId())
+                .childBomId(child.getId())
                 .bomName(child.getBomName())
                 .revision(child.getRevision())
                 .parentDrawingNumber(item!=null ? (item.getProductSpecification()!=null?
@@ -70,6 +68,10 @@ public class BomMapper {
                 .quantity(position.getQuantity())
                 .scrapPercentage(position.getScrapPercentage())
                 .hasChildBom(!position.getChildBom().getPositions().isEmpty())
+                .routingOperationId(position.getRoutingOperation() != null
+                        ? position.getRoutingOperation().getId() : null)
+                .routingOperationName(position.getRoutingOperation() != null
+                        ? position.getRoutingOperation().getName() : null)
                 .build();
     }
 
@@ -84,6 +86,8 @@ public class BomMapper {
                 .itemCode(item.getItemCode())
                 .itemType(item.getItemType())
                 .uom(item.getUom())
+                .purchased(item.getProductInventorySettings().isPurchased())
+                .manufactured(item.getProductInventorySettings().isManufactured())
                 .build();
     }
 

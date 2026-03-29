@@ -18,7 +18,8 @@ public class WorkCenterMachineDetailsDTO {
     private String centerCode;
     private String centerName;
     private String description;
-    private BigDecimal costPerHour;
+    private BigDecimal machineCostPerHour;
+    private BigDecimal overheadPercentage;
     private BigDecimal availableHoursPerDay;
     private WorkCenter.WorkCenterStatus workCenterStatus;
     private String department;

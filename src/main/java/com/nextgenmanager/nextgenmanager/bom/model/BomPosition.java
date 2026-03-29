@@ -1,21 +1,15 @@
 package com.nextgenmanager.nextgenmanager.bom.model;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
 import java.math.BigDecimal;
-import java.util.Date;
 
 @Entity
 @Getter
@@ -44,5 +38,14 @@ public class BomPosition {
     private double quantity;
 
     private BigDecimal scrapPercentage;
+
+    /**
+     * Which routing operation consumes this component.
+     * NULL = issue at work-order level (no specific operation gate).
+     * Set NULL on delete so rebuilding a routing auto-clears stale references.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "routingOperationId")
+    private RoutingOperation routingOperation;
 
 }

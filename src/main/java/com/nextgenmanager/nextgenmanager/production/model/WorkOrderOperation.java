@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.model;
 
 
+import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
@@ -13,6 +14,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Getter
@@ -48,6 +51,15 @@ public class WorkOrderOperation {
     @JoinColumn(name = "workCenterId")
     private WorkCenter workCenter;
 
+    /**
+     * Specific machine assigned for this operation (machine-level scheduling).
+     * Copied from RoutingOperation.machineDetails during WO explosion.
+     * If null, scheduler will auto-assign least-loaded machine in the work center.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assignedMachineId")
+    private MachineDetails assignedMachine;
+
 
     // ---- Quantities ----
     @Column(nullable = false, precision = 15, scale = 5)
@@ -58,6 +70,15 @@ public class WorkOrderOperation {
 
     @Column(nullable = false, precision = 15, scale = 5)
     private BigDecimal scrappedQuantity = BigDecimal.ZERO;
+
+    /**
+     * How much qty this operation is allowed to process.
+     * First operation: availableInputQuantity = plannedQuantity
+     * Subsequent ops: starts at 0, incremented as previous op completes partial qty.
+     * Dual-gate: completedQuantity cannot exceed availableInputQuantity.
+     */
+    @Column(nullable = false, precision = 15, scale = 5)
+    private BigDecimal availableInputQuantity = BigDecimal.ZERO;
 
     private Date plannedStartDate;
     private Date plannedEndDate;
@@ -71,6 +92,34 @@ public class WorkOrderOperation {
 
     private Boolean isMilestone = false;
     private Boolean allowOverCompletion = false;
+
+    // ---- Parallel Operation Fields ----
+
+    /**
+     * IDs of WorkOrderOperations that must be COMPLETED before this operation can start.
+     * Populated from RoutingOperationDependency when the work order is released.
+     * Empty = no dependencies, this operation can start immediately.
+     */
+    @ElementCollection
+    @CollectionTable(
+            name = "WorkOrderOperationDependency",
+            joinColumns = @JoinColumn(name = "workOrderOperationId")
+    )
+    @Column(name = "dependsOnOperationId")
+    private Set<Long> dependsOnOperationIds = new HashSet<>();
+
+    /**
+     * Optional label matching RoutingOperation.parallelPath.
+     * Used to group operations that belong to the same concurrent execution stream.
+     */
+    @Column(length = 50)
+    private String parallelPath;
+
+    /**
+     * Timestamp when all dependencies for this operation were resolved (all became COMPLETED).
+     * Set automatically when the last blocking dependency completes.
+     */
+    private Date dependencyResolvedDate;
 
     @CreationTimestamp
     @Column(updatable = false)

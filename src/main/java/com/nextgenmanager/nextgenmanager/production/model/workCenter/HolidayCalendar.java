@@ -30,6 +30,9 @@ public class HolidayCalendar {
     @OneToMany(mappedBy = "holidayCalendar", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<Holiday> holidays = new HashSet<>();
 
+    @OneToMany(mappedBy = "holidayCalendar", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<CalendarOverride> overrides = new HashSet<>();
+
     @Column(nullable = false)
     private boolean active = true;
 

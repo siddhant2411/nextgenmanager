@@ -1,18 +1,13 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
-import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderPriority;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderSourceType;
-import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
-import com.nextgenmanager.nextgenmanager.production.model.*;
-import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
-import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.Date;
-import java.util.List;
 
 
 @Data
@@ -22,15 +17,17 @@ public class WorkOrderRequestDTO {
 
     private int id;
 
-    private SalesOrder salesOrder;
+    private Integer salesOrderId;
 
-    private WorkOrder parentWorkOrder;
+    private Integer parentWorkOrderId;
 
-    private Bom bom;
+    private Integer bomId;
 
-    private Routing routing;
+    private Long routingId;
 
-    private WorkOrderStatus status;
+    private Integer workCenterId;
+
+    private WorkOrderPriority priority;
 
     private BigDecimal plannedQuantity;
 
@@ -40,13 +37,7 @@ public class WorkOrderRequestDTO {
 
     private WorkOrderSourceType sourceType;
 
-    private List<WorkOrderMaterial> materials;
-
-    private List<WorkOrderOperation> operations;
-
     private String remarks;
-
-    private WorkCenter workCenter;
 
     private Date dueDate;
 
@@ -57,6 +48,5 @@ public class WorkOrderRequestDTO {
     private Date actualStartDate;
 
     private Date actualEndDate;
-
 
 }

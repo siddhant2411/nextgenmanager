@@ -33,6 +33,10 @@ public class InventoryItemDTO {
     private byte revision;
     private String drawingNumber;
     private double sellingPrice;
+    private boolean manufactured;
+    private boolean purchased;
+    private double leadTime;
+    private Double standardCost;
 
 
 }

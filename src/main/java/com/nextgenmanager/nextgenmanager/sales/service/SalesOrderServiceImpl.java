@@ -13,6 +13,7 @@ import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.Quotatio
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderItemDto;
+import com.nextgenmanager.nextgenmanager.sales.mapper.SalesOrderMapper;
 import com.nextgenmanager.nextgenmanager.sales.model.*;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import jakarta.transaction.Transactional;
@@ -47,9 +48,11 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     @Autowired
     private final InventoryItemRepository inventoryItemRepository;
 
-
     @Autowired
     private final InventoryInstanceService inventoryInstanceService;
+
+    @Autowired
+    private final SalesOrderMapper salesOrderMapper;
 
     @Override
     public SalesOrderDto createSalesOrder(SalesOrderCreateDto dto) {
@@ -63,14 +66,18 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                     return new ResourceNotFoundException("Customer not found");
                 });
 
-        // 2. Optional quotation
+        // 2. Optional quotation — must be ACCEPTED before a Sales Order can reference it
         Quotation quotation = null;
-        if ( dto.getQuotationId() > 0) {
+        if (dto.getQuotationId() > 0) {
             quotation = quotationRepository.findById(dto.getQuotationId())
                     .orElseThrow(() -> {
                         logger.error("Quotation not found with id={}", dto.getQuotationId());
                         return new ResourceNotFoundException("Quotation not found");
                     });
+            if (quotation.getQuotationStatus() != com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationStatus.ACCEPTED) {
+                throw new IllegalStateException(
+                        "Quotation '" + quotation.getQtnNo() + "' must be in ACCEPTED status before creating a Sales Order. Current status: " + quotation.getQuotationStatus());
+            }
         }
 
         // 3. Create SalesOrder entity
@@ -180,7 +187,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         try {
             SalesOrder saved = salesOrderRepository.save(so);
             logger.info("Sales Order created successfully with id={}, orderNumber={}", saved.getId(), saved.getOrderNumber());
-            return toDto(saved);
+            return salesOrderMapper.toDTO(saved);
         } catch (Exception e) {
             logger.error("Error occurred while saving Sales Order: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to create Sales Order, please try again later.");
@@ -196,42 +203,6 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         return String.format("SO/%d/%04d", LocalDate.now().getYear(), count);
     }
 
-    private SalesOrderDto toDto(SalesOrder entity) {
-        SalesOrderDto dto = new SalesOrderDto();
-        dto.setId(entity.getId());
-        dto.setOrderNumber(entity.getOrderNumber());
-        dto.setStatus(entity.getStatus());
-        dto.setOrderDate(entity.getOrderDate());
-        dto.setCustomerId(entity.getCustomer().getId());
-        dto.setCustomerName(entity.getCustomer().getCompanyName());
-        dto.setVoucherType(entity.getVoucherType());
-        dto.setItems(entity.getItems());
-        dto.setDiscountPercentage(entity.getDiscountPercentage());
-        dto.setFreightAndForwardingCharges(entity.getFreightAndForwardingCharges());
-        dto.setIncludeFreightCharges(entity.isIncludeFreightCharges());
-
-
-        dto.setPoDate(entity.getPoDate());
-        dto.setPoNumber(entity.getPoNumber());
-        dto.setDeliveryAddress(entity.getDeliveryAddress());
-        dto.setPaymentTerms(entity.getPaymentTerms());
-        dto.setDispatchThrough(entity.getDispatchThrough());
-        dto.setTransportMode(entity.getTransportMode());
-
-        dto.setDeliveryDate(entity.getDeliveryDate());
-        dto.setPackagingInstructions(entity.getPackagingInstructions());
-        dto.setReference(entity.getReference());
-        dto.setRemarks(entity.getRemarks());
-        if (entity.getQuotation() != null) {
-            dto.setQuotationId(entity.getQuotation().getId());
-            dto.setQuotationNumber(entity.getQuotation().getQtnNo());
-        }
-
-        // you can also map totals and items here if needed
-        return dto;
-    }
-
-
     public List<SalesOrder> getAllSalesOrders() {
         return salesOrderRepository.findAll();
     }
@@ -246,8 +217,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                     return new ResourceNotFoundException("Sales Order not found with id " + id);
                 });
 
-        return toDto(salesOrder);
+        return salesOrderMapper.toDTO(salesOrder);
     }
+
     @Override
     public SalesOrderDto updateSalesOrder(Long id, SalesOrderCreateDto dto) {
         logger.info("Updating Sales Order with id={}", id);
@@ -368,7 +340,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         try {
             SalesOrder saved = salesOrderRepository.save(existing);
             logger.info("Sales Order updated successfully id={}, orderNumber={}", saved.getId(), saved.getOrderNumber());
-            return toDto(saved);
+            return salesOrderMapper.toDTO(saved);
         } catch (Exception e) {
             logger.error("Error while updating Sales Order: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to update Sales Order, please try again later.");

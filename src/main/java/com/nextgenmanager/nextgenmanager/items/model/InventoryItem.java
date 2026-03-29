@@ -76,4 +76,11 @@ public class InventoryItem {
 
     @Transient
     private List<FileAttachment> fileAttachments;
+
+    /**
+     * Optional: ID of an ItemCodeSeries to use for auto item-code generation on create.
+     * Not persisted — consumed by InventoryItemServiceImpl to generate itemCode.
+     */
+    @Transient
+    private Long seriesId;
 }

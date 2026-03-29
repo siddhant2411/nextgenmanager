@@ -2,11 +2,9 @@ package com.nextgenmanager.nextgenmanager.production.dto;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderPriority;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderSourceType;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
-import com.nextgenmanager.nextgenmanager.production.model.Routing;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderDto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -31,9 +29,13 @@ public class WorkOrderDTO {
 
     private BomDTO bom;
 
+    private RoutingDto routing;
+
     private InventoryItemDTO inventoryItem;
 
     private WorkOrderStatus status;
+
+    private WorkOrderPriority priority;
 
     private BigDecimal plannedQuantity;
 
@@ -60,5 +62,12 @@ public class WorkOrderDTO {
     private Date actualStartDate;
 
     private Date actualEndDate;
+
+    // Scheduling & Estimation
+    private BigDecimal estimatedProductionMinutes;
+
+    private BigDecimal estimatedTotalCost;
+
+    private Boolean autoScheduled;
 
 }

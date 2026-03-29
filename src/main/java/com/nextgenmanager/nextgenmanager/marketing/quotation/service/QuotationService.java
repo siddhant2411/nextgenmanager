@@ -11,15 +11,15 @@ import java.util.List;
 
 public interface QuotationService {
 
-    public Quotation getQuotationById(int id);
+    public Quotation getQuotationById(Long id);
 
     public List<Quotation>  getQuotationList();
 
     public Quotation createQuotation(Quotation quotation) throws Exception;
 
-    public Quotation updateQuotation(Quotation updatedQuotation,int id) throws Exception;
+    public Quotation updateQuotation(Quotation updatedQuotation, Long id) throws Exception;
 
-    public void deleteQuotation(int id);
+    public void deleteQuotation(Long id);
 
     public Page<QuotationDisplayDTO> getQuotationDisplayList(int page, int size, String sortBy, String sortDir,
                                                              String qtnNoFilter, LocalDate qtnDateFilter, LocalDate enqDateFilter,
@@ -28,8 +28,8 @@ public interface QuotationService {
 
     public byte[] generateQuotationPdf(String html);
 
-    public ResponseEntity<byte[]> downloadQuotationPdf(int qtnId);
+    public ResponseEntity<byte[]> downloadQuotationPdf(Long qtnId);
 
-    public List<Quotation> getQuotationsByEnquiryId(int enquiryId);
+    public List<Quotation> getQuotationsByEnquiryId(Long enquiryId);
 
 }

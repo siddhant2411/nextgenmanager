@@ -67,4 +67,10 @@ public interface BomService {
     public BomDTO getActiveBomByParentInventoryItem(int id);
 
     public List<BomDTO> getBomHistoryByParentInventoryItem(int id);
+
+    public List<ChangeLogDto> getChangeLogForBom(int bomId);
+
+    public Page<BomListDTO> getBomsUsingInventoryItem(int inventoryItemId, int page, int size, String sortBy, String sortDir);
+
+    public BomCostBreakdownDTO getBomCostBreakdown(int bomId);
 }

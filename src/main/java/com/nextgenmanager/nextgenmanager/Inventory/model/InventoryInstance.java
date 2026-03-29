@@ -12,6 +12,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.UUID;
 
@@ -42,7 +43,8 @@ public class InventoryInstance {
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"}) // Prevents serialization issues
     private InventoryItem inventoryItem;
 
-    private double quantity;
+    @Column(precision = 15, scale = 5)
+    private BigDecimal quantity = BigDecimal.ZERO;
 
     @Column
     private boolean isConsumed=false;
@@ -62,9 +64,11 @@ public class InventoryInstance {
     private Date deliveryDate;
 
 
-    private Double costPerUnit=0.0;
+    @Column(precision = 12, scale = 2)
+    private BigDecimal costPerUnit = BigDecimal.ZERO;
 
-    private Double sellPricePerUnit=0.0;
+    @Column(precision = 12, scale = 2)
+    private BigDecimal sellPricePerUnit = BigDecimal.ZERO;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inventoryRequestId")

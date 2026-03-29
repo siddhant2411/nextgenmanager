@@ -30,7 +30,7 @@ public class SalesOrderDto {
     private int customerId;
     private String customerName;                // convenience for UI
     private LocalDate orderDate;
-    private int quotationId;
+    private Long quotationId;
     private String quotationNumber;             // convenience if needed
 
     // Status

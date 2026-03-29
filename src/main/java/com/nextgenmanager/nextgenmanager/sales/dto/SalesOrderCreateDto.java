@@ -17,7 +17,7 @@ public class SalesOrderCreateDto {
 
     private int customerId;
     private LocalDate orderDate;
-    private int quotationId; // optional
+    private Long quotationId; // optional
     private List<SalesOrderItemDto> items;
     private String currency;
     private String paymentTerms;

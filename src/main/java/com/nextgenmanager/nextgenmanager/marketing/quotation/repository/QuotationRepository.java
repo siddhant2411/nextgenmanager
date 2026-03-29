@@ -11,13 +11,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-public interface QuotationRepository extends JpaRepository<Quotation,Integer> {
+public interface QuotationRepository extends JpaRepository<Quotation, Long> {
 
     @Query(value = "select * from quotation q where q.id=:id AND q.deletedDate IS NULL", nativeQuery = true)
-    public Quotation findByActiveId(int id);
+    public Quotation findByActiveId(Long id);
 
 
-    List<Quotation> findByEnquiryId(int enquiryId);
+    List<Quotation> findByEnquiryId(Long enquiryId);
 
     @Query(nativeQuery = true, value = """
     SELECT 

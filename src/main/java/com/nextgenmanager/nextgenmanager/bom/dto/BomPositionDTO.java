@@ -13,7 +13,8 @@ import java.math.BigDecimal;
 @Builder
 public class BomPositionDTO {
 
-    private int id;
+    private int positionId;
+    private int childBomId;
     private String bomName;
     private String parentItemName;
     private String parentItemCode;
@@ -25,5 +26,10 @@ public class BomPositionDTO {
     private BigDecimal scrapPercentage;
     private boolean hasChildBom;
 
+    /** ID of the routing operation that consumes this component. Null = no specific gate. */
+    private Long routingOperationId;
+
+    /** Display name of the assigned routing operation. Null when not assigned. */
+    private String routingOperationName;
 
 }

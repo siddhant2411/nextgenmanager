@@ -52,4 +52,9 @@ public interface WorkOrderService {
     public List<WorkOrderHistoryDTO> getWorkOrderHistory(int workOrderId);
 
     public WorkOrderSummaryDTO getWorkOrderSummary();
+
+    // Scheduling
+    public ScheduleResultDTO scheduleWorkOrder(int workOrderId);
+
+    public ScheduleResultDTO rescheduleWorkOrder(int workOrderId, java.util.Date newStartDate);
 }

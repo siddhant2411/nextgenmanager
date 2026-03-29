@@ -71,7 +71,8 @@ public class ProductionJobServiceImp implements ProductionJobService {
             Predicate predicate = cb.isNull(root.get("deletedDate"));
             if (search != null && !search.isEmpty()) {
                 Predicate jobNameMatch = cb.like(cb.lower(root.get("jobName")), "%" + search.toLowerCase() + "%");
-                predicate = cb.and(predicate, jobNameMatch);
+                Predicate jobCodeMatch = cb.like(cb.lower(root.get("jobCode")), "%" + search.toLowerCase() + "%");
+                predicate = cb.and(predicate, cb.or(jobNameMatch, jobCodeMatch));
             }
             return predicate;
         };
@@ -83,40 +84,56 @@ public class ProductionJobServiceImp implements ProductionJobService {
     @Override
     @Transactional
     public ProductionJobResponseDTO createProductionJob(ProductionJob productionJob) {
+        logger.debug("Creating new Production job: {}", productionJob);
 
-        try {
-            logger.debug("Creating new Production job: {}", productionJob);
-            ProductionJob savedProductionJob = productionJobRepository.save(productionJob);
-            logger.info("Successfully created Production job with ID: {}", savedProductionJob.getId());
-            return productionJobResponseMapper.toDTO(savedProductionJob);
-        } catch (Exception e) {
-            logger.error("Something went wrong while creating Production job: " + e.getMessage());
-            throw new RuntimeException(e);
+        // Duplicate jobCode check
+        if (productionJob.getJobCode() != null) {
+            Specification<ProductionJob> codeSpec = (root, query, cb) ->
+                    cb.and(cb.isNull(root.get("deletedDate")),
+                           cb.equal(root.get("jobCode"), productionJob.getJobCode()));
+            if (productionJobRepository.count(codeSpec) > 0) {
+                throw new IllegalStateException("Production job with code '" + productionJob.getJobCode() + "' already exists.");
+            }
         }
 
-
+        ProductionJob savedProductionJob = productionJobRepository.save(productionJob);
+        logger.info("Successfully created Production job with ID: {}", savedProductionJob.getId());
+        return productionJobResponseMapper.toDTO(savedProductionJob);
     }
 
     @Override
+    @Transactional
     public ProductionJobResponseDTO updateProductionJob(int id, ProductionJob productionJob) {
         logger.debug("Attempting to update Production job with ID: {}", id);
 
-        productionJobRepository.findById(id)
+        ProductionJob existing = productionJobRepository.findById(id)
+                .filter(job -> job.getDeletedDate() == null)
                 .orElseThrow(() -> {
                     logger.error("Production job not found for update, ID: {}", id);
                     return new ResourceNotFoundException("Production job not found for ID: " + id);
                 });
 
-        try {
-            logger.debug("Updating  Production job with Id: {}", id);
-            ProductionJob updatedProductionJob = productionJobRepository.save(productionJob);
-            logger.info("Successfully updated Production job with ID: {}", updatedProductionJob.getId());
-            return productionJobResponseMapper.toDTO(updatedProductionJob);
-        } catch (Exception e) {
-            logger.error("Something went wrong while updatedProductionJob Production job with id: {}" + e.getMessage(), id);
-            throw new RuntimeException(e);
+        // Duplicate jobCode check (if code is changing)
+        if (productionJob.getJobCode() != null && !productionJob.getJobCode().equals(existing.getJobCode())) {
+            Specification<ProductionJob> codeSpec = (root, query, cb) ->
+                    cb.and(cb.isNull(root.get("deletedDate")),
+                           cb.equal(root.get("jobCode"), productionJob.getJobCode()));
+            if (productionJobRepository.count(codeSpec) > 0) {
+                throw new IllegalStateException("Production job with code '" + productionJob.getJobCode() + "' already exists.");
+            }
         }
 
+        // Merge fields into existing entity
+        existing.setJobCode(productionJob.getJobCode());
+        existing.setJobName(productionJob.getJobName());
+        existing.setDefaultSetupTime(productionJob.getDefaultSetupTime());
+        existing.setDefaultRunTimePerUnit(productionJob.getDefaultRunTimePerUnit());
+        existing.setDescription(productionJob.getDescription());
+        existing.setActive(productionJob.isActive());
+
+        ProductionJob saved = productionJobRepository.save(existing);
+        logger.info("Successfully updated Production job with ID: {}", saved.getId());
+        return productionJobResponseMapper.toDTO(saved);
     }
 
     @Override

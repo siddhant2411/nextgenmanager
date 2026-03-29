@@ -54,9 +54,26 @@ public class WorkOrderMaterial {
     @Column(precision = 15, scale = 5)
     private BigDecimal scrappedQuantity = BigDecimal.ZERO;
 
+    /**
+     * Actual quantity consumed by operations.
+     * Incremented when an operation completes (proportional to completed qty).
+     * availableToConsume = issuedQuantity - consumedQuantity
+     */
+    @Column(nullable = false, precision = 15, scale = 5)
+    private BigDecimal consumedQuantity = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private MaterialIssueStatus issueStatus;
+
+    /**
+     * Which work-order operation must be active before this material can be issued.
+     * Snapshot of bomPosition.routingOperation at WO creation time.
+     * NULL = no operation gate (issue freely when WO is RELEASED or IN_PROGRESS).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workOrderOperationId")
+    private WorkOrderOperation workOrderOperation;
 
     /***
      * This gives you future flexibility:

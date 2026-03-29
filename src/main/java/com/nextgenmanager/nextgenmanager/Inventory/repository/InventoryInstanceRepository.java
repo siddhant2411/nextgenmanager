@@ -145,7 +145,7 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
 //            @Param("itemTypeValue") Integer itemTypeValue);
 
     @Query(value = "SELECT COALESCE(SUM(i.quantity), 0) FROM inventoryInstance i WHERE i.deletedDate IS NULL AND bookedDate IS NULL AND i.inventoryItemRef = :inventoryItemId", nativeQuery = true)
-    public  double getTotalQuantityForNonNOSItem(@Param("inventoryItemId") int inventoryItemId);
+    double getTotalQuantityForNonNOSItem(@Param("inventoryItemId") int inventoryItemId);
 
     @Query(value = "SELECT i.* FROM inventoryInstance i " +
             "JOIN inventoryItem item ON item.InventoryItemId = i.inventoryItemRef " +

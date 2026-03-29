@@ -3,14 +3,17 @@ package com.nextgenmanager.nextgenmanager.production.service;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
+import com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDependencyDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto;
 import com.nextgenmanager.nextgenmanager.production.helper.InvalidTransitionException;
+import com.nextgenmanager.nextgenmanager.production.enums.DependencyType;
 import com.nextgenmanager.nextgenmanager.production.enums.RoutingStatus;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
 import com.nextgenmanager.nextgenmanager.production.mapper.RoutingOperationMapper;
 import com.nextgenmanager.nextgenmanager.production.model.Routing;
 import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.production.model.RoutingOperationDependency;
 import com.nextgenmanager.nextgenmanager.production.repository.RoutingOperationRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.RoutingRepository;
 import com.nextgenmanager.nextgenmanager.production.service.audit.EventPublisher;
@@ -20,11 +23,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.nextgenmanager.nextgenmanager.assets.service.MachineDetailsService;
+
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class RoutingServiceImpl implements RoutingService{
@@ -49,6 +58,12 @@ public class RoutingServiceImpl implements RoutingService{
     @Autowired
     private ProductionJobService productionJobService;
 
+
+    @Autowired
+    private LaborRoleService laborRoleService;
+
+    @Autowired
+    private MachineDetailsService machineDetailsService;
 
     @Autowired
     private RoutingOperationMapper routingOperationMapper;
@@ -80,46 +95,91 @@ public class RoutingServiceImpl implements RoutingService{
         routing.setCreatedBy(routing.getCreatedBy() == null ? actor : routing.getCreatedBy());
         routing.setUpdatedDate(new Date());
 
-        // Clear old operations & replace
-        routing.getOperations().clear();
+        // Update operations in-place to preserve IDs (BOM positions reference them via FK)
+        Map<Long, RoutingOperation> existingById = routing.getOperations().stream()
+                .filter(op -> op.getId() != null)
+                .collect(java.util.stream.Collectors.toMap(RoutingOperation::getId, op -> op));
 
+        List<RoutingOperation> updatedOps = new java.util.ArrayList<>();
         int seq = 1;
         for (RoutingOperationDto opDto : dto.getOperations()) {
-            RoutingOperation op = new RoutingOperation();
-            op.setRouting(routing);
+            RoutingOperation op;
+            if (opDto.getId() != null && existingById.containsKey(opDto.getId())) {
+                // Update existing operation in-place — preserves its ID
+                op = existingById.get(opDto.getId());
+            } else {
+                // New operation
+                op = new RoutingOperation();
+                op.setRouting(routing);
+            }
+
             op.setSequenceNumber(
                     opDto.getSequenceNumber() != null ? opDto.getSequenceNumber() : seq++
             );
             op.setName(opDto.getName());
 
-            if (opDto.getProductionJob() != null ) {
+            if (opDto.getProductionJob() != null) {
                 op.setProductionJob(productionJobService.getProductionJobEntityById(opDto.getProductionJob().getId()));
+            } else {
+                op.setProductionJob(null);
             }
-//            else {
-//                throw new ValidationException("ProductionJob is required for operation.");
-//            }
 
-            if (opDto.getWorkCenter() != null ) {
+            if (opDto.getWorkCenter() != null) {
                 op.setWorkCenter(workCenterService.getWorkCenterEntityById(opDto.getWorkCenter().getId()));
+            } else {
+                op.setWorkCenter(null);
             }
-//            else {
-//                throw new ValidationException("WorkCenter is required for operation.");
-//            }
 
+            if (opDto.getLaborRole() != null) {
+                op.setLaborRole(laborRoleService.getEntityById(opDto.getLaborRole().getId()));
+            } else {
+                op.setLaborRole(null);
+            }
+
+            op.setNumberOfOperators(opDto.getNumberOfOperators() != null ? opDto.getNumberOfOperators() : 1);
+
+            if (opDto.getMachineDetails() != null) {
+                op.setMachineDetails(machineDetailsService.getMachineDetailsEntityById(opDto.getMachineDetails().getId()));
+            } else {
+                op.setMachineDetails(null);
+            }
+
+            op.setCostType(opDto.getCostType());
+            op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
             op.setInspection(opDto.getInspection());
             op.setNotes(opDto.getNotes());
-            routing.getOperations().add(op);
+
+            // Parallel operation fields
+            op.setAllowParallel(Boolean.TRUE.equals(opDto.getAllowParallel()));
+            op.setParallelPath(opDto.getParallelPath());
+
+            updatedOps.add(op);
         }
 
+        // Remove operations no longer in the incoming list (orphanRemoval will delete them)
+        routing.getOperations().removeIf(op -> !updatedOps.contains(op));
 
+        // Add new operations that aren't already in the list
+        for (RoutingOperation op : updatedOps) {
+            if (!routing.getOperations().contains(op)) {
+                routing.getOperations().add(op);
+            }
+        }
+
+        // First save — ensures all operations have IDs (needed for dependency resolution)
         Routing saved = routingRepository.save(routing);
+
+        // Resolve and persist operation dependencies
+        resolveDependencies(saved, dto.getOperations());
+        validateNoCycles(saved);
+        saved = routingRepository.save(saved);
 
         auditService.audit("ROUTING_CREATE_OR_UPDATE", actor,
                 "routingId=" + saved.getId() + ", bom=" + bomId);
 
-        return routingMapper.toDTO(routing);
+        return routingMapper.toDTO(saved);
     }
 
     // ----------------------------------------------------------
@@ -136,22 +196,71 @@ public class RoutingServiceImpl implements RoutingService{
             throw new InvalidTransitionException("Cannot edit routing in status: " +routing.getStatus());
         }
 
-        routing.getOperations().clear();
+        // Update operations in-place to preserve IDs (BOM positions reference them via FK)
+        Map<Long, RoutingOperation> existingById = routing.getOperations().stream()
+                .filter(op -> op.getId() != null)
+                .collect(java.util.stream.Collectors.toMap(RoutingOperation::getId, op -> op));
+
+        List<RoutingOperation> updatedOps = new java.util.ArrayList<>();
         int seq = 1;
         for (RoutingOperationDto opDto : operations) {
-            RoutingOperation op = new RoutingOperation();
-            op.setRouting(routing);
+            RoutingOperation op;
+            if (opDto.getId() != null && existingById.containsKey(opDto.getId())) {
+                op = existingById.get(opDto.getId());
+            } else {
+                op = new RoutingOperation();
+                op.setRouting(routing);
+            }
+
             op.setSequenceNumber(opDto.getSequenceNumber() != null ? opDto.getSequenceNumber() : seq++);
             op.setName(opDto.getName());
-            op.setWorkCenter(workCenterService.getWorkCenterEntityById(opDto.getWorkCenter().getId()));
+            if (opDto.getWorkCenter() != null) {
+                op.setWorkCenter(workCenterService.getWorkCenterEntityById(opDto.getWorkCenter().getId()));
+            } else {
+                op.setWorkCenter(null);
+            }
+            if (opDto.getLaborRole() != null) {
+                op.setLaborRole(laborRoleService.getEntityById(opDto.getLaborRole().getId()));
+            } else {
+                op.setLaborRole(null);
+            }
+
+            op.setNumberOfOperators(opDto.getNumberOfOperators() != null ? opDto.getNumberOfOperators() : 1);
+
+            if (opDto.getMachineDetails() != null) {
+                op.setMachineDetails(machineDetailsService.getMachineDetailsEntityById(opDto.getMachineDetails().getId()));
+            } else {
+                op.setMachineDetails(null);
+            }
+
+            op.setCostType(opDto.getCostType());
+            op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
             op.setInspection(opDto.getInspection());
             op.setNotes(opDto.getNotes());
-            routing.getOperations().add(op);
+
+            // Parallel operation fields
+            op.setAllowParallel(Boolean.TRUE.equals(opDto.getAllowParallel()));
+            op.setParallelPath(opDto.getParallelPath());
+
+            updatedOps.add(op);
         }
 
+        routing.getOperations().removeIf(op -> !updatedOps.contains(op));
+        for (RoutingOperation op : updatedOps) {
+            if (!routing.getOperations().contains(op)) {
+                routing.getOperations().add(op);
+            }
+        }
+
+        // First save — ensures all operations have IDs
         Routing saved = routingRepository.save(routing);
+
+        // Resolve and persist operation dependencies
+        resolveDependencies(saved, operations);
+        validateNoCycles(saved);
+        saved = routingRepository.save(saved);
 
         auditService.audit("ROUTING_UPDATE_OPERATIONS", actor, "routingId=" + routingId);
 
@@ -256,7 +365,147 @@ public class RoutingServiceImpl implements RoutingService{
         return routingOperations;
     }
 
+    @Override
+    public Long findRoutingIdByBom(int bomId) {
+        return routingRepository.findByBomId(bomId)
+                .map(Routing::getId)
+                .orElse(null);
+    }
 
+    @Override
+    public Long getRoutingIdForOperation(Long operationId) {
+        RoutingOperation op = routingOperationRepository.findById(operationId)
+                .orElseThrow(() -> new ResourceNotFoundException("RoutingOperation not found: " + operationId));
+        return op.getRouting().getId();
+    }
+
+
+    // ----------------------------------------------------------
+    // Helper: Dependency Resolution
+    // ----------------------------------------------------------
+
+    /**
+     * Resolves dependency DTOs into {@link RoutingOperationDependency} entities
+     * and replaces each operation's existing dependency list.
+     *
+     * <p>Looks up the upstream operation by ID first; falls back to sequence number
+     * so that newly-created operations (no client-side ID yet) can still declare deps.
+     *
+     * <p>Self-dependencies are silently skipped.
+     * Duplicate pairs are skipped (the unique constraint on the table also enforces this).
+     *
+     * @param routing  the saved routing whose operations already have IDs
+     * @param opDtos   the request DTOs in the same positional order as the operations
+     */
+    private void resolveDependencies(Routing routing, List<RoutingOperationDto> opDtos) {
+
+        // Build lookup maps from the saved operations
+        Map<Long,    RoutingOperation> byId  = routing.getOperations().stream()
+                .filter(op -> op.getId() != null)
+                .collect(Collectors.toMap(RoutingOperation::getId, op -> op));
+
+        Map<Integer, RoutingOperation> bySeq = routing.getOperations().stream()
+                .filter(op -> op.getSequenceNumber() != null)
+                .collect(Collectors.toMap(RoutingOperation::getSequenceNumber, op -> op,
+                        (a, b) -> a)); // keep first on duplicate sequence (shouldn't happen)
+
+        for (RoutingOperationDto opDto : opDtos) {
+            // Find the matching saved operation for this DTO
+            RoutingOperation op = null;
+            if (opDto.getId() != null) {
+                op = byId.get(opDto.getId());
+            }
+            if (op == null && opDto.getSequenceNumber() != null) {
+                op = bySeq.get(opDto.getSequenceNumber());
+            }
+            if (op == null) continue;
+
+            // Clear existing dependencies (orphanRemoval will delete old rows)
+            op.getDependencies().clear();
+
+            if (opDto.getDependencies() == null || opDto.getDependencies().isEmpty()) continue;
+
+            Set<Long> addedPairs = new HashSet<>(); // prevent duplicate dep pairs
+
+            for (RoutingOperationDependencyDTO depDto : opDto.getDependencies()) {
+                // Resolve the upstream operation
+                RoutingOperation upstream = null;
+                if (depDto.getDependsOnRoutingOperationId() != null) {
+                    upstream = byId.get(depDto.getDependsOnRoutingOperationId());
+                }
+                if (upstream == null && depDto.getDependsOnSequenceNumber() != null) {
+                    upstream = bySeq.get(depDto.getDependsOnSequenceNumber());
+                }
+                if (upstream == null) continue;
+
+                // Skip self-dependency
+                if (upstream.getId().equals(op.getId())) continue;
+
+                // Skip duplicate pair
+                if (!addedPairs.add(upstream.getId())) continue;
+
+                RoutingOperationDependency dep = new RoutingOperationDependency();
+                dep.setRoutingOperation(op);
+                dep.setDependsOnRoutingOperation(upstream);
+                dep.setDependencyType(
+                        depDto.getDependencyType() != null
+                                ? depDto.getDependencyType()
+                                : DependencyType.SEQUENTIAL
+                );
+                dep.setIsRequired(depDto.getIsRequired() != null ? depDto.getIsRequired() : true);
+
+                op.getDependencies().add(dep);
+            }
+        }
+    }
+
+    /**
+     * Validates that the routing's SEQUENTIAL dependencies form a DAG (no cycles).
+     * Only SEQUENTIAL deps can cause deadlocks; PARALLEL_ALLOWED deps are ignored.
+     *
+     * @throws IllegalStateException if a cycle is detected
+     */
+    private void validateNoCycles(Routing routing) {
+
+        // Build an adjacency map: opId → set of opIds it sequentially depends on
+        Map<Long, Set<Long>> graph = new HashMap<>();
+        for (RoutingOperation op : routing.getOperations()) {
+            Set<Long> deps = op.getDependencies().stream()
+                    .filter(d -> d.getDependencyType() == DependencyType.SEQUENTIAL)
+                    .map(d -> d.getDependsOnRoutingOperation().getId())
+                    .collect(Collectors.toSet());
+            graph.put(op.getId(), deps);
+        }
+
+        Set<Long> visited = new HashSet<>();
+        Set<Long> inStack = new HashSet<>();
+
+        for (Long opId : graph.keySet()) {
+            if (hasCycle(opId, graph, visited, inStack)) {
+                throw new IllegalStateException(
+                        "Circular dependency detected in routing operations. " +
+                        "Please review the dependency configuration."
+                );
+            }
+        }
+    }
+
+    /** DFS-based cycle detection. Returns true if a cycle is found starting from {@code opId}. */
+    private boolean hasCycle(Long opId, Map<Long, Set<Long>> graph,
+                              Set<Long> visited, Set<Long> inStack) {
+        if (inStack.contains(opId)) return true;
+        if (visited.contains(opId))  return false;
+
+        visited.add(opId);
+        inStack.add(opId);
+
+        for (Long depId : graph.getOrDefault(opId, Set.of())) {
+            if (hasCycle(depId, graph, visited, inStack)) return true;
+        }
+
+        inStack.remove(opId);
+        return false;
+    }
 
     // ----------------------------------------------------------
     // Helper: Status Change with Validation & Audit

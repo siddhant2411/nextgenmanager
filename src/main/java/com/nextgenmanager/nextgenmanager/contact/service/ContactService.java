@@ -1,21 +1,27 @@
 package com.nextgenmanager.nextgenmanager.contact.service;
 
+import com.nextgenmanager.nextgenmanager.contact.dto.ContactDTO;
+import com.nextgenmanager.nextgenmanager.contact.dto.ContactRequestDTO;
+import com.nextgenmanager.nextgenmanager.contact.dto.ContactSummaryDTO;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
+import com.nextgenmanager.nextgenmanager.contact.model.ContactType;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
 public interface ContactService {
 
-    public Contact createContact(Contact contact);
+    ContactDTO create(ContactRequestDTO request);
 
-    public Contact getContact(int contactId);
+    ContactDTO getById(int id);
 
-    public Contact updateContact(Contact updatedContact, int id);
+    ContactDTO update(int id, ContactRequestDTO request);
 
-    public void deleteContact(int contactId);
+    void delete(int id);
 
-    public Page<Contact> getContactList(int page, int size, String sortBy, String sortDir, String companyName, String gstNumber, String state);
+    Page<ContactDTO> search(String query, ContactType type, int page, int size, String sortBy, String sortDir);
 
+    List<ContactSummaryDTO> searchForDropdown(String query, ContactType type);
+
+    Contact getEntityById(int id);
 }

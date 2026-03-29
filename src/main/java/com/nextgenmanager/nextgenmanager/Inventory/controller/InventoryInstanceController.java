@@ -75,18 +75,17 @@ public class InventoryInstanceController {
 
     @PostMapping("/consume")
     public ResponseEntity<?> consumeQuantity(
-            @RequestBody InventoryItem inventoryItem, @RequestParam("qty") double consumeQty, Long requestId) {
+            @RequestBody InventoryItem inventoryItem,
+            @RequestParam("qty") Double consumeQty,
+            @RequestParam(required = false) Long requestId) {
         logger.info("Received request to consume inventory for item ID: {}, qty: {}", inventoryItem.getInventoryItemId(), consumeQty);
         try {
-
-            if (consumeQty <= 0) {
+            if (consumeQty == null || consumeQty <= 0) {
                 logger.warn("Invalid consumption quantity provided: {}", consumeQty);
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body("Quantity to consume must be greater than zero.");
             }
-
-            // Call the service to consume inventory instances
-            List<InventoryInstance> consumedItems = inventoryInstanceService.consumeInventoryInstance(inventoryItem, consumeQty,requestId);
+            List<InventoryInstance> consumedItems = inventoryInstanceService.consumeInventoryInstance(inventoryItem, consumeQty, requestId);
             logger.info("Successfully consumed inventory instances for item ID: {} with quantity: {}", inventoryItem.getInventoryItemId(), consumeQty);
             return ResponseEntity.status(HttpStatus.OK).body(consumedItems);
         } catch (IllegalArgumentException e) {
@@ -103,28 +102,26 @@ public class InventoryInstanceController {
 
     @PostMapping("/book")
     public ResponseEntity<?> bookQuantity(
-            @RequestBody InventoryItem inventoryItem, @RequestParam("qty") double consumeQty) {
-        logger.info("Received request to consume inventory for item ID: {}, qty: {}", inventoryItem.getInventoryItemId(), consumeQty);
+            @RequestBody InventoryItem inventoryItem,
+            @RequestParam("qty") Double consumeQty) {
+        logger.info("Received request to book inventory for item ID: {}, qty: {}", inventoryItem.getInventoryItemId(), consumeQty);
         try {
-
-            if (consumeQty <= 0) {
-                logger.warn("Invalid consumption quantity provided: {}", consumeQty);
+            if (consumeQty == null || consumeQty <= 0) {
+                logger.warn("Invalid booking quantity provided: {}", consumeQty);
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body("Quantity to consume must be greater than zero.");
+                        .body("Quantity to book must be greater than zero.");
             }
-
-            // Call the service to consume inventory instances
-            List<InventoryInstance> consumedItems = inventoryInstanceService.bookInventoryInstance(inventoryItem, consumeQty);
-            logger.info("Successfully consumed inventory instances for item ID: {} with quantity: {}", inventoryItem.getInventoryItemId(), consumeQty);
-            return ResponseEntity.status(HttpStatus.OK).body(consumedItems);
+            List<InventoryInstance> bookedItems = inventoryInstanceService.bookInventoryInstance(inventoryItem, consumeQty);
+            logger.info("Successfully booked inventory instances for item ID: {} with quantity: {}", inventoryItem.getInventoryItemId(), consumeQty);
+            return ResponseEntity.status(HttpStatus.OK).body(bookedItems);
         } catch (IllegalArgumentException e) {
-            logger.error("Error during consumption of inventory instances.", e);
+            logger.error("Error during booking of inventory instances.", e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body("Invalid request: " + e.getMessage());
         } catch (Exception e) {
-            logger.error("An error occurred while consuming inventory instances.", e);
+            logger.error("An error occurred while booking inventory instances.", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("An error occurred while consuming inventory instances: " + e.getMessage());
+                    .body("An error occurred while booking inventory instances: " + e.getMessage());
         }
     }
     @GetMapping("/present")

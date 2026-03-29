@@ -1,5 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
+import com.nextgenmanager.nextgenmanager.assets.dto.MachineDetailsResponseDTO;
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -21,10 +23,22 @@ public class RoutingOperationDto {
     private ProductionJobResponseDTO productionJob;
     private WorkCenterResponseDTO workCenter;
 
+    private LaborRoleResponseDTO laborRole;
+    private Integer numberOfOperators;
+    private MachineDetailsResponseDTO machineDetails;
+    private CostType costType;
+    private BigDecimal fixedCostPerUnit;
+
     private BigDecimal setupTime;
     private BigDecimal runTime;
 
     private Boolean inspection;
     private String notes;
 
+    // ---- Parallel Operation Fields ----
+    private Boolean allowParallel;
+    private String parallelPath;
+
+    /** Explicit dependencies for this operation. Empty = no declared deps (legacy order). */
+    private List<RoutingOperationDependencyDTO> dependencies;
 }

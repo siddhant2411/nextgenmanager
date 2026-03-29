@@ -28,7 +28,7 @@ public class Quotation {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
+    private Long id;
 
     @Column(unique = true)
     private String qtnNo;
@@ -46,12 +46,12 @@ public class Quotation {
     @Column(precision = 10, scale = 2)
     private BigDecimal netAmount;
 
-    @Column(precision = 10, scale = 2)
-    private BigDecimal pandfcharges;
+    @Column(name = "packagingAndForwardingCharges", precision = 10, scale = 2)
+    private BigDecimal packagingAndForwardingCharges;
 
     @Min(0)
-    @Column(precision = 5, scale = 2)
-    private BigDecimal pandfchargesPercentage;
+    @Column(name = "packagingAndForwardingChargesPercentage", precision = 5, scale = 2)
+    private BigDecimal packagingAndForwardingChargesPercentage;
 
     @Min(0)
     @Column(precision = 5, scale = 2)
