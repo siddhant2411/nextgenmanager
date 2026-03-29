@@ -3,49 +3,41 @@ package com.nextgenmanager.nextgenmanager.marketing.quotation.service;
 import com.itextpdf.html2pdf.HtmlConverter;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
+import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactPersonDetail;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.dto.QuotationDisplayDTO;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProducts;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.QuotationRepository;
-import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.data.domain.*;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring5.SpringTemplateEngine;
-import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
+import org.thymeleaf.templatemode.TemplateMode;
 
-//import javax.naming.Context;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
 
 @Service
-public class QuotationServiceImp implements QuotationService{
+public class QuotationServiceImp implements QuotationService {
 
-    @Autowired
-    private QuotationRepository quotationRepository;
+    @Autowired private QuotationRepository quotationRepository;
+    @Autowired private InventoryInstanceRepository inventoryInstanceRepository;
 
-    @Autowired
-    private InventoryInstanceRepository inventoryInstanceRepository;
     Logger logger = LoggerFactory.getLogger(QuotationServiceImp.class);
 
     @Override
-    public Quotation getQuotationById(int id) {
-
-
+    public Quotation getQuotationById(Long id) {
         logger.info("Fetching Quotation with ID: {}", id);
 
         Quotation quotation = quotationRepository.findByActiveId(id);
@@ -81,23 +73,16 @@ public class QuotationServiceImp implements QuotationService{
                 pageable, companyNameFilter, qtnNoFilter, qtnDateFilter, enqDateFilter,
                 enqNoFilter, netAmountFilter, totalAmountFilter);
 
-        return activeQuotations.map(record -> {
-            try {
-                return new QuotationDisplayDTO(
-                        record[0] != null ? ((Number) record[0]).intValue() : null,
-                        record[1] != null ? record[1].toString() : null,
-                        record[2] != null ? ((java.sql.Date) record[2]).toLocalDate() : null,
-                        record[3] != null ? record[3].toString() : null,
-                        record[4] != null ? ((java.sql.Date) record[4]).toLocalDate() : null,
-                        record[5] != null ? record[5].toString() : null,
-                        record[6] != null ? (BigDecimal) record[6] : null,
-                        record[7] != null ? (BigDecimal) record[7] : null
-                );
-            } catch (Exception e) {
-                logger.error("Error mapping quotation data for record {}: {}", record, e.getMessage());
-                throw new RuntimeException("Data mapping error", e);
-            }
-        });
+        return activeQuotations.map(record -> new QuotationDisplayDTO(
+                ((Number) record[0]).longValue(),
+                record[1].toString(),
+                ((java.sql.Date) record[2]).toLocalDate(),
+                record[3].toString(),
+                ((java.sql.Date) record[4]).toLocalDate(),
+                record[5].toString(),
+                (BigDecimal) record[6],
+                (BigDecimal) record[7]
+        ));
     }
 
     @Override
@@ -107,7 +92,25 @@ public class QuotationServiceImp implements QuotationService{
         return output.toByteArray();
     }
 
-    private String parseQuotationTemplate(int id) {
+    @Override
+    public ResponseEntity<byte[]> downloadQuotationPdf(Long id) {
+        String html = parseQuotationTemplate(id);
+        String qtnNo = getQuotationById(id).getQtnNo();
+        byte[] pdf = generateQuotationPdf(html);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=Quotation_" + qtnNo + ".pdf");
+        headers.add("Cache-Control", "no-cache, no-store, must-revalidate");
+        headers.add("Pragma", "no-cache");
+        headers.add("Expires", "0");
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
+    private String parseQuotationTemplate(Long id) {
         try {
             // Initialize template resolver
             ClassLoaderTemplateResolver templateResolver = new ClassLoaderTemplateResolver();
@@ -123,7 +126,17 @@ public class QuotationServiceImp implements QuotationService{
             // Extract data safely with null checks
             String companyName = (quotation.getEnquiry() != null && quotation.getEnquiry().getContact() != null) ?
                     quotation.getEnquiry().getContact().getCompanyName() : "Unknown Company";
-
+            String companyAddress = "";
+            if (quotation.getEnquiry() != null) {
+                Contact c = quotation.getEnquiry().getContact();
+                if (c != null && c.getAddresses() != null && !c.getAddresses().isEmpty()) {
+                    ContactAddress addr = c.getAddresses().get(0);
+                    companyAddress = java.util.stream.Stream.of(addr.getStreet1(), addr.getStreet2(),
+                            addr.getCity(), addr.getState(), addr.getPinCode(), addr.getCountry())
+                            .filter(s -> s != null && !s.isBlank())
+                            .collect(java.util.stream.Collectors.joining(", "));
+                }
+            }
             ContactPersonDetail contactInfo = (quotation.getEnquiry() != null && quotation.getEnquiry().getContact() != null &&
                     !quotation.getEnquiry().getContact().getPersonDetails().isEmpty()) ?
                     quotation.getEnquiry().getContact().getPersonDetails().get(0) : null;
@@ -135,6 +148,7 @@ public class QuotationServiceImp implements QuotationService{
             // Set context variables
             Context context = new Context();
             Map<String, Object> templateVariables = new HashMap<>();
+            templateVariables.put("companyAddress",companyAddress);
             templateVariables.put("companyName", companyName);
             templateVariables.put("contactInfo", contactInfo);
             templateVariables.put("quotationInfo", quotation);
@@ -155,144 +169,148 @@ public class QuotationServiceImp implements QuotationService{
         }
     }
 
-
-    @Override
-    public ResponseEntity<byte[]> downloadQuotationPdf(int id) {
-        String subscriptionPdfHtml = parseQuotationTemplate(id);
-        String qtnNo =  getQuotationById(id).getQtnNo();
-        String fileName = "Quotation_"+qtnNo+".pdf";
-        byte[] pdf = generateQuotationPdf(subscriptionPdfHtml);
-
-        HttpHeaders header = new HttpHeaders();
-        header.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename="+fileName);
-        header.add("Cache-Control", "no-cache, no-store, must-revalidate");
-        header.add("Pragma", "no-cache");
-        header.add("Expires", "0");
-
-        return ResponseEntity.ok()
-                .headers(header)
-                .contentType(MediaType.APPLICATION_PDF)
-                .body(pdf);
-
-
-    }
-
-
-    @Override
     @Transactional
-    public Quotation createQuotation(Quotation quotation) {
+    @Override
+    public Quotation createQuotation(Quotation quotation) throws Exception {
         try {
+
+            List<QuotationProducts> quotationProductsList = quotation.getQuotationProducts();
+            quotation.setQuotationProducts(new ArrayList<>());
+
+            // 2) Clean up invalid inventoryItem references
+            quotationProductsList.forEach(prod -> {
+                if (prod.getInventoryItem() != null && prod.getInventoryItem().getInventoryItemId() <= 0) {
+                    prod.setInventoryItem(null);
+                }
+                else {
+                    if(Objects.equals(prod.getProductNameRequired(), "")|| prod.getProductNameRequired()==null)
+                        prod.setProductNameRequired(prod.getInventoryItem().getName());
+                }
+
+            });
+
+
+            // 4) Persist
+            Quotation saved = quotationRepository.save(quotation);
+
+            // 5) Assign a quotation number if not present
+            if (saved.getQtnNo() == null) {
+                assignQuotationNumber(saved);
+            }
+            Quotation finalSaved = saved;
+            quotationProductsList.forEach(prod -> prod.setQuotation(finalSaved));
+            saved.setQuotationProducts(quotationProductsList);
+            // 3) Recompute all financial values
+            calculateQuotationValues(saved);
+
+            saved = quotationRepository.save(saved);
+            logger.info("Quotation created successfully with ID: {}", saved.getId());
+            return saved;
+        } catch (Exception e) {
+            logger.error("Error while creating quotation: {}", e.getMessage(), e);
+            throw new Exception("Error while creating Quotation: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
+    @Override
+    public Quotation updateQuotation(Quotation quotation, Long id) throws Exception {
+        // 1) Load existing so Hibernate can merge
+        Quotation existing = quotationRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Quotation not found with ID: " + id));
+        quotation.setId(existing.getId());
+
+        try {
+            // 2) Wire up each child
             if (quotation.getQuotationProducts() != null) {
-                quotation.getQuotationProducts().forEach(product -> product.setQuotation(quotation));
+                quotation.getQuotationProducts()
+                        .forEach(prod -> prod.setQuotation(quotation));
             }
 
-            List<QuotationProducts> finalQuotationProducts = new ArrayList<>();
-            double netAmount = 0, gstAmount, roundOff, discountAmount, discountedAmount;
-            long totalAmount;
-
-            for (QuotationProducts quotationProduct : quotation.getQuotationProducts()) {
-                double discount = quotationProduct.getDiscountPercentage();
-
-                if (quotationProduct.getInventoryItem() != null && quotationProduct.getInventoryItem().getInventoryItemId() <= 0) {
-                    quotationProduct.setInventoryItem(null);
+            // 3) Drop any bogus inventoryItem references
+            quotation.getQuotationProducts().forEach(prod -> {
+                if (prod.getInventoryItem() != null
+                        && prod.getInventoryItem().getInventoryItemId() <= 0) {
+                    prod.setInventoryItem(null);
+                } else {
+                    if(Objects.equals(prod.getProductNameRequired(), "")|| prod.getProductNameRequired()==null)
+                        prod.setProductNameRequired(prod.getInventoryItem().getName());
                 }
+            });
 
-                double pricePerUnit = quotationProduct.getPricePerUnit();
-                double totalUnitPrice = pricePerUnit - pricePerUnit * discount * 0.01;
-                quotationProduct.setId(0);
+            // 4) Recompute all the totals, taxes, discounts, etc.
+            calculateQuotationValues(quotation);
 
-                quotationProduct.setUnitPriceAfterDiscount(BigDecimal.valueOf(totalUnitPrice));
-                quotationProduct.setTotalAmountOfProduct(BigDecimal.valueOf(quotationProduct.getQty() * totalUnitPrice));
-                netAmount += quotationProduct.getQty() * totalUnitPrice;
-                finalQuotationProducts.add(quotationProduct);
+            // 5) Save and then assign QtnNo if missing
+            Quotation saved = quotationRepository.save(quotation);
+            if (saved.getQtnNo() == null) {
+                assignQuotationNumber(saved);
             }
 
-            // 🔹 Ensure Hibernate recognizes new list
-            quotation.setQuotationProducts(new ArrayList<>(finalQuotationProducts));
-
-            quotation.setNetAmount(BigDecimal.valueOf(netAmount));
-
-            discountAmount = netAmount * quotation.getDiscountPercentage().doubleValue() * 0.01;
-            discountedAmount = netAmount - discountAmount;
-            BigDecimal pandfcharges = quotation.getPandfcharges();
-            double taxableAmount = discountedAmount + pandfcharges.doubleValue();
-            gstAmount = taxableAmount * quotation.getGstPercentage().doubleValue() * 0.01;
-
-            totalAmount = Math.round(gstAmount + taxableAmount);
-            roundOff = totalAmount - (gstAmount + taxableAmount);
-            quotation.setTotalAmount(BigDecimal.valueOf(totalAmount));
-            quotation.setRoundOff(BigDecimal.valueOf(roundOff));
-            quotation.setGstAmount(BigDecimal.valueOf(gstAmount));
-            quotation.setDiscountAmount(BigDecimal.valueOf(discountAmount));
-
-            Quotation savedQuotation = quotationRepository.save(quotation);
-            logger.info("Quotation created successfully with ID: {}", savedQuotation.getId());
-            return savedQuotation;
+            return saved;
         } catch (Exception e) {
-            logger.error("Error creating quotation: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to create quotation.");
+            throw new Exception("Error while updating Quotation: " + e.getMessage(), e);
         }
     }
 
 
-
     @Override
-    public Quotation updateQuotation(Quotation updatedQuotation, int id) {
-        logger.info("Updating Quotation with ID: {}", id);
-
-        Quotation existingQuotation = quotationRepository.findById(id).orElseThrow(() -> {
-            logger.error("Quotation not found with ID: {}", id);
-            return new RuntimeException("Quotation not found with ID: " + id);
-        });
-
-        try {
-            updatedQuotation.setId(existingQuotation.getId());
-            List<QuotationProducts> finalQuotationProducts = new ArrayList<>();
-            double netAmount= 0;
-            double gstAmount,roundOff;
-            long totalAmount;
-            for(QuotationProducts quotationProduct: updatedQuotation.getQuotationProducts()){
-                double discount =  quotationProduct.getDiscountPercentage();
-                if(quotationProduct.getInventoryItem()!= null && quotationProduct.getInventoryItem().getInventoryItemId()<=0) {
-                    quotationProduct.setInventoryItem(null);
-
-                }
-                double pricePerUnit = quotationProduct.getPricePerUnit();
-                double totalUnitPrice = pricePerUnit - pricePerUnit * discount * 0.01;
-                quotationProduct.setUnitPriceAfterDiscount(BigDecimal.valueOf(totalUnitPrice));
-                quotationProduct.setTotalAmountOfProduct(BigDecimal.valueOf(quotationProduct.getQty() * totalUnitPrice));
-                netAmount += quotationProduct.getQty() * totalUnitPrice;
-                finalQuotationProducts.add(quotationProduct);
-            }
-            updatedQuotation.setQuotationProducts(finalQuotationProducts);
-            updatedQuotation.setNetAmount(BigDecimal.valueOf(netAmount));
-            gstAmount = netAmount*updatedQuotation.getGstPercentage().doubleValue()*0.01;
-            totalAmount = Math.round(gstAmount+netAmount);
-            roundOff =  totalAmount-(gstAmount+netAmount);
-            updatedQuotation.setTotalAmount(BigDecimal.valueOf(totalAmount));
-            updatedQuotation.setRoundOff(BigDecimal.valueOf(roundOff));
-            updatedQuotation.setGstAmount(BigDecimal.valueOf(gstAmount));
-
-            Quotation savedQuotation = quotationRepository.save(updatedQuotation);
-            logger.info("Quotation created successfully with ID: {}", savedQuotation.getId());
-            return savedQuotation;
-        } catch (Exception e) {
-            logger.error("Error updating quotation: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to update quotation.");
-        }
-    }
-
-    @Override
-    public void deleteQuotation(int id) {
-        logger.info("Deleting Quotation with ID: {}", id);
-
-        Quotation quotation = quotationRepository.findById(id).orElseThrow(() -> {
-            logger.error("Quotation not found with ID: {}", id);
-            return new RuntimeException("Quotation not found with ID: " + id);
-        });
+    public void deleteQuotation(Long id) {
+        Quotation quotation = quotationRepository.findById(id).orElseThrow(() ->
+                new RuntimeException("Quotation not found with ID: " + id));
 
         quotation.setDeletedDate(new Date());
         quotationRepository.save(quotation);
-        logger.info("Quotation deleted (soft delete) successfully with ID: {}", id);
+    }
+
+    private void calculateQuotationValues(Quotation quotation) {
+        BigDecimal netAmount = BigDecimal.ZERO;
+        for (QuotationProducts p : quotation.getQuotationProducts()) {
+            if (p.getInventoryItem() != null && p.getInventoryItem().getInventoryItemId() <= 0) {
+                p.setInventoryItem(null);
+            }
+            BigDecimal discount = Optional.ofNullable(p.getDiscountPercentage()).orElse(BigDecimal.ZERO);
+            BigDecimal factor = BigDecimal.ONE.subtract(discount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+            BigDecimal unitPrice = p.getPricePerUnit().multiply(factor);
+            BigDecimal total = unitPrice.multiply(p.getQty());
+
+            p.setUnitPriceAfterDiscount(unitPrice);
+            p.setTotalAmountOfProduct(total);
+            p.setQuotation(quotation);
+
+            netAmount = netAmount.add(total);
+        }
+
+        quotation.setNetAmount(netAmount);
+
+        BigDecimal discountAmount = netAmount.multiply(quotation.getDiscountPercentage())
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+        BigDecimal discountedNet = netAmount.subtract(discountAmount);
+
+        BigDecimal pandfChanrges = BigDecimal.valueOf(quotation.getPackagingAndForwardingChargesPercentage().doubleValue() * 0.01 * discountedNet.doubleValue());
+        BigDecimal gstAmount = discountedNet.add(pandfChanrges)
+                .multiply(quotation.getGstPercentage())
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+        BigDecimal total = discountedNet.add(pandfChanrges).add(gstAmount);
+        BigDecimal roundedTotal = BigDecimal.valueOf(Math.round(total.doubleValue()));
+        BigDecimal roundOff = roundedTotal.subtract(total);
+
+        quotation.setDiscountAmount(discountAmount);
+        quotation.setGstAmount(gstAmount);
+        quotation.setTotalAmount(roundedTotal);
+        quotation.setRoundOff(roundOff);
+    }
+
+    private void assignQuotationNumber(Quotation quotation) {
+        String qtnNo = LocalDate.now().getYear() + "-" + String.format("%04d", quotation.getId());
+        quotation.setQtnNo(qtnNo);
+        quotationRepository.save(quotation);
+    }
+
+    @Override
+    public List<Quotation> getQuotationsByEnquiryId(Long enquiryId) {
+        return quotationRepository.findByEnquiryId(enquiryId);
     }
 }

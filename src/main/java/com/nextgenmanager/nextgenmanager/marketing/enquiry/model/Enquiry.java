@@ -22,22 +22,33 @@ public class Enquiry {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
+    private Long id;
 
     @Column(unique = true, nullable = false)
-    private String enqNo=generateShortUUID();
+    private String enqNo;
+
+    private String opportunityName;
 
     private LocalDate enqDate;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Lazy load the associated Contact
-    @JoinColumn(name = "contact_id", referencedColumnName = "id") // Foreign key mapping
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "contact_id")
     private Contact contact;
 
+    private String contactPersonName;
+    private String contactPersonPhone;
+    private String contactPersonEmail;
+
     private LocalDate lastContactedDate;
-
     private int daysForNextFollowup;
+    private LocalDate nextFollowupDate;
+    private String followupRemarks;
 
-    private String enquireTrough;
+    private String enquirySource;
+    private String referenceNumber;
+
+    @Enumerated(EnumType.STRING)
+    private EnquiryStatus status = EnquiryStatus.NEW;
 
     @OneToMany(mappedBy = "enquiry", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference
@@ -47,6 +58,13 @@ public class Enquiry {
     @JsonManagedReference
     private List<EnquiryConversationRecord> enquiryConversationRecords;
 
+    private LocalDate closedDate;
+    private String closeReason;
+    private Date deletedDate;
+
+    private String createdBy;
+    private String updatedBy;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Date creationDate;
@@ -54,13 +72,12 @@ public class Enquiry {
     @UpdateTimestamp
     private Date updatedDate;
 
-    private Date closedDate;
-
-    private String closeReason;
-
-    private Date deletedDate;
-
-
+    @PrePersist
+    public void prePersist() {
+        if (this.enqNo == null || this.enqNo.isBlank()) {
+            this.enqNo = generateShortUUID();
+        }
+    }
 
     private static String generateShortUUID() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);

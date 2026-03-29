@@ -6,6 +6,8 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import jakarta.persistence.*;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Entity
 @Data
 @Table(name = "enquiredProducts")
@@ -13,7 +15,7 @@ public class EnquiredProducts {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId", nullable = true)
@@ -21,12 +23,13 @@ public class EnquiredProducts {
 
     private String productNameRequired;
 
-    private double qty;
+    @Column(precision = 10, scale = 2)
+    private BigDecimal qty = BigDecimal.ZERO;
 
     private String specialInstruction;
 
-
-    private Double pricePerUnit = 0.0;
+    @Column(precision = 12, scale = 2)
+    private BigDecimal pricePerUnit = BigDecimal.ZERO;
 
 
     @ManyToOne

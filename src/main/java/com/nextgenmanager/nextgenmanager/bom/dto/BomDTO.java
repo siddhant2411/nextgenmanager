@@ -1,17 +1,37 @@
 package com.nextgenmanager.nextgenmanager.bom.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import lombok.*;
+
+import java.util.Date;
+import java.util.List;
+
 
 @Getter
 @Setter
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class BomDTO {
     private int id;
     private String bomName;
-    private String itemCode;
-    private String name;
+    private InventoryItemDTO parentInventoryItem;
+    private List<BomPositionDTO> positions;
+    private String bomStatus;
+    private String revision;
+    private Date effectiveFrom;
+    private Date effectiveTo;
+    private String ecoNumber;
+    private String changeReason;
+    private String approvedBy;
+    private Date approvalDate;
+    private String approvalComments;
+    private String description;
+    private Boolean isActive;
+    private Boolean isDefault;
+    private Date creationDate;
+    private Date updatedDate;
+    private Date deletedDate;
+
 }

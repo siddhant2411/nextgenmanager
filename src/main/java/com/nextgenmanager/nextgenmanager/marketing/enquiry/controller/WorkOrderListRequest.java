@@ -1,6 +1,6 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.controller;
 
-import com.nextgenmanager.nextgenmanager.production.DTO.WorkOrderProductionDTO;
+import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderProductionDTO;
 import lombok.Getter;
 import lombok.Setter;
 

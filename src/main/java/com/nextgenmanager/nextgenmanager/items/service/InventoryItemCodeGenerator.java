@@ -21,7 +21,7 @@ public class InventoryItemCodeGenerator {
     public String generateItemCode(InventoryItem item) {
         String productType = resolveCode("PRODUCT_TYPE", item.getName());
         String modelCode = resolveCode("MODEL_CODE", item.getName());
-        String size = formatSize(item.getSize());
+        String size = formatSize(item.getProductSpecification().getSize());
         String group = resolveCode("GROUP", item.getItemGroupCode());
 
         String prefix = String.join("-", productType, modelCode, size, group);

@@ -1,0 +1,5 @@
+CREATE SEQUENCE IF NOT EXISTS workorder_seq
+    START WITH 1
+    INCREMENT BY 50
+    CACHE 50;
+ALTER TABLE workOrder ALTER COLUMN id SET DEFAULT nextval('workorder_seq');

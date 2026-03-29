@@ -14,12 +14,12 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
-public interface EnquiryRepository extends JpaRepository<Enquiry,Integer> {
+public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
 
 
 
     @Query(value = "SELECT * FROM Enquiry e WHERE e.id=:id AND e.deletedDate IS NULL", nativeQuery = true)
-    public Enquiry getActiveEnquiryById(@Param("id") int id);
+    public Enquiry getActiveEnquiryById(@Param("id") Long id);
 
 
     @Query(nativeQuery = true, value = """

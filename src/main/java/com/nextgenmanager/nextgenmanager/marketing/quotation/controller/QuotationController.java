@@ -4,22 +4,25 @@ import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.dto.QuotationDisplayDTO;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.service.QuotationService;
-import com.nextgenmanager.nextgenmanager.marketing.quotation.service.QuotationServiceImp;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/quotation")
-
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER')")
+@Validated
 public class QuotationController {
 
     @Autowired
@@ -27,9 +30,9 @@ public class QuotationController {
 
     Logger logger = LoggerFactory.getLogger(QuotationController.class);
     @GetMapping("/{id}")
-    public ResponseEntity<?> getQuotationById(@PathVariable String id) {
+    public ResponseEntity<?> getQuotationById(@PathVariable Long id) {
         try {
-            Quotation quotation = quotationService.getQuotationById(Integer.parseInt(id));
+            Quotation quotation = quotationService.getQuotationById(id);
             return ResponseEntity.ok(quotation);
         } catch (ResourceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
@@ -40,8 +43,8 @@ public class QuotationController {
 
     @GetMapping
     public ResponseEntity<Page<QuotationDisplayDTO>> getAllQuotations(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "5") int size,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "5") @Min(1) @Max(100) int size,
             @RequestParam(defaultValue = "enqDate") String sortBy,
             @RequestParam(defaultValue = "asc") String sortDir,
             @RequestParam(required = false) String qtnNo,
@@ -80,21 +83,25 @@ public class QuotationController {
             return ResponseEntity.status(HttpStatus.CREATED).body(createdQuotation);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Quotation> updateQuotation(@PathVariable int id, @RequestBody Quotation updatedQuotation) {
+    public ResponseEntity<Quotation> updateQuotation(@PathVariable Long id, @RequestBody Quotation updatedQuotation) {
         try {
             Quotation updated = quotationService.updateQuotation(updatedQuotation, id);
             return ResponseEntity.ok(updated);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<String> deleteQuotation(@PathVariable int id) {
+    public ResponseEntity<String> deleteQuotation(@PathVariable Long id) {
         try {
             quotationService.deleteQuotation(id);
             return ResponseEntity.ok("Quotation deleted successfully.");
@@ -104,7 +111,8 @@ public class QuotationController {
     }
 
     @GetMapping("/pdf/{id}")
-    public ResponseEntity<byte[]> downloadSubscriptionReceipt(@PathVariable String id) {
-        return quotationService.downloadQuotationPdf(Integer.parseInt(id));
+    public ResponseEntity<byte[]> downloadQuotationPdf(@PathVariable Long id) {
+        return quotationService.downloadQuotationPdf(id);
     }
 }
+

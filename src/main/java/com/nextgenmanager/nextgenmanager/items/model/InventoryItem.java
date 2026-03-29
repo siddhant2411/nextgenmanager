@@ -1,10 +1,16 @@
 package com.nextgenmanager.nextgenmanager.items.model;
 
+import com.fasterxml.jackson.annotation.JsonIdentityInfo;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.ObjectIdGenerators;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Date;
 import java.util.List;
@@ -18,7 +24,7 @@ public class InventoryItem {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int InventoryItemId;
+    private int inventoryItemId;
 
     @Column(unique = true, nullable = false)
     private String itemCode;
@@ -31,46 +37,12 @@ public class InventoryItem {
     @Column(nullable = false)
     private UOM uom;
 
-
     @Column(nullable = false)
     private ItemType itemType;
-
-    private String dimension;
-
-    private String size;
-
-    private String weight;
 
     private byte revision;
 
     private String remarks;
-
-    private String basicMaterial;
-
-
-    private String processType;
-
-    private String leadTime;
-
-    private String standardCost;
-
-    private String sellingPrice;
-
-    private String reorderLevel;
-
-    private String minStock;
-
-    private String maxStock;
-
-    private String taxCategory;
-
-    private boolean isBatchTracked;
-
-    private boolean isSerialTracked;
-
-    private boolean purchased;
-
-    private boolean manufactured;
 
     @Column(nullable = true)
     private String itemGroupCode;
@@ -84,11 +56,31 @@ public class InventoryItem {
 
     private Date deletedDate;
 
-    private double availableQuantity;
 
-    private double orderedQuantity;
-
-    @OneToMany(mappedBy = "inventoryItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToOne(mappedBy = "inventoryItem", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference
-    private List<InventoryItemAttachment> inventoryItemAttachmentList;
+    private ProductSpecification productSpecification;
+
+    @OneToOne(mappedBy = "inventoryItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
+    private ProductInventorySettings productInventorySettings;
+
+    @OneToOne(mappedBy = "inventoryItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
+    private ProductFinanceSettings productFinanceSettings;
+
+
+    @Transient
+    @JsonIgnore
+    private List<MultipartFile> attachments;
+
+    @Transient
+    private List<FileAttachment> fileAttachments;
+
+    /**
+     * Optional: ID of an ItemCodeSeries to use for auto item-code generation on create.
+     * Not persisted — consumed by InventoryItemServiceImpl to generate itemCode.
+     */
+    @Transient
+    private Long seriesId;
 }

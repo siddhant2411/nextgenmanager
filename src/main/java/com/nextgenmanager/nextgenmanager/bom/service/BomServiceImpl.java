@@ -1,15 +1,34 @@
 package com.nextgenmanager.nextgenmanager.bom.service;
 
-import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.*;
+import com.nextgenmanager.nextgenmanager.bom.events.BomCreatedEvent;
+import com.nextgenmanager.nextgenmanager.bom.events.BomModifiedEvent;
+import com.nextgenmanager.nextgenmanager.bom.events.BomStatusChangedEvent;
+import com.nextgenmanager.nextgenmanager.bom.mapper.BomListMapper;
+import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
+import com.nextgenmanager.nextgenmanager.bom.model.BomStatus;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
+import com.nextgenmanager.nextgenmanager.bom.spec.BomSpecifications;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
+import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
+import com.nextgenmanager.nextgenmanager.common.spec.GenericSpecification;
+import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
+import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderProductionTemplate;
+import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
+import com.nextgenmanager.nextgenmanager.production.model.Routing;
+import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
+import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
+import io.minio.GetObjectResponse;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -20,10 +39,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,7 +53,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+
 
 @Service
 @Transactional
@@ -48,52 +70,266 @@ public class BomServiceImpl implements BomService {
     private InventoryItemRepository inventoryItemRepository;
 
     @Autowired
+    private InventoryItemService inventoryItemService;
+
+
+
+    @Autowired
     private BomAttachmentRepository bomAttachmentRepository;
+
+    @Autowired
+    private FileStorageService fileStorageService;
+
+
+    @Autowired
+    private RoutingService routingService;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.bom.repository.BomAuditRepository bomAuditRepository;
+
+    private final  DomainEventPublisher domainEventPublisher;
+
+
+    private final BomListMapper bomListMapper;
 
     private static final String UPLOAD_DIR = "files/bom/";
 
+    private static final Map<String, String> JOIN_FIELD_MAP = Map.of(
+            "parentItemCode", "parentInventoryItem.itemCode",
+            "parentItemName", "parentInventoryItem.name",
+            "parentDrawingNumber", "parentInventoryItem.productSpecification.drawingNumber"
+    );
+
+    private static final Map<BomStatus, Set<BomStatus>> allowedTransitions = Map.of(
+            BomStatus.DRAFT, Set.of(BomStatus.PENDING_APPROVAL,BomStatus.ARCHIVED,BomStatus.APPROVED,BomStatus.ACTIVE),
+            BomStatus.PENDING_APPROVAL, Set.of(BomStatus.APPROVED,BomStatus.ACTIVE,BomStatus.ARCHIVED),
+            BomStatus.APPROVED, Set.of(BomStatus.ACTIVE,BomStatus.ARCHIVED),
+            BomStatus.ACTIVE, Set.of(BomStatus.INACTIVE, BomStatus.OBSOLETE),
+            BomStatus.INACTIVE, Set.of(BomStatus.ACTIVE),
+            BomStatus.OBSOLETE, Set.of(BomStatus.ARCHIVED),
+            BomStatus.ARCHIVED, Set.of()
+    );
+
+    public BomServiceImpl(DomainEventPublisher domainEventPublisher, BomListMapper bomListMapper) {
+        this.domainEventPublisher = domainEventPublisher;
+        this.bomListMapper = bomListMapper;
+    }
+
+
+    public List<BomPosition> getBomPositions(int bomId){
+        Bom bom = getBom(bomId);
+        return bom.getPositions();
+    }
+
+    public List<BomPositionDTO> getBomPositionsDTO(int bomId){
+        Bom bom = getBom(bomId);
+        BomDTO bomDTO = BomMapper.toDto(bom);
+        return bomDTO.getPositions();
+    }
+
     @Override
+    @Transactional
     public Bom addBom(Bom bom) {
-        logger.info("Starting to add new BOM for parent inventory item ID: {}",
-                bom.getParentInventoryItem().getInventoryItemId());
 
-        try {
-            // Validate parent inventory item exists
-            if (!inventoryItemRepository.existsById(bom.getParentInventoryItem().getInventoryItemId())) {
-                logger.error("Parent inventory item not found with ID: {}",
-                        bom.getParentInventoryItem().getInventoryItemId());
-                throw new ResourceNotFoundException("Parent inventory item not found");
-            }
+        int parentItemId = bom.getParentInventoryItem().getInventoryItemId();
+        logger.debug("Creating BOM for parent item {}", parentItemId);
 
-            // Validate BOM positions
-            if (bom.getChildInventoryItems() != null) {
-                for (BomPosition position : bom.getChildInventoryItems()) {
-                    if (position.getChildInventoryItem() == null ||
-                            !inventoryItemRepository.existsById(position.getChildInventoryItem().getInventoryItemId())) {
-                        logger.error("Invalid child inventory item in BOM position");
-                        throw new InvalidDataException("Invalid child inventory item in BOM position");
-                    }
-                    if (position.getQuantity() <= 0) {
-                        logger.error("Invalid quantity in BOM position: {}", position.getQuantity());
-                        throw new InvalidDataException("Quantity must be greater than 0");
-                    }
+
+
+        // Validate parent exists
+        inventoryItemRepository.findById(parentItemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Parent inventory item not found"));
+
+        // Validate positions
+        if (bom.getPositions() != null) {
+            for (BomPosition pos : bom.getPositions()) {
+
+                if (pos.getChildBom() == null) {
+                    throw new InvalidDataException("Child BOM cannot be null");
                 }
 
-                // Save BOM positions first
-                logger.debug("Saving {} BOM positions", bom.getChildInventoryItems().size());
-                bomPositionRepository.saveAll(bom.getChildInventoryItems());
+                if (pos.getQuantity() <= 0) {
+                    throw new InvalidDataException("Quantity must be > 0");
+                }
+
+                if (checkForCycle(bom, pos.getChildBom())) {
+                    throw new InvalidDataException("BOM cycle detected");
+                }
+
+                pos.setScrapPercentage(Optional.ofNullable(pos.getScrapPercentage()).orElse(BigDecimal.ZERO));
+
+                // Routing doesn't exist yet at creation — clear any supplied reference
+                pos.setRoutingOperation(null);
+
+                pos.setParentBom(bom);
+
+            }
+        }
+
+        // Initial BOM setup (PLM standard)
+        bom.setVersionNumber(0);            // Real version assigned on APPROVED
+        bom.setRevision("R0");
+        bom.setIsActiveVersion(false);
+        bom.setBomStatus(BomStatus.DRAFT);
+        bom.setVersionGroup(String.valueOf(parentItemId));
+
+        Bom savedBom = bomRepository.save(bom);
+        domainEventPublisher.publish(
+                new BomCreatedEvent(
+                        savedBom.getId(),
+                        savedBom.getParentInventoryItem().getInventoryItemId(),
+                        savedBom.getVersionNumber(),
+                        savedBom.getRevision(),
+                        savedBom.getBomStatus()
+                )
+        );
+
+
+        logger.info("Created new draft BOM id={} for item {}", savedBom.getId(), parentItemId);
+
+        return savedBom;
+    }
+
+
+
+    public void checkBomStatusTransition(BomStatus current, BomStatus newStatus, boolean adminOverride) {
+
+        // ADMIN/SYSTEM ARCHIVE – allowed from ANY state
+        if (newStatus == BomStatus.ARCHIVED && adminOverride) {
+            return;
+        }
+
+        Set<BomStatus> allowed = allowedTransitions.getOrDefault(current, Set.of());
+
+        if (!allowed.contains(newStatus)) {
+            throw new IllegalStateException(
+                    "Invalid BOM transition from " + current + " to " + newStatus
+            );
+        }
+    }
+
+
+    @Transactional
+    @Override
+    public BomDTO changeBomStatus(int bomId, BomStatusChangeRequest bomStatusChangeRequest) {
+
+        Bom bom = getBom(bomId);
+        BomStatus currentStatus = bom.getBomStatus();
+        BomStatus newBomStatus = bomStatusChangeRequest.getNextStatus();
+        String approvalComment = bomStatusChangeRequest.getApprovalComments();
+        String changeReason = bomStatusChangeRequest.getChangeReason();
+        String ecoNumber  = bomStatusChangeRequest.getEcoNumber();
+
+        // Validate transition
+        checkBomStatusTransition(
+                bom.getBomStatus(),
+                newBomStatus,
+                false
+        );
+
+        try {
+
+            bom.setBomStatus(newBomStatus);
+            bom.setChangeReason(changeReason);
+            bom.setEcoNumber(ecoNumber);
+
+            // Versioning logic
+            if (newBomStatus == BomStatus.APPROVED) {
+
+                int maxVersion = bomRepository
+                        .findMaxVersionNumber(bom.getParentInventoryItem().getInventoryItemId());
+
+                int nextVersion = maxVersion + 1;
+                bom.setVersionNumber(nextVersion);
+                bom.setRevision(toRevision(nextVersion));
+                bom.setApprovedBy("SYSTEM");
+                bom.setApprovalComments(approvalComment);
+                bom.setApprovalDate(new Date());
             }
 
-            // Save the BOM
-            Bom savedBom = bomRepository.save(bom);
-            logger.info("Successfully created BOM with ID: {}", savedBom.getId());
-            return bomRepository.findById(savedBom.getId())
-                    .orElseThrow(() -> new RuntimeException("Failed to create BOM"));
+            if(newBomStatus == BomStatus.ACTIVE){
+                bom.setIsActiveVersion(true);
+                InventoryItem inventoryItem = inventoryItemService.getInventoryItem(bom.getParentInventoryItem().getInventoryItemId());
+                String itemCode  = inventoryItem.getItemCode();
+                Specification<Bom> spec = Specification.where(BomSpecifications.hasIsActive(true))
+                        .and(Specification.where(BomSpecifications.hasParentItemCode(itemCode)));
+                List<Bom> activeBOMs = bomRepository.findAll(spec);
+                
+                for(Bom activeBom: activeBOMs){
+                    activeBom.setBomStatus(BomStatus.INACTIVE);
+                    activeBom.setIsActive(false);
+                    activeBom.setIsActiveVersion(false);
+                    bom.setEffectiveTo(new Date());
+                }
+                bomRepository.saveAll(activeBOMs);
+                bom.setIsActiveVersion(true);
+                bom.setIsActive(true);
+                bom.setBomStatus(newBomStatus);
+                bom.setEffectiveFrom(new Date());
+            }
+            if(newBomStatus== BomStatus.INACTIVE){
+                bom.setEffectiveTo(new Date());
+            }
 
-        } catch (Exception e) {
-            logger.error("Error while creating BOM: {}", e.getMessage());
-            throw new BomServiceException("Failed to create BOM", e);
+            Bom saved = bomRepository.save(bom);
+
+            // Publish audit / lifecycle event
+            domainEventPublisher.publish(new BomStatusChangedEvent(saved.getId(),currentStatus,newBomStatus));
+
+            return BomMapper.toDto(bom);
+
         }
+
+        catch (Exception e) {
+            throw new RuntimeException("Failed to change BOM status", e);
+        }
+    }
+
+    @Override
+    public List<FileAttachment> getAttachments(int bomId) {
+        List<FileAttachment> attachmentList = fileStorageService.findAttachmentsByTypeAndId("bom", (long) bomId);
+        return attachmentList;
+    }
+
+    @Override
+    public FileAttachment getAttachment(long fileId) {
+        return fileStorageService.getFileById(fileId);
+    }
+
+    @Override
+    public void uploadFile(int bomId, MultipartFile file) throws Exception {
+
+        Bom bom = getBom(bomId);
+        fileStorageService.uploadFile(file,"bom","bom",(long)bomId,"SYSTEM");
+
+    }
+
+
+    public static String toRevision(int versionNumber) {
+        StringBuilder sb = new StringBuilder();
+        int num = versionNumber;
+
+        while (num > 0) {
+            num--;  // Adjust because A=1 not A=0
+            int remainder = num % 26;
+            sb.append((char) ('A' + remainder));
+            num /= 26;
+        }
+
+        return sb.reverse().toString();
+    }
+
+    public static String nextRevision(String current) {
+        int num = fromRevision(current);
+        return toRevision(num + 1);
+    }
+
+    public static int fromRevision(String rev) {
+        int num = 0;
+        for (int i = 0; i < rev.length(); i++) {
+            num = num * 26 + (rev.charAt(i) - 'A' + 1);
+        }
+        return num;
     }
 
     private Optional<Integer> extractVersion(BomAttachment attachment) {
@@ -116,46 +352,37 @@ public class BomServiceImpl implements BomService {
         return fileName.replaceAll("(?i)_v\\d+(\\.\\w+)$", "$1"); // Extract base filename
     }
 
-    private List<BomAttachment> getLatestAttachments(Bom bom) {
-        return bom.getBomAttachmentList().stream()
-                .filter(att -> extractVersion(att).isPresent()) // Consider only valid versions
-                .collect(Collectors.groupingBy(att -> extractBaseFileName(att.getFileName()))) // Group by base file name
-                .values().stream()
-                .map(list -> list.stream().max(Comparator.comparing(att -> extractVersion(att).orElse(0)))) // Pick latest
-                .flatMap(Optional::stream) // Convert Optional<BomAttachment> to BomAttachment
-                .collect(Collectors.toList()); // Collect as a list
-    }
+
+
 
     @Override
     public Bom getBom(int id) {
         logger.info("Fetching BOM with ID: {}", id);
 
-        return bomRepository.findById(id)
+      return bomRepository.findById(id)
                 .filter(bom -> bom.getDeletedDate() == null)
-                .map(originalBom -> {
-                    // Create a deep copy of the original BOM with all fields
-                    Bom bomCopy = new Bom();
-                    bomCopy.setId(originalBom.getId());
-                    bomCopy.setBomName(originalBom.getBomName());
-                    bomCopy.setParentInventoryItem(originalBom.getParentInventoryItem());
-                    bomCopy.setChildInventoryItems(originalBom.getChildInventoryItems());
-                    bomCopy.setCreationDate(originalBom.getCreationDate());
-                    bomCopy.setUpdatedDate(originalBom.getUpdatedDate());
-                    bomCopy.setDeletedDate(originalBom.getDeletedDate());
-
-                    // **Fetch and set only the latest version of each file**
-                    bomCopy.setBomAttachmentList(getLatestAttachments(originalBom));
-
-                    return bomCopy;
-                })
                 .orElseThrow(() -> {
                     logger.error("BOM not found or deleted with ID: {}", id);
                     return new ResourceNotFoundException("BOM not found with ID: " + id);
                 });
     }
 
+    @Override
+    public BomDTO getBomDTO(int id) {
+        logger.info("Fetching BOM DTO with ID: {}", id);
 
+        Bom bom = bomRepository.findById(id)
+                .filter(b -> b.getDeletedDate() == null)
+                .orElseThrow(() -> {
+                    logger.error("BOM not found or deleted with ID: {}", id);
+                    return new ResourceNotFoundException("BOM not found with ID: " + id);
+                });
 
+        BomDTO response = BomMapper.toDto(bom);
+
+        logger.info("Successfully mapped BOM with ID {} to DTO", id);
+        return response;
+    }
 
 
     @Override
@@ -182,55 +409,106 @@ public class BomServiceImpl implements BomService {
     }
 
     @Override
-    public Bom editBom(Bom bom) {
-        logger.info("Starting to edit BOM with ID: {}", bom.getId());
+    @Transactional
+    public Bom editBom(int bomId,Bom bom) {
+        logger.debug("Editing BOM id={}", bomId);
 
-        try {
-            // Check if BOM exists
-            if (!bomRepository.existsById(bom.getId())) {
-                logger.error("BOM not found with ID: {}", bom.getId());
-                throw new ResourceNotFoundException("BOM not found with ID: " + bom.getId());
-            }
+        // Verify BOM exists
+        Bom existingBom = bomRepository.findById(bomId)
+                .orElseThrow(() -> new ResourceNotFoundException("BOM not found with ID: " + bom.getId()));
 
-            // Validate parent inventory item
-            if (!inventoryItemRepository.existsById(bom.getParentInventoryItem().getInventoryItemId())) {
-                logger.error("Parent inventory item not found with ID: {}",
-                        bom.getParentInventoryItem().getInventoryItemId());
-                throw new ResourceNotFoundException("Parent inventory item not found");
-            }
+        // Only editable in DRAFT or PENDING_APPROVAL
+        if (existingBom.getBomStatus() != BomStatus.DRAFT &&
+                existingBom.getBomStatus() != BomStatus.PENDING_APPROVAL) {
+            throw new InvalidDataException(
+                    "Only DRAFT or PENDING_APPROVAL BOMs can be edited. Current status: " +
+                            existingBom.getBomStatus()
+            );
+        }
 
-            // Validate and update BOM positions
-            if (bom.getChildInventoryItems() != null) {
-                for (BomPosition position : bom.getChildInventoryItems()) {
-                    if (position.getChildInventoryItem() == null ||
-                            !inventoryItemRepository.existsById(position.getChildInventoryItem().getInventoryItemId())) {
-                        logger.error("Invalid child inventory item in BOM position");
-                        throw new InvalidDataException("Invalid child inventory item in BOM position");
+        // Validate parent item
+        int parentId = bom.getParentInventoryItem().getInventoryItemId();
+        if (!inventoryItemRepository.existsById(parentId)) {
+            throw new ResourceNotFoundException("Parent inventory item not found");
+        }
+
+        // Validate positions
+        if (bom.getPositions() != null) {
+
+            // Resolve BOM's routing once (null if routing not created yet)
+            Long bomRoutingId = routingService.findRoutingIdByBom(bomId);
+
+            for (BomPosition pos : bom.getPositions()) {
+
+                if (pos.getChildBom() == null) {
+                    throw new InvalidDataException("Child BOM cannot be null");
+                }
+
+                if (pos.getQuantity() <= 0) {
+                    throw new InvalidDataException("Quantity must be > 0");
+                }
+
+                if (checkForCycle(bom, pos.getChildBom())) {
+                    throw new InvalidDataException("BOM cycle detected");
+                }
+
+                pos.setScrapPercentage(Optional.ofNullable(pos.getScrapPercentage()).orElse(BigDecimal.ZERO));
+
+                // Validate routing operation assignment
+                if (pos.getRoutingOperation() != null) {
+                    if (bomRoutingId == null) {
+                        throw new InvalidDataException(
+                                "Cannot assign a routing operation to position " + pos.getPosition() +
+                                ": this BOM has no routing yet. Create the routing first."
+                        );
                     }
-                    if (position.getQuantity() <= 0) {
-                        logger.error("Invalid quantity in BOM position: {}", position.getQuantity());
-                        throw new InvalidDataException("Quantity must be greater than 0");
+                    Long opRoutingId = routingService.getRoutingIdForOperation(
+                            pos.getRoutingOperation().getId()
+                    );
+                    if (!bomRoutingId.equals(opRoutingId)) {
+                        throw new InvalidDataException(
+                                "Routing operation id=" + pos.getRoutingOperation().getId() +
+                                " does not belong to this BOM's routing."
+                        );
                     }
                 }
 
-                // Update BOM positions
-                bom.setBomAttachmentList(getBom(bom.getId()).getBomAttachmentList());
-                bomPositionRepository.saveAll(bom.getChildInventoryItems());
+                pos.setParentBom(existingBom);
             }
-
-            // Save the updated BOM
-            Bom updatedBom = bomRepository.save(bom);
-            logger.info("Successfully updated BOM with ID: {}", updatedBom.getId());
-            return updatedBom;
-
-        } catch (Exception e) {
-            logger.error("Error while updating BOM with ID {}: {}", bom.getId(), e.getMessage());
-            throw new BomServiceException("Failed to update BOM", e);
         }
+
+        // Merge only editable fields into existingBom — protects approval/audit fields
+        existingBom.setBomName(bom.getBomName());
+        existingBom.setDescription(bom.getDescription());
+        existingBom.setParentInventoryItem(bom.getParentInventoryItem());
+        existingBom.setEffectiveFrom(bom.getEffectiveFrom());
+        existingBom.setEcoNumber(bom.getEcoNumber());
+        existingBom.setChangeReason(bom.getChangeReason());
+        existingBom.getPositions().clear();
+        if (bom.getPositions() != null) {
+            existingBom.getPositions().addAll(bom.getPositions());
+        }
+
+        Bom saved = bomRepository.save(existingBom);
+
+        // Publish modification event
+        domainEventPublisher.publish(
+                new BomModifiedEvent(
+                        saved.getId(),
+                        saved.getVersionNumber(),
+                        saved.getRevision(),
+                        saved.getBomStatus()
+                )
+        );
+
+        logger.info("Updated BOM id={} (still in {} status)", saved.getId(), saved.getBomStatus());
+
+        return saved;
     }
 
+
     @Override
-    public Page<BomDTO> getAllBom(int page, int size, String sortBy, String sortDir, String query) {
+    public Page<Bom> getAllBom(int page, int size, String sortBy, String sortDir, String query) {
         logger.debug("Fetching all active BOMs with page: {}, size: {}, sortBy: {}, sortDir: {}, query: {}", page, size, sortBy, sortDir, query);
 
         try {
@@ -248,7 +526,7 @@ public class BomServiceImpl implements BomService {
             Pageable pageable = PageRequest.of(page, size, sort);
 
             // Fetch the BOMs using the repository
-            Page<BomDTO> boms = bomRepository.findAllActiveBom(query.toLowerCase(), pageable);
+            Page<Bom> boms = bomRepository.findAllActiveBom( pageable);
 
             // Logging based on results
             if (boms.isEmpty()) {
@@ -344,38 +622,66 @@ public class BomServiceImpl implements BomService {
 
     @Override
     @Transactional
-    public void deleteAttachment(Long fileId) throws IOException {
-        Optional<BomAttachment> attachmentOpt = bomAttachmentRepository.findById(fileId);
+    public void deleteAttachment(int bomId, Long fileId) throws Exception {
 
-        if (attachmentOpt.isEmpty()) {
-            logger.warn("File ID not found: {}", fileId);
-            throw new ResourceNotFoundException("File not found with ID: " + fileId);
-        }
-
-        BomAttachment attachment = attachmentOpt.get();
-        Pair<String, String> prefixAndExtension = extractBaseFilePrefixAndExtension(attachment.getFileName());
-
-        String prefix = prefixAndExtension.getLeft();
-        String extension = prefixAndExtension.getRight();
-
-        // Find all versions with same prefix & extension
-        List<BomAttachment> allVersions = bomAttachmentRepository.findAllVersionsByPrefixAndExtension(prefix, extension);
-
-        for (BomAttachment file : allVersions) {
-            Path filePath = getFilePath(file.getId());
-            try {
-                Files.deleteIfExists(filePath);
-                logger.info("Deleted file: {}", filePath);
-            } catch (IOException ex) {
-                logger.error("Failed to delete file: {}. Error: {}", filePath, ex.getMessage());
-            }
-        }
-
-        // Delete all versions from DB
-        bomAttachmentRepository.deleteAllVersionsByPrefixAndExtension(prefix, extension);
-        logger.info("Deleted all versions of file with prefix: {} and extension: {}", prefix, extension);
+        fileStorageService.deleteAttachment(fileId);
+        logger.info("File: {} deleted for bomId: {} ",fileId,bomId);
     }
 
+    @Override
+    public GetObjectResponse downloadBomAttachment(Long fileId) {
+
+        try {
+            GetObjectResponse file =  fileStorageService.downloadById(fileId);
+            logger.info("File with id: {} requested for download",fileId);
+            return file;
+        }
+        catch (Exception e){
+            logger.error("Something went wrong while downloading file: {} "+e,fileId);
+            throw new RuntimeException(e.getMessage());
+        }
+
+    }
+
+    @Override
+    public BOMRoutingMapper duplicateBom(int bomId) {
+        try{
+            Bom orginalBom = getBom(bomId);
+            Bom bomCopy = new Bom();
+
+            bomCopy.setBomName(orginalBom.getBomName());
+            bomCopy.setParentInventoryItem(orginalBom.getParentInventoryItem());
+            bomCopy.setPositions(bomCopy.getPositions());
+            bomCopy.setDescription(bomCopy.getDescription());
+            bomCopy.setVersionGroup(bomCopy.getVersionGroup());
+
+            Bom newBom = addBom(bomCopy);
+            orginalBom.getPositions().forEach(pos -> {
+                BomPosition posCopy = new BomPosition();
+                posCopy.setChildBom(pos.getChildBom());
+                posCopy.setPosition(pos.getPosition());
+                posCopy.setQuantity(pos.getQuantity());
+                posCopy.setScrapPercentage(pos.getScrapPercentage());
+                posCopy.setParentBom(newBom);
+                // routingOperation intentionally left null: the new routing will have
+                // different operation IDs; the user must re-assign after duplication.
+                bomPositionRepository.save(posCopy);
+            });
+
+
+            RoutingDto routingDto = routingService.createOrUpdateRouting(newBom.getId(),routingService.getByBom(orginalBom.getId()),"SYSTEM");
+            BomDTO bomDTO = BomMapper.toDto(newBom);
+
+            BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
+            bomRoutingMapper.setBom(bomDTO);
+            bomRoutingMapper.setRouting(routingDto);
+            return bomRoutingMapper;
+
+        }catch (ResourceNotFoundException e){
+            logger.error("Bom not found with id : {} to duplicate ",bomId);
+            throw new RuntimeException("Bom not found with id : "+bomId+"  to duplicate",e);
+        }
+    }
 
     private Pair<String, String> extractBaseFilePrefixAndExtension(String fileName) {
         Pattern pattern = Pattern.compile("^(.*)_v\\d+\\.(\\w+)$"); // Extracts prefix and extension
@@ -392,8 +698,533 @@ public class BomServiceImpl implements BomService {
         return bomRepository.findBomByParentInventoryItemId(id);
     }
 
-    public WorkOrderProductionTemplate getBomWOTemplateByBomId(int id){
-        return bomRepository.findWOTemplateByBomId(id);
+    @Override
+    public BomDTO getActiveBomByParentInventoryItem(int id){
+        InventoryItem inventoryItem = inventoryItemService.getInventoryItem(id); // to check if inventory item exists
+        List<Bom> boms = bomRepository.findBomByParentInventoryItemId(id);
+
+        for(Bom bom: boms){
+            if(bom.getIsActiveVersion()!=null && bom.getBomStatus()==BomStatus.ACTIVE){
+                return BomMapper.toDto(bom);
+            }
+        }
+        throw new ResourceNotFoundException("Active BOM not found for item: "+inventoryItem.getItemCode());
+    }
+
+
+
+
+    @Override
+    public List<BomDTO> getBomHistoryByParentInventoryItem(int id){
+        InventoryItem inventoryItem = inventoryItemService.getInventoryItem(id); // to check if inventory item exists
+        List<Bom> boms = bomRepository.findBomByParentInventoryItemId(id);
+        List<BomDTO> bomDTOS = new ArrayList<>();
+        for(Bom bom: boms){
+            bomDTOS.add(BomMapper.toDto(bom));
+        }
+        return bomDTOS;
+    }
+
+
+    @Override
+    public List<ChangeLogDto> getChangeLogForBom(int bomId) {
+        return bomAuditRepository.findByBomIdOrderByChangedAtDesc(bomId)
+                .stream()
+                .map(audit -> {
+                    ChangeLogDto dto = new ChangeLogDto();
+                    dto.setId(audit.getId() != null ? audit.getId().intValue() : null);
+                    dto.setBomId(audit.getBomId());
+
+                    // Build action description from status change
+                    if (audit.getOldStatus() != null && audit.getNewStatus() != null) {
+                        dto.setAction(audit.getOldStatus().name() + " → " + audit.getNewStatus().name());
+                    } else if (audit.getNewStatus() != null) {
+                        dto.setAction(audit.getNewStatus().name());
+                    }
+
+                    dto.setDescription(audit.getComment());
+                    dto.setChangedBy(audit.getChangedBy());
+                    dto.setChangedAt(audit.getChangedAt() != null
+                            ? Date.from(audit.getChangedAt()) : null);
+
+                    // Field-level change info
+                    dto.setFieldName("bomStatus");
+                    dto.setOldValue(audit.getOldStatus() != null ? audit.getOldStatus().name() : null);
+                    dto.setNewValue(audit.getNewStatus() != null ? audit.getNewStatus().name() : null);
+
+                    dto.setComments(audit.getComment());
+                    dto.setUserName(audit.getChangedBy());
+                    return dto;
+                })
+                .toList();
+    }
+
+//    public void recalculateAndUpdateCost(int bomId) {
+//        try {
+//            logger.info("Starting BOM cost recalculation for BOM ID: {}", bomId);
+//
+//            Bom bom = bomRepository.findById(bomId)
+//                    .orElseThrow(() -> {
+//                        logger.error("BOM not found for ID: {}", bomId);
+//                        return new EntityNotFoundException("BOM not found for ID: " + bomId);
+//                    });
+//
+//            WorkOrderProductionTemplate template = workOrderProductionTemplateRepository.findByBomId(bomId)
+//                    .orElseThrow(() -> {
+//                        logger.error("WorkOrderProductionTemplate not found for BOM ID: {}", bomId);
+//                        return new EntityNotFoundException("Template not found for BOM ID: " + bomId);
+//                    });
+//
+//            logger.debug("Fetched BOM: {}, Template ID: {}", bom.getBomName(), template.getId());
+//
+//            // Calculate estimated BOM cost
+//            BigDecimal estimatedBomCost = bom.getChildInventoryItems().stream()
+//                    .map(child -> {
+//                        BigDecimal unitCost = BigDecimal.valueOf(
+//                                inventoryItemService.getInventoryItem(
+//                                        child.getChildInventoryItem().getInventoryItemId()
+//                                ).getProductFinanceSettings().getStandardCost()
+//                        );
+//                        return unitCost.multiply(BigDecimal.valueOf(child.getQuantity()));
+//                    })
+//                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+//
+//            logger.debug("Calculated estimated BOM cost: {}", estimatedBomCost);
+//
+//            // Calculate labour cost
+//            BigDecimal labourCost = template.getWorkOrderJobLists().stream()
+//                    .map(job -> job.getProductionJob().getCostPerHour()
+//                            .multiply(job.getNumberOfHours()))
+//                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+//
+//            logger.debug("Calculated estimated labour cost: {}", labourCost);
+//
+//            // Calculate overhead and total cost
+//            BigDecimal overheadPct = template.getOverheadCostPercentage() != null ? template.getOverheadCostPercentage() : BigDecimal.ZERO;
+//            BigDecimal overheadVal = (labourCost.add(estimatedBomCost))
+//                    .multiply(overheadPct.divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+//
+//            BigDecimal total = labourCost.add(estimatedBomCost).add(overheadVal);
+//
+//            logger.debug("Calculated overhead: {}, Total estimated cost: {}", overheadVal, total);
+//
+//            // Update template
+//            template.setEstimatedCostOfBom(estimatedBomCost);
+//            template.setEstimatedCostOfLabour(labourCost);
+//            template.setOverheadCostValue(overheadVal);
+//            template.setTotalCostOfWorkOrder(total);
+//
+//            workOrderProductionTemplateRepository.save(template);
+//
+//            logger.info("Successfully updated WorkOrderProductionTemplate ID: {}", template.getId());
+//        } catch (EntityNotFoundException e) {
+//            logger.warn("Recalculation skipped: {}", e.getMessage());
+//            throw e; // or handle gracefully
+//        } catch (Exception e) {
+//            logger.error("Error during BOM cost recalculation for BOM ID: {}", bomId, e);
+//            throw new RuntimeException("Failed to recalculate BOM cost", e);
+//        }
+//    }
+
+
+    public Page<BomListDTO> filterBom(FilterRequest request){
+        Sort.Direction direction = Sort.Direction.fromString(request.getSortDir()); // safer
+        String sortBy = request.getSortBy();
+        if (JOIN_FIELD_MAP.containsKey(sortBy)) {
+            sortBy = JOIN_FIELD_MAP.get(sortBy);
+        }
+        Sort sort = Sort.by(direction, sortBy);
+
+        List<FilterCriteria> filters = request.getFilters();
+        FilterCriteria filterDeleteDateIsNull = new FilterCriteria("deletedDate", "=", null);
+        filters.add(filterDeleteDateIsNull);
+        Pageable pageable = PageRequest.of(request.getPage(), request.getSize(), sort);
+
+        Specification<Bom> spec = GenericSpecification.buildSpecification(filters, JOIN_FIELD_MAP);
+        Page<Bom> boms = bomRepository.findAll(spec, pageable);
+
+        return boms.map(bomListMapper::toDTO);
+
+    }
+
+    @Override
+    public Page<BomListDTO> getBomsUsingInventoryItem(
+            int inventoryItemId,
+            int page,
+            int size,
+            String sortBy,
+            String sortDir
+    ) {
+        inventoryItemService.getInventoryItem(inventoryItemId);
+
+        Sort.Direction direction = Sort.Direction.fromString(sortDir);
+        if (sortBy == null || sortBy.isBlank()) {
+            sortBy = "id";
+        }
+        if (JOIN_FIELD_MAP.containsKey(sortBy)) {
+            sortBy = JOIN_FIELD_MAP.get(sortBy);
+        }
+        Sort sort = Sort.by(direction, sortBy);
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        Specification<Bom> spec = (root, query, cb) -> {
+            query.distinct(true);
+            var positions = root.join("positions");
+            var childBom = positions.join("childBom");
+            var childItem = childBom.join("parentInventoryItem");
+            return cb.equal(childItem.get("inventoryItemId"), inventoryItemId);
+        };
+
+        spec = spec.and(BomSpecifications.isNotDeleted());
+        spec = spec.and(BomSpecifications.hasIsActiveVersion(true));
+        spec = spec.and(BomSpecifications.hasIsActive(true));
+
+        Page<Bom> boms = bomRepository.findAll(spec, pageable);
+        return boms.map(bomListMapper::toDTO);
+    }
+
+
+    public boolean checkForCycle(Bom parent, Bom child) {
+        return isDescendant(child, parent);
+    }
+
+    private boolean isDescendant(Bom current, Bom target) {
+        if (current.getId() == target.getId()) {
+            return true;   // cycle
+        }
+        current = getBom(current.getId());
+        if (current.getPositions() == null) return false;
+
+        for (BomPosition pos : current.getPositions()) {
+            Bom childBom = pos.getChildBom();
+            if (childBom != null && isDescendant(childBom, target)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
+    public Page<BomListDTO> searchActiveBom(String request) {
+        Sort sort = Sort.by(Sort.Direction.ASC, "parentInventoryItem.name");
+        Pageable pageable = PageRequest.of(0, 10, sort);
+
+        logger.debug("Search text = [{}]", request);
+
+
+
+        Specification<Bom> spec = Specification.where(BomSpecifications.hasIsActive(true))
+                .and(BomSpecifications.hasIsActiveVersion(true))
+                .and(BomSpecifications.isLatestVersion())
+                .and(BomSpecifications.isNotDeleted());
+
+        if (request!=null) {
+            request = request.trim().replace("\"", "").toLowerCase();
+            spec = spec.and(BomSpecifications.searchAcrossFields(request));
+        }
+
+        Page<Bom> boms = bomRepository.findAll(spec, pageable);
+        logger.info("Bom found = [{}]", boms.getTotalElements());
+        return boms.map(bomListMapper::toDTO);
+    }
+
+
+    @Override
+    public BigDecimal calculateBomCost(int bomId) {
+
+        Bom rootBom = getBom(bomId);  // fetch managed entity
+
+        // Use recursion with cycle-protection to avoid infinite loops
+        Set<Integer> visited = new HashSet<>();
+
+        return calculateBomCostRecursive(rootBom, visited)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+
+    private BigDecimal calculateBomCostRecursive(Bom bom, Set<Integer> visited) {
+
+        if (bom == null) {
+            return BigDecimal.ZERO;
+        }
+
+        // Detect circular BOMs
+        if (visited.contains(bom.getId())) {
+            throw new IllegalStateException("Circular BOM detected at BOM id: " + bom.getId());
+        }
+
+        visited.add(bom.getId());
+
+        BigDecimal total = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+        List<BomPosition> positions = getBomPositions(bom.getId());
+
+        for (BomPosition pos : positions) {
+
+            BigDecimal qty = BigDecimal.valueOf(
+                    Optional.of(pos.getQuantity()).orElse(1.0)
+            );
+
+            // Case 1: BOM → Inventory Item
+            if (pos.getChildBom().getParentInventoryItem() != null) {
+
+                InventoryItem item = pos.getChildBom().getParentInventoryItem();
+                InventoryItem managedItem = inventoryItemService.getInventoryItem(item.getInventoryItemId());
+
+                BigDecimal unitCost = Optional.ofNullable(managedItem.getProductFinanceSettings())
+                        .map(fin -> BigDecimal.valueOf(fin.getStandardCost()))
+                        .orElse(BigDecimal.ZERO);
+
+                total = total.add(unitCost.multiply(qty));
+            }
+
+            // Case 2: BOM → Child BOM (multi-level)
+            else {
+
+                BigDecimal childBomCost = calculateBomCostRecursive(
+                        pos.getChildBom(),
+                        visited    // ensures cycle detection applies to full BOM tree
+                );
+
+                total = total.add(childBomCost.multiply(qty));
+            }
+        }
+
+        visited.remove(bom.getId());   // allow same BOM on different branches
+        return total;
+    }
+
+    @Override
+    public Map<Integer, RollupRow> getRolledUpQuantity(int bomId) {
+
+        Bom bom = getBom(bomId);
+
+        Map<Integer, RollupRow> result = new HashMap<>();
+        Set<Integer> bomPath = new HashSet<>();
+
+        rollupRecursive(bom, 1.0, result, bomPath);
+
+        return result;
+    }
+
+    private void rollupRecursive(
+            Bom bom,
+            double multiplier,
+            Map<Integer, RollupRow> result,
+            Set<Integer> bomPath
+    ) {
+        // true circular BOM protection (path-based)
+        if (bomPath.contains(bom.getId())) {
+            throw new IllegalStateException(
+                    "Circular BOM detected at BOM id: " + bom.getId()
+            );
+        }
+
+        bomPath.add(bom.getId());
+
+        for (BomPosition pos : bom.getPositions()) {
+
+            InventoryItem item =
+                    pos.getChildBom().getParentInventoryItem();
+
+            int itemId = item.getInventoryItemId();
+            double effectiveQty = multiplier * pos.getQuantity();
+
+            result.compute(itemId, (k, v) -> {
+                if (v == null) {
+                    RollupRow row = new RollupRow();
+                    row.setItem(item);
+                    row.setTotalQty(effectiveQty);
+                    return row;
+                } else {
+                    v.setTotalQty(v.getTotalQty() + effectiveQty);
+                    return v;
+                }
+            });
+
+            // recurse into child BOM
+            if (pos.getChildBom() != null) {
+                rollupRecursive(
+                        pos.getChildBom(),
+                        effectiveQty,
+                        result,
+                        bomPath
+                );
+            }
+        }
+
+        // critical: backtrack
+        bomPath.remove(bom.getId());
+    }
+
+
+    // ----------------------------------------------------------
+    // BOM COST BREAKDOWN
+    // ----------------------------------------------------------
+    @Override
+    public BomCostBreakdownDTO getBomCostBreakdown(int bomId) {
+
+        Bom bom = getBom(bomId);
+        InventoryItem parentItem = bom.getParentInventoryItem();
+
+        // ── Material Costs ──
+        List<BomPosition> positions = getBomPositions(bomId);
+        List<MaterialCostLineDTO> materialLines = new ArrayList<>();
+        BigDecimal totalMaterialCost = BigDecimal.ZERO;
+
+        for (BomPosition pos : positions) {
+            if (pos.getChildBom() == null || pos.getChildBom().getParentInventoryItem() == null) {
+                continue;
+            }
+
+            InventoryItem item = inventoryItemService.getInventoryItem(
+                    pos.getChildBom().getParentInventoryItem().getInventoryItemId());
+
+            BigDecimal qty = BigDecimal.valueOf(pos.getQuantity());
+            BigDecimal scrap = pos.getScrapPercentage() != null ? pos.getScrapPercentage() : BigDecimal.ZERO;
+            BigDecimal effectiveQty = qty.multiply(
+                    BigDecimal.ONE.add(scrap.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP))
+            );
+
+            BigDecimal unitCost = Optional.ofNullable(item.getProductFinanceSettings())
+                    .map(fin -> fin.getStandardCost() != null ? BigDecimal.valueOf(fin.getStandardCost()) : BigDecimal.ZERO)
+                    .orElse(BigDecimal.ZERO);
+
+            BigDecimal lineCost = effectiveQty.multiply(unitCost).setScale(2, RoundingMode.HALF_UP);
+
+            MaterialCostLineDTO line = MaterialCostLineDTO.builder()
+                    .positionId(pos.getId())
+                    .itemCode(item.getItemCode())
+                    .itemName(item.getName())
+                    .uom(item.getUom() != null ? item.getUom().name() : null)
+                    .quantity(pos.getQuantity())
+                    .scrapPercentage(scrap)
+                    .effectiveQuantity(effectiveQty.setScale(4, RoundingMode.HALF_UP))
+                    .unitCost(unitCost)
+                    .totalCost(lineCost)
+                    .routingOperationId(pos.getRoutingOperation() != null ? pos.getRoutingOperation().getId() : null)
+                    .routingOperationName(pos.getRoutingOperation() != null ? pos.getRoutingOperation().getName() : null)
+                    .build();
+
+            materialLines.add(line);
+            totalMaterialCost = totalMaterialCost.add(lineCost);
+        }
+
+        // ── Operation Costs ──
+        List<OperationCostLineDTO> operationLines = new ArrayList<>();
+        BigDecimal totalOperationCost = BigDecimal.ZERO;
+
+        try {
+            Routing routing = routingService.getRoutingEntityByBom(bomId);
+            if (routing != null && routing.getOperations() != null) {
+                for (RoutingOperation op : routing.getOperations()) {
+                    OperationCostLineDTO opLine = calculateOperationCost(op);
+                    operationLines.add(opLine);
+                    totalOperationCost = totalOperationCost.add(opLine.getTotalCost());
+                }
+            }
+        } catch (ResourceNotFoundException e) {
+            // No routing exists for this BOM — operation costs stay empty
+            logger.debug("No routing found for BOM {}, skipping operation costs", bomId);
+        }
+
+        return BomCostBreakdownDTO.builder()
+                .bomId(bomId)
+                .bomName(bom.getBomName())
+                .parentItemCode(parentItem.getItemCode())
+                .parentItemName(parentItem.getName())
+                .materialCosts(materialLines)
+                .totalMaterialCost(totalMaterialCost.setScale(2, RoundingMode.HALF_UP))
+                .operationCosts(operationLines)
+                .totalOperationCost(totalOperationCost.setScale(2, RoundingMode.HALF_UP))
+                .totalCost(totalMaterialCost.add(totalOperationCost).setScale(2, RoundingMode.HALF_UP))
+                .build();
+    }
+
+    /**
+     * Calculates cost for a single routing operation based on its CostType.
+     *
+     * CALCULATED: (machineCost + laborCost) × (1 + overhead%/100)
+     *   machineCost = machineRate × totalTime
+     *   laborCost   = laborRate × numberOfOperators × totalTime
+     *
+     * FIXED_RATE / SUB_CONTRACTED: fixedCostPerUnit
+     */
+    private OperationCostLineDTO calculateOperationCost(RoutingOperation op) {
+
+        CostType costType = op.getCostType() != null ? op.getCostType() : CostType.CALCULATED;
+        BigDecimal setupTime = op.getSetupTime() != null ? op.getSetupTime() : BigDecimal.ZERO;
+        BigDecimal runTime = op.getRunTime() != null ? op.getRunTime() : BigDecimal.ZERO;
+        BigDecimal totalTime = setupTime.add(runTime);
+
+        OperationCostLineDTO.OperationCostLineDTOBuilder builder = OperationCostLineDTO.builder()
+                .operationId(op.getId())
+                .sequenceNumber(op.getSequenceNumber())
+                .operationName(op.getName())
+                .costType(costType)
+                .setupTime(setupTime)
+                .runTime(runTime)
+                .totalTime(totalTime);
+
+        // Work center info
+        if (op.getWorkCenter() != null) {
+            builder.workCenterName(op.getWorkCenter().getCenterName());
+            builder.overheadPercentage(op.getWorkCenter().getOverheadPercentage());
+        }
+
+        // Machine info — prefer operation-level machine, fall back to workCenter rate
+        BigDecimal machineCostRate = BigDecimal.ZERO;
+        if (op.getMachineDetails() != null) {
+            builder.machineName(op.getMachineDetails().getMachineName());
+            machineCostRate = op.getMachineDetails().getCostPerHour() != null
+                    ? op.getMachineDetails().getCostPerHour() : BigDecimal.ZERO;
+        } else if (op.getWorkCenter() != null && op.getWorkCenter().getMachineCostPerHour() != null) {
+            machineCostRate = op.getWorkCenter().getMachineCostPerHour();
+        }
+        builder.machineCostRate(machineCostRate);
+
+        // Labor info
+        BigDecimal laborCostRate = BigDecimal.ZERO;
+        int numOperators = op.getNumberOfOperators() != null ? op.getNumberOfOperators() : 1;
+        builder.numberOfOperators(numOperators);
+        if (op.getLaborRole() != null) {
+            builder.laborRoleName(op.getLaborRole().getRoleName());
+            laborCostRate = op.getLaborRole().getCostPerHour() != null
+                    ? op.getLaborRole().getCostPerHour() : BigDecimal.ZERO;
+        }
+        builder.laborCostRate(laborCostRate);
+
+        BigDecimal totalCost;
+
+        if (costType == CostType.CALCULATED) {
+            BigDecimal machineCost = machineCostRate.multiply(totalTime);
+            BigDecimal laborCost = laborCostRate
+                    .multiply(BigDecimal.valueOf(numOperators))
+                    .multiply(totalTime);
+            BigDecimal subtotal = machineCost.add(laborCost);
+
+            BigDecimal overheadPct = (op.getWorkCenter() != null && op.getWorkCenter().getOverheadPercentage() != null)
+                    ? op.getWorkCenter().getOverheadPercentage()
+                    : BigDecimal.ZERO;
+            BigDecimal overheadCost = subtotal.multiply(overheadPct)
+                    .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+
+            totalCost = subtotal.add(overheadCost).setScale(2, RoundingMode.HALF_UP);
+
+            builder.machineCost(machineCost.setScale(2, RoundingMode.HALF_UP))
+                    .laborCost(laborCost.setScale(2, RoundingMode.HALF_UP))
+                    .subtotal(subtotal.setScale(2, RoundingMode.HALF_UP))
+                    .overheadCost(overheadCost.setScale(2, RoundingMode.HALF_UP));
+        } else {
+            // FIXED_RATE or SUB_CONTRACTED
+            totalCost = op.getFixedCostPerUnit() != null
+                    ? op.getFixedCostPerUnit().setScale(2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+        }
+
+        builder.totalCost(totalCost);
+        return builder.build();
     }
 
 }

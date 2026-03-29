@@ -27,5 +27,5 @@ public class InventoryPresentDTO {
 
     private double totalQuantity;
 
-    private double averageCost;
+    private double totalCost;
 }

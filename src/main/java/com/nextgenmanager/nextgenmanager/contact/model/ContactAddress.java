@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.contact.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -20,13 +21,20 @@ public class ContactAddress {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private int id;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private AddressType addressType = AddressType.BILLING;
+
+    @JsonProperty("isDefault")
+    @Column(nullable = false)
+    private boolean isDefault = false;
+
     private String street1;
-
     private String street2;
-
+    private String city;
     private String state;
-
-    private String country;
+    private String pinCode;
+    private String country = "India";
 
     @ManyToOne
     @JoinColumn(name = "contact_id", referencedColumnName = "id")

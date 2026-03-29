@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.Inventory.model;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import jakarta.persistence.*;
@@ -11,6 +12,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.UUID;
 
@@ -20,7 +22,14 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @DynamicUpdate
-@Table(name = "inventoryInstance")
+@Table(name = "inventoryInstance",indexes = {
+        @Index(name = "idx_invinst_itemref", columnList = "inventoryItemRef"),
+        @Index(name = "idx_invinst_booked_date", columnList = "bookedDate"),
+        @Index(name = "idx_invinst_deleted_date", columnList = "deletedDate"),
+        @Index(name = "idx_invinst_is_consumed", columnList = "isConsumed"),
+        @Index(name = "idx_invinst_filter_combo", columnList = "inventoryItemRef, bookedDate, deletedDate")
+})
+
 public class InventoryInstance {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -34,7 +43,8 @@ public class InventoryInstance {
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"}) // Prevents serialization issues
     private InventoryItem inventoryItem;
 
-    private double quantity;
+    @Column(precision = 15, scale = 5)
+    private BigDecimal quantity = BigDecimal.ZERO;
 
     @Column
     private boolean isConsumed=false;
@@ -51,15 +61,19 @@ public class InventoryInstance {
     private Date bookedDate;
 
     @Temporal(TemporalType.TIMESTAMP)
-    private Date requestedDate;
-
-    @Temporal(TemporalType.TIMESTAMP)
     private Date deliveryDate;
 
 
-    private Double costPerUnit;
+    @Column(precision = 12, scale = 2)
+    private BigDecimal costPerUnit = BigDecimal.ZERO;
 
-    private Double sellPricePerUnit;
+    @Column(precision = 12, scale = 2)
+    private BigDecimal sellPricePerUnit = BigDecimal.ZERO;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inventoryRequestId")
+    @JsonBackReference
+    private InventoryRequest inventoryRequest;
 
     @CreationTimestamp
     @Column(updatable = false)
@@ -69,6 +83,10 @@ public class InventoryInstance {
     private Date updatedDate;
 
     private Date deletedDate;
+
+    @Enumerated(EnumType.STRING)
+    private InventoryInstanceStatus inventoryInstanceStatus = InventoryInstanceStatus.PENDING;
+
 
     private static String generateShortUUID() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
