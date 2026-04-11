@@ -21,7 +21,7 @@ public interface WorkOrderService {
 
     public WorkOrderDTO updateWorkOrder(int workOrderId, WorkOrderRequestDTO dto);
 
-    public WorkOrderDTO releaseWorkOrder(int workOrderId);
+    public WorkOrderDTO releaseWorkOrder(int workOrderId, boolean forceRelease);
 
     public void startOperation(Long operationId);
 
@@ -48,6 +48,16 @@ public interface WorkOrderService {
     public void cancelWorkOrder(int workOrderId);
 
     public void softDeleteWorkOrder(int workOrderId, String reason);
+
+    /**
+     * Short-close a work order before full completion.
+     * Accepts partial output, returns unused materials to store,
+     * and cancels remaining inventory reservations.
+     *
+     * @param workOrderId the work order to short-close
+     * @param remarks     reason for short closure (e.g. "Tool breakage", "Priority changed")
+     */
+    public void shortCloseWorkOrder(int workOrderId, String remarks);
 
     public List<WorkOrderHistoryDTO> getWorkOrderHistory(int workOrderId);
 

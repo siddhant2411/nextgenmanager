@@ -534,10 +534,8 @@ class WorkOrderServiceImplTest {
         pos.setScrapPercentage(scrap);
         pos.setRoutingOperation(routingOperation);
 
-        Bom childBom = new Bom();
         InventoryItem component = inventoryItem(100, componentCode, componentName);
-        childBom.setParentInventoryItem(component);
-        pos.setChildBom(childBom);
+        pos.setChildInventoryItem(component);
         return pos;
     }
 

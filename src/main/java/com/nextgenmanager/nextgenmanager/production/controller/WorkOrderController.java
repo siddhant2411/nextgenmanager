@@ -386,11 +386,12 @@ public class WorkOrderController {
             required = true,
             example = "1"
         )
-        @PathVariable int id) {
+        @PathVariable int id,
+        @RequestParam(defaultValue = "false", required = false) boolean forceRelease) {
         try {
             logger.debug("Releasing WorkOrder id: {}", id);
 
-            WorkOrderDTO released = workOrderService.releaseWorkOrder(id);
+            WorkOrderDTO released = workOrderService.releaseWorkOrder(id, forceRelease);
 
             return ResponseEntity.ok(released);
 
@@ -816,6 +817,87 @@ public class WorkOrderController {
             logger.error("Error cancelling WorkOrder id: {}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to cancel WorkOrder: " + e.getMessage()));
+        }
+    }
+
+    // ============================================================================
+    // SHORT CLOSE - PATCH /api/production/work-order/{id}/short-close
+    // ============================================================================
+    @Operation(
+        summary = "Short-close a Work Order (RELEASED/IN_PROGRESS → SHORT_CLOSED)",
+        description = "Short-closes a work order before full completion. Accepts partial output, "
+                + "returns unused issued materials back to store, cancels remaining inventory "
+                + "reservations, and computes actual cost for the partial output. "
+                + "Common in Indian MSME scenarios like tool breakage, priority changes, or material shortages. "
+                + "Requires ROLE_PRODUCTION_ADMIN or higher.",
+        tags = {"State Transitions"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Work Order short-closed successfully. Partial output accepted and unused materials returned.",
+            content = @Content(mediaType = "application/json")
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Work Order not found",
+            content = @Content(mediaType = "application/json")
+        ),
+        @ApiResponse(
+            responseCode = "409",
+            description = "Cannot short-close - Work Order not in RELEASED or IN_PROGRESS status",
+            content = @Content(mediaType = "application/json")
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = "Internal server error",
+            content = @Content(mediaType = "application/json")
+        )
+    })
+    @PatchMapping("/{id}/short-close")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> shortCloseWorkOrder(
+        @Parameter(
+            name = "id",
+            description = "Work Order ID",
+            required = true,
+            example = "1"
+        )
+        @PathVariable int id,
+        @Parameter(
+            name = "remarks",
+            description = "Reason for short closure (e.g. 'Tool breakage', 'Priority changed', 'Material shortage')",
+            required = false,
+            example = "Tool breakage on machine M-03"
+        )
+        @RequestParam(required = false) String remarks) {
+        try {
+            logger.debug("Short-closing WorkOrder id: {} with remarks: {}", id, remarks);
+
+            workOrderService.shortCloseWorkOrder(id, remarks);
+
+            logger.info("WorkOrder {} short-closed successfully", id);
+            return ResponseEntity.ok(Map.of(
+                    "message", "WorkOrder short-closed successfully",
+                    "workOrderId", id,
+                    "remarks", remarks != null ? remarks : ""
+            ));
+
+        } catch (EntityNotFoundException e) {
+            logger.warn("WorkOrder not found with id: {}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "WorkOrder not found with ID: " + id));
+
+        } catch (IllegalStateException e) {
+            logger.warn("Cannot short-close WorkOrder id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage()));
+
+        } catch (Exception e) {
+            logger.error("Error short-closing WorkOrder id: {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to short-close WorkOrder: " + e.getMessage()));
         }
     }
 

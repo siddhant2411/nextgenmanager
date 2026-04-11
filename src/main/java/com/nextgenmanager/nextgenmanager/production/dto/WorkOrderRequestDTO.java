@@ -49,4 +49,6 @@ public class WorkOrderRequestDTO {
 
     private Date actualEndDate;
 
+    private boolean allowBackflush;
+
 }

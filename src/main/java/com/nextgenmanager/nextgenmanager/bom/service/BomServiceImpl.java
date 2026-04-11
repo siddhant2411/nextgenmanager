@@ -53,6 +53,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 
 @Service
@@ -116,6 +117,27 @@ public class BomServiceImpl implements BomService {
     }
 
 
+    // ─── Helper: build a map of itemId -> activeBomId for a set of child items ───
+    private Map<Integer, Integer> buildActiveBomMap(List<BomPosition> positions) {
+        List<Integer> childItemIds = positions.stream()
+                .filter(p -> p.getChildInventoryItem() != null)
+                .map(p -> p.getChildInventoryItem().getInventoryItemId())
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (childItemIds.isEmpty()) return Collections.emptyMap();
+
+        List<Bom> activeBoms = bomRepository.findActiveBomsByParentItemIds(childItemIds);
+        Map<Integer, Integer> map = new HashMap<>();
+        for (Bom b : activeBoms) {
+            if (!b.getPositions().isEmpty()) {
+                map.put(b.getParentInventoryItem().getInventoryItemId(), b.getId());
+            }
+        }
+        return map;
+    }
+
+
     public List<BomPosition> getBomPositions(int bomId){
         Bom bom = getBom(bomId);
         return bom.getPositions();
@@ -123,7 +145,20 @@ public class BomServiceImpl implements BomService {
 
     public List<BomPositionDTO> getBomPositionsDTO(int bomId){
         Bom bom = getBom(bomId);
-        BomDTO bomDTO = BomMapper.toDto(bom);
+        Map<Integer, Integer> activeBomMap = buildActiveBomMap(bom.getPositions());
+        BomDTO bomDTO = BomMapper.toDto(bom, activeBomMap);
+        return bomDTO.getPositions();
+    }
+
+    @Override
+    public List<BomPositionDTO> getPositionsByItemActiveBom(int itemId) {
+        Optional<Bom> activeBom = bomRepository.findActiveBomWithPositionsByParentItemId(itemId);
+        if (activeBom.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Bom bom = activeBom.get();
+        Map<Integer, Integer> activeBomMap = buildActiveBomMap(bom.getPositions());
+        BomDTO bomDTO = BomMapper.toDto(bom, activeBomMap);
         return bomDTO.getPositions();
     }
 
@@ -144,15 +179,16 @@ public class BomServiceImpl implements BomService {
         if (bom.getPositions() != null) {
             for (BomPosition pos : bom.getPositions()) {
 
-                if (pos.getChildBom() == null) {
-                    throw new InvalidDataException("Child BOM cannot be null");
+                if (pos.getChildInventoryItem() == null) {
+                    throw new InvalidDataException("Child inventory item cannot be null");
                 }
 
                 if (pos.getQuantity() <= 0) {
                     throw new InvalidDataException("Quantity must be > 0");
                 }
 
-                if (checkForCycle(bom, pos.getChildBom())) {
+                // Cycle detection: the child item must not lead back to the parent item
+                if (checkForCycle(parentItemId, pos.getChildInventoryItem().getInventoryItemId())) {
                     throw new InvalidDataException("BOM cycle detected");
                 }
 
@@ -234,7 +270,7 @@ public class BomServiceImpl implements BomService {
             bom.setEcoNumber(ecoNumber);
 
             // Versioning logic
-            if (newBomStatus == BomStatus.APPROVED) {
+            if (newBomStatus == BomStatus.APPROVED || (newBomStatus == BomStatus.ACTIVE && currentStatus != BomStatus.APPROVED)) {
 
                 int maxVersion = bomRepository
                         .findMaxVersionNumber(bom.getParentInventoryItem().getInventoryItemId());
@@ -254,7 +290,7 @@ public class BomServiceImpl implements BomService {
                 Specification<Bom> spec = Specification.where(BomSpecifications.hasIsActive(true))
                         .and(Specification.where(BomSpecifications.hasParentItemCode(itemCode)));
                 List<Bom> activeBOMs = bomRepository.findAll(spec);
-                
+
                 for(Bom activeBom: activeBOMs){
                     activeBom.setBomStatus(BomStatus.INACTIVE);
                     activeBom.setIsActive(false);
@@ -276,7 +312,8 @@ public class BomServiceImpl implements BomService {
             // Publish audit / lifecycle event
             domainEventPublisher.publish(new BomStatusChangedEvent(saved.getId(),currentStatus,newBomStatus));
 
-            return BomMapper.toDto(bom);
+            Map<Integer, Integer> activeBomMap = buildActiveBomMap(saved.getPositions());
+            return BomMapper.toDto(bom, activeBomMap);
 
         }
 
@@ -378,7 +415,8 @@ public class BomServiceImpl implements BomService {
                     return new ResourceNotFoundException("BOM not found with ID: " + id);
                 });
 
-        BomDTO response = BomMapper.toDto(bom);
+        Map<Integer, Integer> activeBomMap = buildActiveBomMap(bom.getPositions());
+        BomDTO response = BomMapper.toDto(bom, activeBomMap);
 
         logger.info("Successfully mapped BOM with ID {} to DTO", id);
         return response;
@@ -440,15 +478,15 @@ public class BomServiceImpl implements BomService {
 
             for (BomPosition pos : bom.getPositions()) {
 
-                if (pos.getChildBom() == null) {
-                    throw new InvalidDataException("Child BOM cannot be null");
+                if (pos.getChildInventoryItem() == null) {
+                    throw new InvalidDataException("Child inventory item cannot be null");
                 }
 
                 if (pos.getQuantity() <= 0) {
                     throw new InvalidDataException("Quantity must be > 0");
                 }
 
-                if (checkForCycle(bom, pos.getChildBom())) {
+                if (checkForCycle(parentId, pos.getChildInventoryItem().getInventoryItemId())) {
                     throw new InvalidDataException("BOM cycle detected");
                 }
 
@@ -644,6 +682,7 @@ public class BomServiceImpl implements BomService {
     }
 
     @Override
+    @Transactional
     public BOMRoutingMapper duplicateBom(int bomId) {
         try{
             Bom orginalBom = getBom(bomId);
@@ -656,21 +695,25 @@ public class BomServiceImpl implements BomService {
             bomCopy.setVersionGroup(bomCopy.getVersionGroup());
 
             Bom newBom = addBom(bomCopy);
+            List<BomPosition> newBomPositions = new ArrayList<>();
             orginalBom.getPositions().forEach(pos -> {
                 BomPosition posCopy = new BomPosition();
-                posCopy.setChildBom(pos.getChildBom());
+                posCopy.setChildInventoryItem(pos.getChildInventoryItem());
                 posCopy.setPosition(pos.getPosition());
                 posCopy.setQuantity(pos.getQuantity());
                 posCopy.setScrapPercentage(pos.getScrapPercentage());
                 posCopy.setParentBom(newBom);
+                newBomPositions.add(posCopy);
                 // routingOperation intentionally left null: the new routing will have
                 // different operation IDs; the user must re-assign after duplication.
                 bomPositionRepository.save(posCopy);
             });
 
+            newBom.setPositions(newBomPositions);
 
             RoutingDto routingDto = routingService.createOrUpdateRouting(newBom.getId(),routingService.getByBom(orginalBom.getId()),"SYSTEM");
-            BomDTO bomDTO = BomMapper.toDto(newBom);
+            Map<Integer, Integer> activeBomMap = buildActiveBomMap(newBom.getPositions());
+            BomDTO bomDTO = BomMapper.toDto(newBom, activeBomMap);
 
             BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
             bomRoutingMapper.setBom(bomDTO);
@@ -705,7 +748,8 @@ public class BomServiceImpl implements BomService {
 
         for(Bom bom: boms){
             if(bom.getIsActiveVersion()!=null && bom.getBomStatus()==BomStatus.ACTIVE){
-                return BomMapper.toDto(bom);
+                Map<Integer, Integer> activeBomMap = buildActiveBomMap(bom.getPositions());
+                return BomMapper.toDto(bom, activeBomMap);
             }
         }
         throw new ResourceNotFoundException("Active BOM not found for item: "+inventoryItem.getItemCode());
@@ -759,73 +803,6 @@ public class BomServiceImpl implements BomService {
                 .toList();
     }
 
-//    public void recalculateAndUpdateCost(int bomId) {
-//        try {
-//            logger.info("Starting BOM cost recalculation for BOM ID: {}", bomId);
-//
-//            Bom bom = bomRepository.findById(bomId)
-//                    .orElseThrow(() -> {
-//                        logger.error("BOM not found for ID: {}", bomId);
-//                        return new EntityNotFoundException("BOM not found for ID: " + bomId);
-//                    });
-//
-//            WorkOrderProductionTemplate template = workOrderProductionTemplateRepository.findByBomId(bomId)
-//                    .orElseThrow(() -> {
-//                        logger.error("WorkOrderProductionTemplate not found for BOM ID: {}", bomId);
-//                        return new EntityNotFoundException("Template not found for BOM ID: " + bomId);
-//                    });
-//
-//            logger.debug("Fetched BOM: {}, Template ID: {}", bom.getBomName(), template.getId());
-//
-//            // Calculate estimated BOM cost
-//            BigDecimal estimatedBomCost = bom.getChildInventoryItems().stream()
-//                    .map(child -> {
-//                        BigDecimal unitCost = BigDecimal.valueOf(
-//                                inventoryItemService.getInventoryItem(
-//                                        child.getChildInventoryItem().getInventoryItemId()
-//                                ).getProductFinanceSettings().getStandardCost()
-//                        );
-//                        return unitCost.multiply(BigDecimal.valueOf(child.getQuantity()));
-//                    })
-//                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-//
-//            logger.debug("Calculated estimated BOM cost: {}", estimatedBomCost);
-//
-//            // Calculate labour cost
-//            BigDecimal labourCost = template.getWorkOrderJobLists().stream()
-//                    .map(job -> job.getProductionJob().getCostPerHour()
-//                            .multiply(job.getNumberOfHours()))
-//                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-//
-//            logger.debug("Calculated estimated labour cost: {}", labourCost);
-//
-//            // Calculate overhead and total cost
-//            BigDecimal overheadPct = template.getOverheadCostPercentage() != null ? template.getOverheadCostPercentage() : BigDecimal.ZERO;
-//            BigDecimal overheadVal = (labourCost.add(estimatedBomCost))
-//                    .multiply(overheadPct.divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
-//
-//            BigDecimal total = labourCost.add(estimatedBomCost).add(overheadVal);
-//
-//            logger.debug("Calculated overhead: {}, Total estimated cost: {}", overheadVal, total);
-//
-//            // Update template
-//            template.setEstimatedCostOfBom(estimatedBomCost);
-//            template.setEstimatedCostOfLabour(labourCost);
-//            template.setOverheadCostValue(overheadVal);
-//            template.setTotalCostOfWorkOrder(total);
-//
-//            workOrderProductionTemplateRepository.save(template);
-//
-//            logger.info("Successfully updated WorkOrderProductionTemplate ID: {}", template.getId());
-//        } catch (EntityNotFoundException e) {
-//            logger.warn("Recalculation skipped: {}", e.getMessage());
-//            throw e; // or handle gracefully
-//        } catch (Exception e) {
-//            logger.error("Error during BOM cost recalculation for BOM ID: {}", bomId, e);
-//            throw new RuntimeException("Failed to recalculate BOM cost", e);
-//        }
-//    }
-
 
     public Page<BomListDTO> filterBom(FilterRequest request){
         Sort.Direction direction = Sort.Direction.fromString(request.getSortDir()); // safer
@@ -870,8 +847,7 @@ public class BomServiceImpl implements BomService {
         Specification<Bom> spec = (root, query, cb) -> {
             query.distinct(true);
             var positions = root.join("positions");
-            var childBom = positions.join("childBom");
-            var childItem = childBom.join("parentInventoryItem");
+            var childItem = positions.join("childInventoryItem");
             return cb.equal(childItem.get("inventoryItemId"), inventoryItemId);
         };
 
@@ -884,20 +860,30 @@ public class BomServiceImpl implements BomService {
     }
 
 
-    public boolean checkForCycle(Bom parent, Bom child) {
-        return isDescendant(child, parent);
+    /**
+     * Cycle detection: checks if adding childItemId under parentItemId would create a cycle.
+     * Walks the tree: childItem -> its active BOM's positions -> their child items -> ...
+     */
+    public boolean checkForCycle(int parentItemId, int childItemId) {
+        return isDescendant(childItemId, parentItemId, new HashSet<>());
     }
 
-    private boolean isDescendant(Bom current, Bom target) {
-        if (current.getId() == target.getId()) {
+    private boolean isDescendant(int currentItemId, int targetItemId, Set<Integer> visited) {
+        if (currentItemId == targetItemId) {
             return true;   // cycle
         }
-        current = getBom(current.getId());
-        if (current.getPositions() == null) return false;
+        if (visited.contains(currentItemId)) {
+            return false;  // already checked this branch
+        }
+        visited.add(currentItemId);
 
-        for (BomPosition pos : current.getPositions()) {
-            Bom childBom = pos.getChildBom();
-            if (childBom != null && isDescendant(childBom, target)) {
+        // Find active BOM for current item
+        Optional<Bom> activeBom = bomRepository.findActiveBomWithPositionsByParentItemId(currentItemId);
+        if (activeBom.isEmpty()) return false;
+
+        for (BomPosition pos : activeBom.get().getPositions()) {
+            if (pos.getChildInventoryItem() != null
+                    && isDescendant(pos.getChildInventoryItem().getInventoryItemId(), targetItemId, visited)) {
                 return true;
             }
         }
@@ -966,27 +952,22 @@ public class BomServiceImpl implements BomService {
                     Optional.of(pos.getQuantity()).orElse(1.0)
             );
 
-            // Case 1: BOM → Inventory Item
-            if (pos.getChildBom().getParentInventoryItem() != null) {
+            InventoryItem item = pos.getChildInventoryItem();
+            if (item == null) continue;
 
-                InventoryItem item = pos.getChildBom().getParentInventoryItem();
-                InventoryItem managedItem = inventoryItemService.getInventoryItem(item.getInventoryItemId());
+            InventoryItem managedItem = inventoryItemService.getInventoryItem(item.getInventoryItemId());
 
-                BigDecimal unitCost = Optional.ofNullable(managedItem.getProductFinanceSettings())
-                        .map(fin -> BigDecimal.valueOf(fin.getStandardCost()))
-                        .orElse(BigDecimal.ZERO);
+            BigDecimal unitCost = Optional.ofNullable(managedItem.getProductFinanceSettings())
+                    .map(fin -> BigDecimal.valueOf(fin.getStandardCost()))
+                    .orElse(BigDecimal.ZERO);
 
-                total = total.add(unitCost.multiply(qty));
-            }
+            total = total.add(unitCost.multiply(qty));
 
-            // Case 2: BOM → Child BOM (multi-level)
-            else {
-
-                BigDecimal childBomCost = calculateBomCostRecursive(
-                        pos.getChildBom(),
-                        visited    // ensures cycle detection applies to full BOM tree
-                );
-
+            // If this item has its own active BOM, recurse into it for multi-level cost
+            Optional<Bom> childActiveBom = bomRepository.findActiveBomWithPositionsByParentItemId(
+                    item.getInventoryItemId());
+            if (childActiveBom.isPresent()) {
+                BigDecimal childBomCost = calculateBomCostRecursive(childActiveBom.get(), visited);
                 total = total.add(childBomCost.multiply(qty));
             }
         }
@@ -1025,8 +1006,8 @@ public class BomServiceImpl implements BomService {
 
         for (BomPosition pos : bom.getPositions()) {
 
-            InventoryItem item =
-                    pos.getChildBom().getParentInventoryItem();
+            InventoryItem item = pos.getChildInventoryItem();
+            if (item == null) continue;
 
             int itemId = item.getInventoryItemId();
             double effectiveQty = multiplier * pos.getQuantity();
@@ -1043,10 +1024,11 @@ public class BomServiceImpl implements BomService {
                 }
             });
 
-            // recurse into child BOM
-            if (pos.getChildBom() != null) {
+            // recurse into child item's active BOM if it exists
+            Optional<Bom> childActiveBom = bomRepository.findActiveBomWithPositionsByParentItemId(itemId);
+            if (childActiveBom.isPresent()) {
                 rollupRecursive(
-                        pos.getChildBom(),
+                        childActiveBom.get(),
                         effectiveQty,
                         result,
                         bomPath
@@ -1074,12 +1056,12 @@ public class BomServiceImpl implements BomService {
         BigDecimal totalMaterialCost = BigDecimal.ZERO;
 
         for (BomPosition pos : positions) {
-            if (pos.getChildBom() == null || pos.getChildBom().getParentInventoryItem() == null) {
+            if (pos.getChildInventoryItem() == null) {
                 continue;
             }
 
             InventoryItem item = inventoryItemService.getInventoryItem(
-                    pos.getChildBom().getParentInventoryItem().getInventoryItemId());
+                    pos.getChildInventoryItem().getInventoryItemId());
 
             BigDecimal qty = BigDecimal.valueOf(pos.getQuantity());
             BigDecimal scrap = pos.getScrapPercentage() != null ? pos.getScrapPercentage() : BigDecimal.ZERO;

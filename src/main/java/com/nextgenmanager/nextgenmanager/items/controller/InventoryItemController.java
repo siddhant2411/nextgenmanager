@@ -6,14 +6,12 @@ import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentReposit
 import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
-import com.nextgenmanager.nextgenmanager.items.model.InventoryItemAttachment;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import io.minio.GetObjectResponse;
-import okio.FileMetadata;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -23,14 +21,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/inventory_item")
@@ -38,6 +29,7 @@ import java.util.Optional;
         "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
         "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
         "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+@Tag(name = "Inventory Items", description = "Product master data — items, specifications, attachments, vendor prices")
 public class InventoryItemController {
 
     @Autowired
@@ -51,8 +43,6 @@ public class InventoryItemController {
 
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItemController.class);
-
-    private static final String UPLOAD_DIR = "files/";
 
 
     @PostMapping(
@@ -167,26 +157,12 @@ public class InventoryItemController {
 
     @PostMapping(value = "/{id}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
-    public ResponseEntity<String> uploadFile(@PathVariable int id, @RequestParam("file") MultipartFile file) {
+    public ResponseEntity<String> uploadFile(@PathVariable int id, @RequestPart("file") MultipartFile file) {
         try {
-            Path uploadPath = Paths.get(UPLOAD_DIR);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
-            }
-
-            String fileName = System.currentTimeMillis() + "_" + file.getOriginalFilename();
-            Path filePath = uploadPath.resolve(fileName);
-            Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-
-            // Save file details in the database
-            InventoryItemAttachment attachment = new InventoryItemAttachment();
-            attachment.setFileName(fileName);
-            attachment.setFilePath(filePath.toString());
-            attachment.setFileType(file.getContentType());
-//            attachmentService.saveAttachment(id, attachment);
-
+            fileStorageService.uploadFile(file, "inventoryItem", "inventoryItem", (long) id, "SYSTEM");
             return ResponseEntity.ok("File uploaded successfully!");
-        } catch (IOException e) {
+        } catch (Exception e) {
+            logger.error("Error uploading file for item {}: {}", id, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error uploading file: " + e.getMessage());
         }
     }
@@ -223,29 +199,17 @@ public class InventoryItemController {
 
 
 
-//    @DeleteMapping("/delete/{fileId}")
-//    public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
-//        try {
-//            Optional<InventoryItemAttachment> attachmentOpt = attachmentService.getAttachmentById(fileId);
-//            if (attachmentOpt.isEmpty()) {
-//                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("File not found!");
-//            }
-//
-//            InventoryItemAttachment attachment = attachmentOpt.get();
-//            Path filePath = Paths.get(attachment.getFilePath());
-//
-//            // Delete file from the storage
-//            Files.deleteIfExists(filePath);
-//
-//            // Remove entry from the database
-//            attachmentService.deleteAttachment(fileId);
-//
-//
-//            return ResponseEntity.ok("File deleted successfully!");
-//        } catch (IOException e) {
-//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting file: " + e.getMessage());
-//        }
-//    }
+    @DeleteMapping("/delete-attachment/{fileId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
+        try {
+            fileStorageService.deleteAttachment(fileId);
+            return ResponseEntity.ok("File deleted successfully!");
+        } catch (Exception e) {
+            logger.error("Error deleting file {}: {}", fileId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting file: " + e.getMessage());
+        }
+    }
 
     @GetMapping("/getItemCode")
     public ResponseEntity<String> generateCode(){

@@ -12,5 +12,6 @@ public enum WorkOrderStatus {
     COMPLETED,
     CLOSED,
     CANCELLED,
+    SHORT_CLOSED,
     HOLD
 }

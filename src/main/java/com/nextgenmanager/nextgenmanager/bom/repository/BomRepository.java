@@ -36,5 +36,17 @@ public interface BomRepository extends JpaRepository<Bom,Integer>, JpaSpecificat
     @Query("SELECT COALESCE(MAX(b.versionNumber), 0) FROM Bom b WHERE b.parentInventoryItem.inventoryItemId = :itemId")
     int findMaxVersionNumber(@Param("itemId") Integer itemId);
 
+    @Query("SELECT b FROM Bom b WHERE b.parentInventoryItem.inventoryItemId IN :itemIds " +
+           "AND b.bomStatus = 3 AND b.isActiveVersion = true AND b.deletedDate IS NULL")
+    List<Bom> findActiveBomsByParentItemIds(@Param("itemIds") List<Integer> itemIds);
+
+    @Query("SELECT b FROM Bom b " +
+           "JOIN FETCH b.positions p " +
+           "JOIN FETCH p.childInventoryItem ci " +
+           "LEFT JOIN FETCH ci.productSpecification " +
+           "LEFT JOIN FETCH ci.productFinanceSettings " +
+           "WHERE b.parentInventoryItem.inventoryItemId = :itemId " +
+           "AND b.bomStatus = 3 AND b.isActiveVersion = true AND b.deletedDate IS NULL")
+    java.util.Optional<Bom> findActiveBomWithPositionsByParentItemId(@Param("itemId") int itemId);
 
 }

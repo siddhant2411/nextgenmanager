@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.bom.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -29,8 +30,8 @@ public class BomPosition {
     private Bom parentBom;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "childBomId", nullable = true)
-    private Bom childBom;
+    @JoinColumn(name = "childInventoryItemId", nullable = true)
+    private InventoryItem childInventoryItem;
 
     @Column(name = "position")
     private int position;

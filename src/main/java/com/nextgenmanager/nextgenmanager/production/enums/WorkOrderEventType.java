@@ -12,5 +12,7 @@ public enum WorkOrderEventType {
     OPERATION_COMPLETED,
     COMPLETED,
     CLOSED,
+    SHORT_CLOSED,
+    MATERIAL_RETURNED,
     CANCELLED
 }

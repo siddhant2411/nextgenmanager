@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.bom.service;
 import com.nextgenmanager.nextgenmanager.bom.dto.RollupRow;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
+import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -14,15 +15,16 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;;
 
 @Service
 public class BomExportServiceImpl implements BomExportService{
 
     @Autowired
     private BomService bomService;
+
+    @Autowired
+    private BomRepository bomRepository;
 
     @Override
     public ByteArrayInputStream exportUnifiedBom(int bomId) {
@@ -125,7 +127,9 @@ public class BomExportServiceImpl implements BomExportService{
 
         for (BomPosition pos : bom.getPositions()) {
 
-            InventoryItem item = pos.getChildBom().getParentInventoryItem();
+            InventoryItem item = pos.getChildInventoryItem();
+            if (item == null) continue;
+
             Row row = sheet.createRow(rowIdx++);
 
             int col = 0;
@@ -149,11 +153,13 @@ public class BomExportServiceImpl implements BomExportService{
             );
             row.createCell(col++).setCellValue(bom.getDescription());
 
-            // Recurse into child BOM
-            if (pos.getChildBom() != null) {
+            // Recurse into child item's active BOM if it exists
+            Optional<Bom> childActiveBom = bomRepository.findActiveBomWithPositionsByParentItemId(
+                    item.getInventoryItemId());
+            if (childActiveBom.isPresent()) {
                 rowIdx = writeBomRows(
                         sheet,
-                        pos.getChildBom(),
+                        childActiveBom.get(),
                         level + 1,
                         rowIdx,
                         visited

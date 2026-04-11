@@ -14,17 +14,16 @@ import java.math.BigDecimal;
 public class BomPositionDTO {
 
     private int positionId;
-    private int childBomId;
-    private String bomName;
-    private String parentItemName;
-    private String parentItemCode;
-    private String parentDrawingNumber;
-    private String revision;
+    private int childInventoryItemId;
+    private String itemName;
+    private String itemCode;
+    private String drawingNumber;
     private UOM uom;
     private int position;
     private double quantity;
     private BigDecimal scrapPercentage;
-    private boolean hasChildBom;
+    private boolean hasActiveBom;
+    private Integer activeBomId;
 
     /** ID of the routing operation that consumes this component. Null = no specific gate. */
     private Long routingOperationId;

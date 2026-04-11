@@ -47,6 +47,8 @@ public interface BomService {
 
     public List<BomPositionDTO> getBomPositionsDTO(int bomId);
 
+    public List<BomPositionDTO> getPositionsByItemActiveBom(int itemId);
+
     public BigDecimal calculateBomCost(int bomId);
 
     BomDTO changeBomStatus(int bomId,BomStatusChangeRequest bomStatusChangeRequest);

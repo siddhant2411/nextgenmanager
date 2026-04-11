@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
 import com.nextgenmanager.nextgenmanager.assets.dto.MachineDetailsResponseDTO;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -41,4 +42,7 @@ public class RoutingOperationDto {
 
     /** Explicit dependencies for this operation. Empty = no declared deps (legacy order). */
     private List<RoutingOperationDependencyDTO> dependencies;
+
+    /** File attachments for this operation (drawings, SOPs, etc.) */
+    private List<FileAttachment> attachments;
 }

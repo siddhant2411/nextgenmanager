@@ -1,8 +1,6 @@
 package com.nextgenmanager.nextgenmanager.bom.mapper;
 
-import com.nextgenmanager.nextgenmanager.bom.dto.BomConnectDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionDTO;
-import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -11,15 +9,14 @@ import org.mapstruct.Mapping;
 public interface BomPositionMapper {
 
     @Mapping(target = "positionId", source = "id")
-    @Mapping(target = "childBomId", source = "childBom.id")
-    @Mapping(target = "bomName", source = "parentBom.bomName")
-    @Mapping(target = "parentItemName", source = "parentBom.parentInventoryItem.name")
-    @Mapping(target = "parentItemCode", source = "parentBom.parentInventoryItem.itemCode")
-    @Mapping(target = "parentDrawingNumber", source = "parentBom.parentInventoryItem.productSpecification.drawingNumber")
-    @Mapping(target = "revision", source = "parentBom.parentInventoryItem.revision")
-    @Mapping(target = "uom", source = "parentBom.parentInventoryItem.uom")
+    @Mapping(target = "childInventoryItemId", source = "childInventoryItem.inventoryItemId")
+    @Mapping(target = "itemName", source = "childInventoryItem.name")
+    @Mapping(target = "itemCode", source = "childInventoryItem.itemCode")
+    @Mapping(target = "drawingNumber", source = "childInventoryItem.productSpecification.drawingNumber")
+    @Mapping(target = "uom", source = "childInventoryItem.uom")
     @Mapping(target = "routingOperationId", source = "routingOperation.id")
     @Mapping(target = "routingOperationName", source = "routingOperation.name")
-    @Mapping(target = "hasChildBom", ignore = true)
+    @Mapping(target = "hasActiveBom", ignore = true)
+    @Mapping(target = "activeBomId", ignore = true)
     BomPositionDTO toDTO(BomPosition position);
 }

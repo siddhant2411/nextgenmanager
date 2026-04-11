@@ -3,6 +3,8 @@ package com.nextgenmanager.nextgenmanager.production.service;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
+import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDependencyDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto;
 import com.nextgenmanager.nextgenmanager.production.helper.InvalidTransitionException;
@@ -18,10 +20,12 @@ import com.nextgenmanager.nextgenmanager.production.repository.RoutingOperationR
 import com.nextgenmanager.nextgenmanager.production.repository.RoutingRepository;
 import com.nextgenmanager.nextgenmanager.production.service.audit.EventPublisher;
 import com.nextgenmanager.nextgenmanager.production.service.audit.RoutingAuditService;
+import io.minio.GetObjectResponse;
 import jakarta.xml.bind.ValidationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.nextgenmanager.nextgenmanager.assets.service.MachineDetailsService;
 
@@ -67,6 +71,10 @@ public class RoutingServiceImpl implements RoutingService{
 
     @Autowired
     private RoutingOperationMapper routingOperationMapper;
+
+    @Autowired
+    private FileStorageService fileStorageService;
+
     private EventPublisher eventPublisher;
 
     private static final Map<RoutingStatus, Set<RoutingStatus>> ALLOWED = Map.of(
@@ -329,7 +337,9 @@ public class RoutingServiceImpl implements RoutingService{
                 .orElseThrow(() -> new ResourceNotFoundException("Routing not found for BOM: " + bomId));
         routing.setOperations(getOperationsEntities(routing.getId()));
 
-        return routingMapper.toDTO(routing);
+        RoutingDto dto = routingMapper.toDTO(routing);
+        enrichOperationAttachments(dto);
+        return dto;
     }
 
     @Override
@@ -345,7 +355,9 @@ public class RoutingServiceImpl implements RoutingService{
     public RoutingDto getRouting(Long id) {
         Routing routing =routingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Routing not found for BOM: " + id));
-        return routingMapper.toDTO(routing);
+        RoutingDto dto = routingMapper.toDTO(routing);
+        enrichOperationAttachments(dto);
+        return dto;
     }
 
     @Override
@@ -353,7 +365,13 @@ public class RoutingServiceImpl implements RoutingService{
         Routing routing = routingRepository.findById(routingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Routing not found: " + routingId));
         List<RoutingOperation> routingOperations = routing.getOperations();
-        return routingOperations.stream().map(routingOperation -> routingOperationMapper.toDTO(routingOperation)).toList();
+        return routingOperations.stream().map(op -> {
+            RoutingOperationDto dto = routingOperationMapper.toDTO(op);
+            if (op.getId() != null) {
+                dto.setAttachments(fileStorageService.findAttachmentsByTypeAndId("RoutingOperation", op.getId()));
+            }
+            return dto;
+        }).toList();
     }
 
 
@@ -553,5 +571,67 @@ public class RoutingServiceImpl implements RoutingService{
         validateForApproval(routing);
     }
 
+
+    // ----------------------------------------------------------
+    // Helper: Enrich operation DTOs with file attachments
+    // ----------------------------------------------------------
+    private void enrichOperationAttachments(RoutingDto dto) {
+        if (dto.getOperations() == null) return;
+        for (RoutingOperationDto opDto : dto.getOperations()) {
+            if (opDto.getId() != null) {
+                opDto.setAttachments(fileStorageService.findAttachmentsByTypeAndId("RoutingOperation", opDto.getId()));
+            }
+        }
+    }
+
+    // ----------------------------------------------------------
+    // OPERATION ATTACHMENTS
+    // ----------------------------------------------------------
+
+    @Override
+    public void uploadOperationAttachment(Long operationId, MultipartFile file) throws Exception {
+        RoutingOperation op = routingOperationRepository.findById(operationId)
+                .orElseThrow(() -> new ResourceNotFoundException("RoutingOperation not found: " + operationId));
+
+        Routing routing = op.getRouting();
+        if (!routing.isEditable()) {
+            throw new InvalidTransitionException("Cannot add attachments — routing is in status: " + routing.getStatus());
+        }
+
+        fileStorageService.uploadFile(file, "routing-operation", "RoutingOperation", operationId, "SYSTEM");
+    }
+
+    @Override
+    public List<FileAttachment> getOperationAttachments(Long operationId) {
+        return fileStorageService.findAttachmentsByTypeAndId("RoutingOperation", operationId);
+    }
+
+    @Override
+    @Transactional
+    public void deleteOperationAttachment(Long operationId, Long fileId) throws Exception {
+        RoutingOperation op = routingOperationRepository.findById(operationId)
+                .orElseThrow(() -> new ResourceNotFoundException("RoutingOperation not found: " + operationId));
+
+        Routing routing = op.getRouting();
+        if (!routing.isEditable()) {
+            throw new InvalidTransitionException("Cannot delete attachments — routing is in status: " + routing.getStatus());
+        }
+
+        fileStorageService.deleteAttachment(fileId);
+    }
+
+    @Override
+    public GetObjectResponse downloadOperationAttachment(Long fileId) {
+        try {
+            return fileStorageService.downloadById(fileId);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download operation attachment", e);
+        }
+    }
+
+    @Override
+    public FileAttachment getOperationAttachment(Long fileId) {
+        return fileStorageService.getFileById(fileId);
+    }
 
 }

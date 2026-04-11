@@ -80,6 +80,9 @@ public class WorkOrder {
 
     private String remarks;
 
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean allowBackflush = false;
+
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "workCenterId")

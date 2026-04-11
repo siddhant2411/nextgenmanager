@@ -70,4 +70,6 @@ public class WorkOrderDTO {
 
     private Boolean autoScheduled;
 
+    private boolean allowBackflush;
+
 }
