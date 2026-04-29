@@ -37,7 +37,7 @@ public interface WorkOrderService {
      * when all planned quantity is met
      * @param partialCompleteDTO Contains operation ID and quantity completed
      */
-    public void completeOperationPartial(PartialOperationCompleteDTO partialCompleteDTO);
+    public List<String> completeOperationPartial(PartialOperationCompleteDTO partialCompleteDTO);
 
     public void completeOperation(Long operationId, BigDecimal completedQty);
 
@@ -67,4 +67,9 @@ public interface WorkOrderService {
     public ScheduleResultDTO scheduleWorkOrder(int workOrderId);
 
     public ScheduleResultDTO rescheduleWorkOrder(int workOrderId, java.util.Date newStartDate);
+
+    // Material Re-order
+    public WorkOrderMaterialReorderDTO reorderMaterial(Long workOrderId, Long materialId, ReorderMaterialRequestDTO dto);
+
+    public List<WorkOrderMaterialReorderDTO> getMaterialReorders(Long workOrderId, Long materialId);
 }

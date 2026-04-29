@@ -30,6 +30,12 @@ public class WorkOrderOperationDTO {
 
     private BigDecimal scrappedQuantity;
 
+    private BigDecimal rejectedQuantity;
+
+    private String rejectionReasonCode;
+
+    private String scrapReasonCode;
+
     private Date plannedStartDate;
     private Date plannedEndDate;
 

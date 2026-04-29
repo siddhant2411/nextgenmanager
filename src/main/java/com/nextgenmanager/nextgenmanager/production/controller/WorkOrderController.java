@@ -3,6 +3,10 @@ package com.nextgenmanager.nextgenmanager.production.controller;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.production.dto.*;
 import com.nextgenmanager.nextgenmanager.production.service.TestTemplateService;
+import com.nextgenmanager.nextgenmanager.production.dto.RejectionEntryDTO;
+import com.nextgenmanager.nextgenmanager.production.dto.YieldMetricsDTO;
+import com.nextgenmanager.nextgenmanager.production.enums.DispositionStatus;
+import com.nextgenmanager.nextgenmanager.production.service.RejectionService;
 import com.nextgenmanager.nextgenmanager.production.service.WorkOrderService;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.MachineScheduleService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,6 +43,9 @@ public class WorkOrderController {
 
     @Autowired
     private WorkOrderService workOrderService;
+
+    @Autowired
+    private RejectionService rejectionService;
 
     @Autowired
     private TestTemplateService testTemplateService;
@@ -585,26 +592,21 @@ public class WorkOrderController {
                     operationId,
                     partialCompleteDTO.getCompletedQuantity());
 
-            if (partialCompleteDTO.getCompletedQuantity() == null ||
-                    partialCompleteDTO.getCompletedQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("error", "Completed quantity must be greater than zero"));
-            }
-
             // Set the operation ID from path variable
             partialCompleteDTO.setOperationId(operationId);
 
-            workOrderService.completeOperationPartial(partialCompleteDTO);
+            List<String> warnings = workOrderService.completeOperationPartial(partialCompleteDTO);
 
             logger.info("Operation {} completed partially with quantity: {}",
                     operationId,
                     partialCompleteDTO.getCompletedQuantity());
 
-            return ResponseEntity.ok(Map.of(
-                    "message", "Operation completed partially",
-                    "operationId", operationId,
-                    "completedQuantity", partialCompleteDTO.getCompletedQuantity()
-            ));
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("message", "Operation completed partially");
+            body.put("operationId", operationId);
+            body.put("completedQuantity", partialCompleteDTO.getCompletedQuantity());
+            if (!warnings.isEmpty()) body.put("warnings", warnings);
+            return ResponseEntity.ok(body);
 
         } catch (EntityNotFoundException e) {
             logger.warn("Operation not found with id: {}", operationId);
@@ -625,6 +627,85 @@ public class WorkOrderController {
             logger.error("Error completing operation id: {}", operationId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to complete operation: " + e.getMessage()));
+        }
+    }
+
+    // ─── Material Re-order ───────────────────────────────────────────────────────
+
+    @PostMapping("/{workOrderId}/materials/{materialId}/reorder")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> reorderMaterial(
+            @PathVariable int workOrderId,
+            @PathVariable Long materialId,
+            @RequestBody com.nextgenmanager.nextgenmanager.production.dto.ReorderMaterialRequestDTO dto) {
+        try {
+            com.nextgenmanager.nextgenmanager.production.dto.WorkOrderMaterialReorderDTO result =
+                    workOrderService.reorderMaterial((long) workOrderId, materialId, dto);
+            return ResponseEntity.status(HttpStatus.CREATED).body(result);
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error creating material re-order for WO {} material {}", workOrderId, materialId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{workOrderId}/materials/{materialId}/reorders")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> getMaterialReorders(
+            @PathVariable int workOrderId,
+            @PathVariable Long materialId) {
+        try {
+            List<com.nextgenmanager.nextgenmanager.production.dto.WorkOrderMaterialReorderDTO> result =
+                    workOrderService.getMaterialReorders((long) workOrderId, materialId);
+            return ResponseEntity.ok(result);
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error fetching re-orders for WO {} material {}", workOrderId, materialId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ─── Yield Metrics ──────────────────────────────────────────────────────────
+
+    @GetMapping("/{workOrderId}/yield")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> getYieldMetrics(@PathVariable int workOrderId) {
+        try {
+            YieldMetricsDTO dto = rejectionService.getYieldMetrics(workOrderId);
+            return ResponseEntity.ok(dto);
+        } catch (jakarta.persistence.EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error fetching yield metrics for WO {}", workOrderId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ─── Rejection Entries ──────────────────────────────────────────────────────
+
+    @GetMapping("/{workOrderId}/rejections")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> listRejections(
+            @PathVariable int workOrderId,
+            @RequestParam(required = false) DispositionStatus status) {
+        try {
+            List<RejectionEntryDTO> list = rejectionService.listRejections(workOrderId, status);
+            return ResponseEntity.ok(list);
+        } catch (jakarta.persistence.EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error listing rejections for WO {}", workOrderId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 

@@ -81,7 +81,9 @@ class WorkOrderServiceImplTest {
                 List.of(new IssueWorkOrderMaterialDTO.MaterialIssueItem(
                         101L,
                         new BigDecimal("8"),
-                        BigDecimal.ZERO
+                        BigDecimal.ZERO,
+                        null,
+                        null
                 ))
         );
 
@@ -110,7 +112,9 @@ class WorkOrderServiceImplTest {
                 List.of(new IssueWorkOrderMaterialDTO.MaterialIssueItem(
                         201L,
                         new BigDecimal("20"),
-                        BigDecimal.ZERO
+                        BigDecimal.ZERO,
+                        null,
+                        null
                 ))
         );
 

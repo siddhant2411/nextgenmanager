@@ -23,6 +23,7 @@ public class BomPositionRequestDTO {
     private Double quantity;
     private BigDecimal scrapPercentage;
     private Long routingOperationId;
+    private Integer routingOperationSequenceNumber;
 
     public BomPosition toEntity() {
         BomPosition entity = new BomPosition();

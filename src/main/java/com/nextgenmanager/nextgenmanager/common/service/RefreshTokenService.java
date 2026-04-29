@@ -28,12 +28,25 @@ public class RefreshTokenService {
         refreshToken.setRevoked(false);
         refreshToken.setCreatedBy(actor);
         refreshToken.setUpdatedBy(actor);
-        refreshTokenRepository.save(refreshToken);
+        try {
+            refreshTokenRepository.save(refreshToken);
+            logger.debug("Refresh token issued for user: {}, tokenLength: {}", user.getUsername(), token.length());
+        } catch (Exception ex) {
+            logger.error("Failed to store refresh token for user: {}", user.getUsername(), ex);
+            throw ex;
+        }
     }
 
     @Transactional(readOnly = true)
     public Optional<RefreshToken> findActiveToken(String token) {
-        return refreshTokenRepository.findByTokenAndRevokedFalseAndDeletedDateIsNull(token);
+        logger.debug("Looking for refresh token, length: {}", token.length());
+        Optional<RefreshToken> result = refreshTokenRepository.findByTokenAndRevokedFalseAndDeletedDateIsNull(token);
+        if (result.isEmpty()) {
+            logger.warn("Refresh token not found in database");
+        } else {
+            logger.debug("Refresh token found, user: {}", result.get().getAppUser().getUsername());
+        }
+        return result;
     }
 
     @Transactional

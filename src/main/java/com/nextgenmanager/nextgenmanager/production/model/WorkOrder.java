@@ -16,6 +16,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Date;
 import java.util.List;
 import com.nextgenmanager.nextgenmanager.production.model.Routing;
@@ -125,4 +126,60 @@ public class WorkOrder {
     private Date updatedDate;
 
     private Date deletedDate;
+
+    // ─── Yield Metrics (computed, not persisted) ──────────────────────────────
+
+    public BigDecimal getTotalOperationGoodQuantity() {
+        if (operations == null) return BigDecimal.ZERO;
+        return operations.stream()
+                .map(WorkOrderOperation::getCompletedQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public BigDecimal getTotalOperationRejectedQuantity() {
+        if (operations == null) return BigDecimal.ZERO;
+        return operations.stream()
+                .map(WorkOrderOperation::getRejectedQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public BigDecimal getTotalOperationScrapQuantity() {
+        if (operations == null) return BigDecimal.ZERO;
+        return operations.stream()
+                .map(WorkOrderOperation::getScrappedQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public BigDecimal getFirstPassYield() {
+        if (plannedQuantity == null || plannedQuantity.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
+        return getTotalOperationGoodQuantity()
+                .divide(plannedQuantity, 4, RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("100"))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal getReworkRate() {
+        if (plannedQuantity == null || plannedQuantity.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
+        return getTotalOperationRejectedQuantity()
+                .divide(plannedQuantity, 4, RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("100"))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal getScrapRate() {
+        if (plannedQuantity == null || plannedQuantity.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
+        return getTotalOperationScrapQuantity()
+                .divide(plannedQuantity, 4, RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("100"))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal getOverallYield() {
+        if (plannedQuantity == null || plannedQuantity.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO;
+        BigDecimal goodAndRework = getTotalOperationGoodQuantity().add(getTotalOperationRejectedQuantity());
+        return goodAndRework
+                .divide(plannedQuantity, 4, RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("100"))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
 }

@@ -41,9 +41,25 @@ public class ProductInventorySettings {
 
     private double orderedQuantity;
 
+    /**
+     * Quantity committed to active orders (WO / SO). Already removed from availableQuantity.
+     * Total physical stock on hand = availableQuantity + reservedQuantity.
+     */
+    private double reservedQuantity;
+
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inventory_item_id", referencedColumnName = "inventoryItemId", nullable = false)
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     @JsonBackReference
     private InventoryItem inventoryItem;
+
+    private boolean allowNegativeStock = false;
+
+    @PrePersist
+    @PreUpdate
+    private void validateTrackingConfig() {
+        if (this.isBatchTracked || this.isSerialTracked) {
+            this.allowNegativeStock = false;
+        }
+    }
 }

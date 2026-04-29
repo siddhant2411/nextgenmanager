@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -52,5 +53,18 @@ public class InventoryRequest {
     private String requestedBy;
 
     private String requestRemarks;
+
+    @Column(precision = 15, scale = 5)
+    private BigDecimal requestedQuantity;
+
+    @Column(precision = 15, scale = 5)
+    private BigDecimal approvedQuantity;
+
+    private String rejectionReason;
+
+    private String approvedBy;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date approvedDate;
 
 }
