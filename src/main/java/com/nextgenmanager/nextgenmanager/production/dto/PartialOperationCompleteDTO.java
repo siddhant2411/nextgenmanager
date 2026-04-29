@@ -12,23 +12,20 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class PartialOperationCompleteDTO {
 
-    /**
-     * WorkOrderOperation ID
-     */
     private Long operationId;
 
-    /**
-     * Quantity completed in this partial completion
-     */
     private BigDecimal completedQuantity;
 
-    /**
-     * Scrapped quantity (optional)
-     */
     private BigDecimal scrappedQuantity = BigDecimal.ZERO;
 
-    /**
-     * Remarks about the partial completion
-     */
+    /** Units pending MRB disposition (repairable / under review). Creates a RejectionEntry. */
+    private BigDecimal rejectedQuantity = BigDecimal.ZERO;
+
+    /** Required when scrappedQuantity > 0 */
+    private String scrapReasonCode;
+
+    /** Required when rejectedQuantity > 0 */
+    private String rejectionReasonCode;
+
     private String remarks;
 }

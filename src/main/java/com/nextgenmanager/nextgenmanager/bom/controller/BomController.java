@@ -13,6 +13,7 @@ import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import io.minio.GetObjectResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,7 +35,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/bom")
 @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
-
+@Tag(name = "BOM", description = "Bill of Materials management — components, routing, attachments, cost breakdown")
 public class BomController {
 
     private static final Logger logger = LoggerFactory.getLogger(BomController.class);
@@ -245,6 +246,22 @@ public class BomController {
 
         }
 
+    }
+
+    @GetMapping("/positions/by-item/{itemId}")
+    public ResponseEntity<?> getPositionsByItemActiveBom(@PathVariable int itemId){
+        try {
+            List<BomPositionDTO> positions = bomService.getPositionsByItemActiveBom(itemId);
+            return ResponseEntity.ok(positions);
+        }
+        catch (ResourceNotFoundException e){
+            logger.error("Item not found with id - {} : {}",itemId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        }catch (Exception e){
+            logger.error("Error retrieving positions for item - {} : {} ",itemId,e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error","Something Went Wrong"));
+        }
     }
 
     @PostMapping("/changeStatus/{bomId}")

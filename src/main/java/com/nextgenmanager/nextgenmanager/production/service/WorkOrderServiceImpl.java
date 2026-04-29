@@ -6,6 +6,9 @@ import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.common.spec.GenericSpecification;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings;
+import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
 import com.nextgenmanager.nextgenmanager.production.dto.*;
 import com.nextgenmanager.nextgenmanager.production.enums.*;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderListMapper;
@@ -23,12 +26,17 @@ import com.nextgenmanager.nextgenmanager.production.repository.WorkCenterReposit
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderMaterialRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderOperationRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderRepository;
+import com.nextgenmanager.nextgenmanager.production.enums.DispositionStatus;
+import com.nextgenmanager.nextgenmanager.production.model.RejectionEntry;
+import com.nextgenmanager.nextgenmanager.production.repository.RejectionEntryRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderTestResultRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
 import com.nextgenmanager.nextgenmanager.production.service.audit.WorkOrderAuditService;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderDto;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import com.nextgenmanager.nextgenmanager.sales.service.SalesOrderService;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +74,12 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     private RoutingService routingService;
 
     @Autowired
+    private com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService inventoryInstanceService;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService inventoryTransactionService;
+
+    @Autowired
     private BomService bomService;
 
     @Autowired
@@ -78,7 +92,16 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     private WorkOrderTestResultRepository workOrderTestResultRepository;
 
     @Autowired
+    private RejectionEntryRepository rejectionEntryRepository;
+
+    @Autowired
     private SalesOrderRepository salesOrderRepository;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRepository inventoryRequestRepository;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.production.repository.WorkOrderMaterialReorderRepository workOrderMaterialReorderRepository;
 
     private static final Logger logger = LoggerFactory.getLogger(WorkOrderService.class);
 
@@ -95,7 +118,39 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
         WorkOrder workOrder = workOrderRepository.getReferenceById(id);
         logger.debug("Fetched Work Order: {}", workOrder.getWorkOrderNumber());
-        return workOrderMapper.toDTO(workOrder);
+        WorkOrderDTO dto = workOrderMapper.toDTO(workOrder);
+
+        // Fetch InventoryRequest details for materials + reorder summary
+        if (dto.getMaterials() != null) {
+            for (WorkOrderMaterialDTO mat : dto.getMaterials()) {
+                if (mat.getInventoryRequestId() != null) {
+                    inventoryRequestRepository.findById(mat.getInventoryRequestId()).ifPresent(req -> {
+                        mat.setMrStatus(req.getApprovalStatus().name());
+                        mat.setMrApprovedQuantity(req.getApprovedQuantity());
+                        mat.setMrRejectionReason(req.getRejectionReason());
+                    });
+                }
+                if (mat.getId() != null) {
+                    List<com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterialReorder> reorders =
+                            workOrderMaterialReorderRepository.findByWorkOrderMaterialIdOrderByCreatedDateDesc(mat.getId());
+                    mat.setReorderCount(reorders.size());
+                    BigDecimal approvedReorderQty = reorders.stream()
+                            .filter(r -> r.getInventoryRequestId() != null)
+                            .map(r -> inventoryRequestRepository.findById(r.getInventoryRequestId()).orElse(null))
+                            .filter(r -> r != null
+                                    && (r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.APPROVED
+                                    || r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PARTIAL))
+                            .map(r -> r.getApprovedQuantity() != null ? r.getApprovedQuantity() : BigDecimal.ZERO)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    mat.setApprovedReorderQuantity(approvedReorderQty);
+                    BigDecimal base = mat.getPlannedRequiredQuantity() != null
+                            ? mat.getPlannedRequiredQuantity() : BigDecimal.ZERO;
+                    mat.setEffectiveRequiredQuantity(base.add(approvedReorderQty));
+                }
+            }
+        }
+        
+        return dto;
     }
 
     private static final Map<String, String> JOIN_FIELD_MAP = Map.of(
@@ -177,6 +232,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         workOrder.setPriority(dto.getPriority() != null ? dto.getPriority() : WorkOrderPriority.NORMAL);
         workOrder.setSourceType(dto.getSourceType());
         workOrder.setRemarks(dto.getRemarks());
+        workOrder.setAllowBackflush(dto.isAllowBackflush());
 
         workOrder.setDueDate(dto.getDueDate());
         workOrder.setPlannedStartDate(dto.getPlannedStartDate());
@@ -249,7 +305,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
             WorkOrderMaterial wom = new WorkOrderMaterial();
             wom.setWorkOrder(workOrder);
-            wom.setComponent(bomItem.getChildBom().getParentInventoryItem());
+            wom.setComponent(bomItem.getChildInventoryItem());
 
             BigDecimal baseQty = BigDecimal.valueOf(bomItem.getQuantity());
             BigDecimal plannedQty = dto.getPlannedQuantity();
@@ -401,15 +457,16 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     private BigDecimal calculateWorkOrderCompletedQuantity(WorkOrder workOrder) {
 
         // ---- OPERATION BASED COMPLETION ----
+        // Use the last operation's (highest sequence) completed quantity.
+        // Intermediate operations may have lower counts due to scrap/reject; only the final
+        // output quantity matters for determining how many finished units the WO produced.
         List<WorkOrderOperation> operations =
                 workOrderOperationRepository.findByWorkOrder(workOrder);
 
         BigDecimal operationCompletedUnits = operations.stream()
                 .filter(op -> op.getDeletedDate() == null)
-                .map(op -> op.getCompletedQuantity() != null
-                        ? op.getCompletedQuantity()
-                        : BigDecimal.ZERO)
-                .min(BigDecimal::compareTo)
+                .max(Comparator.comparingInt(WorkOrderOperation::getSequence))
+                .map(op -> op.getCompletedQuantity() != null ? op.getCompletedQuantity() : BigDecimal.ZERO)
                 .orElse(BigDecimal.ZERO);
 
 
@@ -499,7 +556,8 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             WorkOrderStatus status = workOrder.getWorkOrderStatus();
             boolean activeStatus = status != WorkOrderStatus.COMPLETED
                     && status != WorkOrderStatus.CLOSED
-                    && status != WorkOrderStatus.CANCELLED;
+                    && status != WorkOrderStatus.CANCELLED
+                    && status != WorkOrderStatus.SHORT_CLOSED;
 
             LocalDate dueDate = toLocalDate(workOrder.getDueDate());
             if (dueDate != null && dueDate.isBefore(today) && activeStatus) {
@@ -587,6 +645,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
         // Update allowed fields
         workOrder.setRemarks(dto.getRemarks());
+        workOrder.setAllowBackflush(dto.isAllowBackflush());
         workOrder.setDueDate(dto.getDueDate());
         workOrder.setPlannedStartDate(dto.getPlannedStartDate());
         workOrder.setPlannedEndDate(dto.getPlannedEndDate());
@@ -889,6 +948,13 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                         .allMatch(d -> d.getStatus() == OperationStatus.COMPLETED);
 
                 if (allComplete) {
+                    // Never revert an operation that is already past the READY gate
+                    if (dep.getStatus() == OperationStatus.COMPLETED
+                            || dep.getStatus() == OperationStatus.IN_PROGRESS) {
+                        logger.info("Skipping unlock for op [{} - {}] — already {}",
+                                dep.getSequence(), dep.getOperationName(), dep.getStatus());
+                        continue;
+                    }
                     dep.setStatus(OperationStatus.READY);
                     dep.setAvailableInputQuantity(workOrder.getPlannedQuantity());
                     dep.setDependencyResolvedDate(new Date());
@@ -908,7 +974,10 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
             if (nextOp != null) {
                 nextOp.setAvailableInputQuantity(nextOp.getAvailableInputQuantity().add(completedQty));
-                nextOp.setStatus(OperationStatus.READY);
+                if (nextOp.getStatus() != OperationStatus.COMPLETED
+                        && nextOp.getStatus() != OperationStatus.IN_PROGRESS) {
+                    nextOp.setStatus(OperationStatus.READY);
+                }
                 workOrderOperationRepository.save(nextOp);
 
                 logger.info("Next operation [{} - {}] set to READY with availableInput={} for WorkOrder {}",
@@ -920,7 +989,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
     @Transactional
     @Override
-    public WorkOrderDTO releaseWorkOrder(int workOrderId) {
+    public WorkOrderDTO releaseWorkOrder(int workOrderId, boolean forceRelease) {
 
         logger.debug("Releasing WorkOrder id={}", workOrderId);
 
@@ -931,17 +1000,18 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     return new EntityNotFoundException("WorkOrder not found");
                 });
 
-        //  Status guard — allow release from CREATED or SCHEDULED
+        //  Status guard — allow release from CREATED, SCHEDULED, or HOLD (re-submit after rejection)
         String previousStatus = workOrder.getWorkOrderStatus().name();
         if (workOrder.getWorkOrderStatus() != WorkOrderStatus.CREATED
-                && workOrder.getWorkOrderStatus() != WorkOrderStatus.SCHEDULED) {
+                && workOrder.getWorkOrderStatus() != WorkOrderStatus.SCHEDULED
+                && workOrder.getWorkOrderStatus() != WorkOrderStatus.HOLD) {
             logger.warn(
                     "Release rejected for WorkOrder {} due to status {}",
                     workOrder.getWorkOrderNumber(),
                     workOrder.getWorkOrderStatus()
             );
             throw new IllegalStateException(
-                    "Only WorkOrders in CREATED or SCHEDULED status can be released"
+                    "Only WorkOrders in CREATED, SCHEDULED, or HOLD status can be released"
             );
         }
 
@@ -969,17 +1039,34 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             throw new IllegalStateException("WorkOrder must have materials or operations before release");
         }
 
-        //  Validate operations
+        // Generate one InventoryRequest (Material Request) per material.
+        // Stock reservation is deferred to the Stores approval step.
+        // forceRelease is no longer used (Stores controls availability gating).
+        for (WorkOrderMaterial material : materials) {
+            if (material.getPlannedRequiredQuantity().compareTo(BigDecimal.ZERO) > 0) {
+                com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest mr =
+                        new com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest();
+                mr.setRequestSource(com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource.WORK_ORDER);
+                mr.setSourceId((long)workOrder.getId());
+                mr.setInventoryItem(material.getComponent());
+                mr.setRequestedQuantity(material.getPlannedRequiredQuantity());
+                mr.setApprovalStatus(com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PENDING);
+                mr.setRequestedBy("SYSTEM");
+                mr.setRequestedDate(new java.util.Date());
+                mr.setReferenceNumber(workOrder.getWorkOrderNumber() + "-MAT-" + material.getId());
+                mr = inventoryRequestRepository.save(mr);
+                material.setInventoryRequestId(mr.getId());
+                workOrderMaterialRepository.save(material);
+            }
+        }
 
-
-
-        //  Update Work Order status
-        workOrder.setWorkOrderStatus(WorkOrderStatus.RELEASED);
+        //  Update Work Order status to MATERIAL_PENDING (awaiting Stores approval)
+        workOrder.setWorkOrderStatus(WorkOrderStatus.MATERIAL_PENDING);
         workOrderRepository.save(workOrder);
 
         logger.info(
-                "WorkOrder {} released successfully",
-                workOrder.getWorkOrderNumber()
+                "WorkOrder {} pending material approval — {} MRs generated",
+                workOrder.getWorkOrderNumber(), materials.size()
         );
 
         //  Initialize operation statuses with dependency awareness
@@ -991,8 +1078,8 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 WorkOrderEventType.RELEASED,
                 "status",
                 previousStatus,
-                "RELEASED",
-                "WorkOrder released"
+                "MATERIAL_PENDING",
+                "Material requests generated, awaiting Stores approval"
         );
 
         //  Return updated DTO
@@ -1016,7 +1103,8 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         WorkOrder workOrder = operation.getWorkOrder();
 
         //  Validate WorkOrder status
-        if (workOrder.getWorkOrderStatus() != WorkOrderStatus.RELEASED &&
+        if (workOrder.getWorkOrderStatus() != WorkOrderStatus.READY_FOR_PRODUCTION &&
+                workOrder.getWorkOrderStatus() != WorkOrderStatus.PARTIALLY_READY &&
                 workOrder.getWorkOrderStatus() != WorkOrderStatus.IN_PROGRESS) {
 
             logger.warn(
@@ -1027,93 +1115,58 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             );
 
             throw new IllegalStateException(
-                    "Operation can only be started when WorkOrder is RELEASED or IN_PROGRESS"
+                    "Operation can only be started when WorkOrder is READY_FOR_PRODUCTION, PARTIALLY_READY, or IN_PROGRESS"
             );
         }
 
         // Validate operation status
-        if (operation.getStatus() != OperationStatus.READY) {
+        if (operation.getStatus() != OperationStatus.READY && 
+            operation.getStatus() != OperationStatus.WAITING_FOR_DEPENDENCY) {
+            
             logger.warn(
                     "Cannot start operation {} for WorkOrder {} due to operation status {}",
                     operation.getSequence(),
                     workOrder.getWorkOrderNumber(),
                     operation.getStatus()
             );
-            throw new IllegalStateException("Only READY operations can be started");
+            throw new IllegalStateException("Only READY or WAITING_FOR_DEPENDENCY operations can be started");
         }
+
+        // Hard gate: upstream input must be ≥ 1. Materials checked at batch completion.
+        validateOperationReadiness(operation);
 
         //  Validate dependencies before starting
         //  New mode: check explicit dependsOnOperationIds (populated at release time).
         //  Legacy mode (empty set): fall back to previous-by-sequence check.
-        Set<Long> dependsOnIds = operation.getDependsOnOperationIds();
-        if (!dependsOnIds.isEmpty()) {
-            // Parallel/dependency mode — check all declared dependencies are COMPLETED
-            List<WorkOrderOperation> blockingOps =
-                    workOrderOperationRepository.findAllById(dependsOnIds);
+        // Note: Generic dependency check is now handled via availableInputQuantity gate
+        // in validateOperationReadiness. We skip the 'all COMPLETED' check to allow partial flow.
 
-            List<String> pending = blockingOps.stream()
-                    .filter(dep -> dep.getStatus() != OperationStatus.COMPLETED)
-                    .map(dep -> "Op " + dep.getSequence() + " (" + dep.getOperationName() + ")")
-                    .toList();
+        // Material gate: for PARTIALLY_READY WOs, check that materials for this operation
+        // (WO-level + operation-specific) have been approved by the Store Keeper (MR approved/partial).
+        // For READY_FOR_PRODUCTION and IN_PROGRESS all MRs are already approved — skip the check.
+        if (workOrder.getWorkOrderStatus() == WorkOrderStatus.PARTIALLY_READY) {
+            List<WorkOrderMaterial> opMaterials = workOrderMaterialRepository
+                    .findByWorkOrderAndWorkOrderOperationIsNull(workOrder);
+            opMaterials.addAll(workOrderMaterialRepository
+                    .findByWorkOrderAndWorkOrderOperation(workOrder, operation));
 
-            if (!pending.isEmpty()) {
-                logger.warn(
-                        "Cannot start operation {} for WorkOrder {} — dependencies not complete: {}",
-                        operation.getSequence(),
-                        workOrder.getWorkOrderNumber(),
-                        pending
-                );
-                throw new IllegalStateException(
-                        "Cannot start: the following operations must complete first: " +
-                        String.join(", ", pending)
-                );
-            }
-        } else {
-            // Legacy mode — enforce previous-by-sequence must be COMPLETED
-            WorkOrderOperation previousOperation =
-                    workOrderOperationRepository
-                            .findTopByWorkOrderAndSequenceLessThanOrderBySequenceDesc(
-                                    workOrder, operation.getSequence()
-                            );
-
-            if (previousOperation != null &&
-                    previousOperation.getStatus() != OperationStatus.COMPLETED) {
-
-                logger.warn(
-                        "Cannot start operation {} before completing previous operation {} for WorkOrder {}",
-                        operation.getSequence(),
-                        previousOperation.getSequence(),
-                        workOrder.getWorkOrderNumber()
-                );
-
-                throw new IllegalStateException(
-                        "Previous operation must be COMPLETED before starting this operation"
-                );
-            }
-        }
-
-        // Material gate: materials with no operation assigned must be issued before any operation starts
-        List<WorkOrderMaterial> unissuedWoLevelMaterials =
-                workOrderMaterialRepository.findByWorkOrderAndWorkOrderOperationIsNullAndIssueStatusNot(
-                        workOrder, MaterialIssueStatus.ISSUED
-                );
-
-        if (!unissuedWoLevelMaterials.isEmpty()) {
-            String missing = unissuedWoLevelMaterials.stream()
+            List<String> unapproved = opMaterials.stream()
+                    .filter(m -> {
+                        if (m.getInventoryRequestId() == null) return true;
+                        return inventoryRequestRepository.findById(m.getInventoryRequestId())
+                                .map(mr -> mr.getApprovalStatus() != com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.APPROVED
+                                        && mr.getApprovalStatus() != com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PARTIAL)
+                                .orElse(true);
+                    })
                     .map(m -> m.getComponent().getItemCode())
-                    .collect(java.util.stream.Collectors.joining(", "));
+                    .collect(java.util.stream.Collectors.toList());
 
-            logger.warn(
-                    "Cannot start operation {} for WorkOrder {} — unissued WO-level materials: {}",
-                    operation.getSequence(),
-                    workOrder.getWorkOrderNumber(),
-                    missing
-            );
-
-            throw new IllegalStateException(
-                    "The following materials must be fully issued before any operation can start " +
-                    "(no operation assigned): " + missing
-            );
+            if (!unapproved.isEmpty()) {
+                throw new IllegalStateException(
+                        "Cannot start operation — Store Keeper has not yet approved materials: "
+                        + String.join(", ", unapproved)
+                );
+            }
         }
 
         //  Start operation
@@ -1128,9 +1181,12 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 workOrder.getWorkOrderNumber()
         );
 
-        // Update WorkOrder status if first operation
-        if (workOrder.getWorkOrderStatus() == WorkOrderStatus.RELEASED
-                || workOrder.getWorkOrderStatus() == WorkOrderStatus.SCHEDULED) {
+        // Update WorkOrder status to IN_PROGRESS on first operation start
+        WorkOrderStatus currentStatus = workOrder.getWorkOrderStatus();
+        if (currentStatus == WorkOrderStatus.READY_FOR_PRODUCTION
+                || currentStatus == WorkOrderStatus.PARTIALLY_READY
+                || currentStatus == WorkOrderStatus.RELEASED
+                || currentStatus == WorkOrderStatus.SCHEDULED) {
             workOrder.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
             workOrder.setActualStartDate(new Date());
             workOrderRepository.save(workOrder);
@@ -1165,23 +1221,27 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 });
 
         // Validate WorkOrder status
-        if (workOrder.getWorkOrderStatus() != WorkOrderStatus.RELEASED &&
-                workOrder.getWorkOrderStatus() != WorkOrderStatus.IN_PROGRESS) {
+        WorkOrderStatus wos = workOrder.getWorkOrderStatus();
+        if (wos != WorkOrderStatus.READY_FOR_PRODUCTION
+                && wos != WorkOrderStatus.PARTIALLY_READY
+                && wos != WorkOrderStatus.IN_PROGRESS) {
 
             throw new IllegalStateException(
-                    "Materials can only be issued when WorkOrder is RELEASED or IN_PROGRESS"
+                    "Materials can only be issued when WorkOrder is READY_FOR_PRODUCTION, PARTIALLY_READY, or IN_PROGRESS"
             );
         }
 
         for (IssueWorkOrderMaterialDTO.MaterialIssueItem item : issueDTO.getMaterials()) {
 
             WorkOrderMaterial material = workOrderMaterialRepository
-                    .findById(item.getWorkOrderMaterialId())
+                    .findByIdWithComponent(item.getWorkOrderMaterialId())
                     .orElseThrow(() -> new EntityNotFoundException("WorkOrderMaterial not found"));
 
             // Validate material belongs to work order
-            if (!(material.getWorkOrder().getId() ==workOrder.getId())) {
-                throw new IllegalStateException("Material does not belong to this WorkOrder");
+            if (material.getWorkOrder().getId() != workOrder.getId()) {
+                logger.error("Material ownership mismatch: Material ID {} belongs to WO #{}, but issue request is for WO #{}", 
+                    material.getId(), material.getWorkOrder().getWorkOrderNumber(), workOrder.getWorkOrderNumber());
+                throw new IllegalStateException("Internal consistency error: Material does not belong to the current Work Order.");
             }
 
             // ----- OPERATION GATE -----
@@ -1189,12 +1249,14 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             // must be READY or IN_PROGRESS before issue is allowed.
             if (material.getWorkOrderOperation() != null) {
                 OperationStatus opStatus = material.getWorkOrderOperation().getStatus();
-                if (opStatus != OperationStatus.READY && opStatus != OperationStatus.IN_PROGRESS) {
+                if (opStatus != OperationStatus.READY
+                        && opStatus != OperationStatus.IN_PROGRESS
+                        && opStatus != OperationStatus.COMPLETED) {
                     throw new IllegalStateException(
                             "Material '" + material.getComponent().getItemCode() +
                             "' can only be issued when operation '" +
                             material.getWorkOrderOperation().getOperationName() +
-                            "' is READY or IN_PROGRESS (current: " + opStatus + ")"
+                            "' is READY, IN_PROGRESS, or COMPLETED (current: " + opStatus + ")"
                     );
                 }
             }
@@ -1217,12 +1279,16 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     ? item.getScrappedQuantity()
                     : BigDecimal.ZERO;
 
-            if (newIssued.compareTo(BigDecimal.ZERO) <= 0) {
-                throw new IllegalArgumentException("Issued quantity must be greater than zero");
+            if (newIssued.compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Issued quantity cannot be negative");
             }
 
             if (newScrap.compareTo(BigDecimal.ZERO) < 0) {
                 throw new IllegalArgumentException("Scrap quantity cannot be negative");
+            }
+
+            if (newIssued.compareTo(BigDecimal.ZERO) == 0 && newScrap.compareTo(BigDecimal.ZERO) == 0) {
+                throw new IllegalArgumentException("At least one of issued quantity or scrap quantity must be greater than zero");
             }
 
             // ----- CALCULATIONS -----
@@ -1230,23 +1296,43 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             BigDecimal totalIssued = currentIssued.add(newIssued);
             BigDecimal totalScrapped = currentScrapped.add(newScrap);
 
-            // Prevent over-issue beyond planned quantity
-            if (totalIssued.compareTo(material.getPlannedRequiredQuantity()) > 0) {
+            // Prevent over-issue beyond effective cap (planned + approved reorder quantities)
+            if (newIssued.compareTo(BigDecimal.ZERO) > 0 &&
+                    totalIssued.compareTo(effectiveIssueCap(material)) > 0) {
                 throw new IllegalStateException(
-                        "Issued quantity exceeds planned required quantity"
+                        "Issued quantity exceeds planned + approved reorder quantity"
                 );
             }
 
-            // Scrap cannot exceed total issued
+            // Scrap cannot exceed total ever issued (including this call)
             if (totalScrapped.compareTo(totalIssued) > 0) {
                 throw new IllegalStateException(
-                        "Scrap quantity cannot exceed issued quantity"
+                        "Scrap quantity cannot exceed total issued quantity (" + totalIssued + ")"
                 );
             }
 
             // Update quantities
             material.setIssuedQuantity(totalIssued);
             material.setScrappedQuantity(totalScrapped);
+
+            // Record physical floor movement only when new stock is actually being issued
+            if (newIssued.compareTo(BigDecimal.ZERO) > 0) {
+                try {
+                    InventoryTransactionDTO issueDto = new InventoryTransactionDTO();
+                    issueDto.setInventoryItemId(material.getComponent().getInventoryItemId());
+                    issueDto.setQuantity(newIssued.doubleValue());
+                    issueDto.setScrappedQuantity(newScrap.doubleValue());
+                    issueDto.setTransactionType("ISSUE");
+                    issueDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                    if (item.getOverrideInstanceIds() != null && !item.getOverrideInstanceIds().isEmpty()) {
+                        issueDto.setOverrideInstanceIds(item.getOverrideInstanceIds());
+                        issueDto.setOverrideReason(item.getOverrideReason());
+                    }
+                    inventoryTransactionService.issueStock(issueDto);
+                } catch (Exception e) {
+                    throw new IllegalStateException("Failed to record material issue: " + e.getMessage(), e);
+                }
+            }
 
             // ----- STATUS BASED ON NET REQUIREMENT -----
 
@@ -1303,13 +1389,37 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
     @Transactional
     @Override
-    public void completeOperationPartial(PartialOperationCompleteDTO partialCompleteDTO) {
+    public List<String> completeOperationPartial(PartialOperationCompleteDTO partialCompleteDTO) {
 
-        logger.info("Completing operation id={} with partial qty={}",
-                partialCompleteDTO.getOperationId(),
-                partialCompleteDTO.getCompletedQuantity());
+        List<String> warnings = new ArrayList<>();
 
-        // Fetch operation
+        BigDecimal batchQty = partialCompleteDTO.getCompletedQuantity() != null
+                ? partialCompleteDTO.getCompletedQuantity() : BigDecimal.ZERO;
+        BigDecimal rejectedQty = partialCompleteDTO.getRejectedQuantity() != null
+                ? partialCompleteDTO.getRejectedQuantity() : BigDecimal.ZERO;
+        BigDecimal scrapQty = partialCompleteDTO.getScrappedQuantity() != null
+                ? partialCompleteDTO.getScrappedQuantity() : BigDecimal.ZERO;
+        // ─── Quantity validation ────────────────────────────────────────────────
+        if (batchQty.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Completed quantity cannot be negative");
+        }
+        if (rejectedQty.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Rejected quantity cannot be negative");
+        }
+        if (scrapQty.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Scrap quantity cannot be negative");
+        }
+        if (batchQty.compareTo(BigDecimal.ZERO) == 0
+                && rejectedQty.compareTo(BigDecimal.ZERO) == 0
+                && scrapQty.compareTo(BigDecimal.ZERO) == 0) {
+            throw new IllegalArgumentException(
+                    "At least one of completedQuantity, scrappedQuantity, or rejectedQuantity must be greater than zero");
+        }
+
+        logger.info("Completing operation id={} good={} rejected={} scrap={}",
+                partialCompleteDTO.getOperationId(), batchQty, rejectedQty, scrapQty);
+
+        // ─── Fetch operation ────────────────────────────────────────────────────
         WorkOrderOperation operation = workOrderOperationRepository
                 .findById(partialCompleteDTO.getOperationId())
                 .orElseThrow(() -> {
@@ -1319,171 +1429,349 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
         WorkOrder workOrder = operation.getWorkOrder();
 
-        // Validate operation status
-        if (operation.getStatus() != OperationStatus.IN_PROGRESS &&
-                operation.getStatus() != OperationStatus.READY) {
+        // ─── Work Order status guard ────────────────────────────────────────────
+        WorkOrderStatus woStatus = workOrder.getWorkOrderStatus();
+        if (woStatus == WorkOrderStatus.COMPLETED
+                || woStatus == WorkOrderStatus.CLOSED
+                || woStatus == WorkOrderStatus.CANCELLED) {
             throw new IllegalStateException(
-                    "Only READY or IN_PROGRESS operations can be completed"
-            );
+                    "Cannot record operation completion: Work Order " +
+                    workOrder.getWorkOrderNumber() + " is " + woStatus);
         }
 
-        // Validate quantity > 0
-        BigDecimal batchQty = partialCompleteDTO.getCompletedQuantity();
-        if (batchQty == null || batchQty.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Completed quantity must be greater than zero");
+        // ─── Status check ───────────────────────────────────────────────────────
+        if (operation.getStatus() != OperationStatus.IN_PROGRESS &&
+                operation.getStatus() != OperationStatus.READY &&
+                operation.getStatus() != OperationStatus.COMPLETED) {
+            throw new IllegalStateException("Only READY, IN_PROGRESS, or COMPLETED operations can be updated");
+        }
+
+        // ─── Reason code validation ─────────────────────────────────────────────
+        if (rejectedQty.compareTo(BigDecimal.ZERO) > 0 &&
+                (partialCompleteDTO.getRejectionReasonCode() == null ||
+                 partialCompleteDTO.getRejectionReasonCode().isBlank())) {
+            throw new IllegalArgumentException("Rejection reason code is required when rejected quantity > 0");
+        }
+        if (scrapQty.compareTo(BigDecimal.ZERO) > 0 &&
+                (partialCompleteDTO.getScrapReasonCode() == null ||
+                 partialCompleteDTO.getScrapReasonCode().isBlank())) {
+            throw new IllegalArgumentException("Scrap reason code is required when scrap quantity > 0");
         }
 
         BigDecimal currentCompleted = operation.getCompletedQuantity();
         BigDecimal newCompleted = currentCompleted.add(batchQty);
+        boolean wasAlreadyCompleted = operation.getStatus() == OperationStatus.COMPLETED;
 
-        // ─── GATE 1: Input Qty Gate ─────────────────────────────────────────────
-        // Can't complete more than what's been forwarded from the previous operation
-        if (newCompleted.compareTo(operation.getAvailableInputQuantity()) > 0) {
-            BigDecimal remaining = operation.getAvailableInputQuantity().subtract(currentCompleted);
+        // ─── GATE 1: Input Qty Gate — good output cannot exceed forwarded input ──
+        // Scrap and reject are quality outcomes of units already in the operation;
+        // they reduce yield but do not consume additional input capacity.
+        BigDecimal effectiveInput = operation.getAvailableInputQuantity()
+                .add(extraInputFromReorders(operation, workOrder));
+
+        if (newCompleted.compareTo(effectiveInput) > 0) {
+            BigDecimal remaining = effectiveInput.subtract(currentCompleted).max(BigDecimal.ZERO);
             throw new IllegalStateException(
-                    "Input gate: Only " + remaining + " units available from previous operation. " +
-                    "Available input: " + operation.getAvailableInputQuantity() +
-                    ", already completed: " + currentCompleted
-            );
+                    "Input gate: Only " + remaining + " good units can still be completed. " +
+                    "Effective input: " + effectiveInput +
+                    ", already completed: " + currentCompleted);
         }
 
-        // Validate against planned quantity (if over-completion not allowed)
-        if (!Boolean.TRUE.equals(operation.getAllowOverCompletion()) &&
-                newCompleted.compareTo(operation.getPlannedQuantity()) > 0) {
-            throw new IllegalStateException(
-                    "Completed quantity (" + newCompleted +
-                    ") exceeds planned quantity (" + operation.getPlannedQuantity() + ")"
-            );
-        }
+        BigDecimal batchTotal = batchQty.add(rejectedQty).add(scrapQty);
 
-        // ─── GATE 2: Material Gate ──────────────────────────────────────────────
-        // Collect materials to consume: operation-specific + WO-level (null operation) for first op
-        List<WorkOrderMaterial> opMaterials =
-                workOrderMaterialRepository.findByWorkOrderOperationId(operation.getId());
-
-        // WO-level materials (no operation assigned) are consumed at the first operation
-        boolean isFirstOperation = workOrderOperationRepository
-                .findTopByWorkOrderAndSequenceLessThanOrderBySequenceDesc(
-                        workOrder, operation.getSequence()) == null;
-
-        if (isFirstOperation) {
-            List<WorkOrderMaterial> woLevelMaterials =
-                    workOrderMaterialRepository.findByWorkOrderAndWorkOrderOperationIsNullAndIssueStatusNot(
-                            workOrder, MaterialIssueStatus.NOT_ISSUED);
-
-            // Also check that ALL WO-level materials (including NOT_ISSUED) are fully issued
-            List<WorkOrderMaterial> unissuedWoLevelMaterials =
-                    workOrderMaterialRepository.findByWorkOrderAndWorkOrderOperationIsNullAndIssueStatusNot(
-                            workOrder, MaterialIssueStatus.ISSUED);
-
-            if (!unissuedWoLevelMaterials.isEmpty()) {
-                String missing = unissuedWoLevelMaterials.stream()
-                        .map(m -> m.getComponent().getItemCode())
-                        .collect(java.util.stream.Collectors.joining(", "));
+        // ─── Over-completion: hard-block if any rejections are pending disposition ───
+        // The user must accept/scrap/rework all pending rejections first — those decisions
+        // determine whether over-completion is even necessary (e.g., ACCEPT recovers the qty).
+        if (newCompleted.compareTo(workOrder.getPlannedQuantity()) > 0) {
+            List<RejectionEntry> pendingRejections = rejectionEntryRepository
+                    .findByWorkOrderIdAndDispositionStatus(workOrder.getId(), DispositionStatus.PENDING);
+            if (!pendingRejections.isEmpty()) {
+                BigDecimal pendingQty = pendingRejections.stream()
+                        .map(RejectionEntry::getRejectedQuantity)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
                 throw new IllegalStateException(
-                        "The following materials must be fully issued before completing this operation " +
-                        "(no operation assigned — required from start): " + missing);
+                        "Over-completion blocked — " + pendingRejections.size() +
+                        " rejection(s) totaling " + pendingQty +
+                        " unit(s) await disposition. Accept, scrap, or rework them from " +
+                        "Yield & Rejection before recording extra units.");
             }
 
-            // Add WO-level materials for consumption
-            opMaterials = new ArrayList<>(opMaterials);
-            opMaterials.addAll(woLevelMaterials);
+            // Soft warning — over-completion allowed once rejections are settled
+            String warn = "Exceeds WO quantity — additional material may be needed. " +
+                    "Completed: " + newCompleted + ", WO planned: " + workOrder.getPlannedQuantity();
+            warnings.add(warn);
+            logger.warn("WO {} op '{}': {}", workOrder.getWorkOrderNumber(), operation.getOperationName(), warn);
         }
 
-        for (WorkOrderMaterial material : opMaterials) {
-            // Calculate how much material is needed per unit of finished product
-            BigDecimal requiredPerUnit = material.getNetRequiredQuantity()
-                    .divide(workOrder.getPlannedQuantity(), 10, RoundingMode.HALF_UP);
+        // ─── GATE 2: Consume materials for all processed units ─────────────────
+        // Good + rejected + scrap all consume input materials at operation time.
+        consumeMaterialsForBatch(operation, workOrder, batchTotal);
 
-            BigDecimal consumeQty = batchQty.multiply(requiredPerUnit)
-                    .setScale(5, RoundingMode.HALF_UP);
-
-            BigDecimal availableToConsume = material.getIssuedQuantity()
-                    .subtract(material.getConsumedQuantity());
-
-            if (availableToConsume.compareTo(consumeQty) < 0) {
-                throw new IllegalStateException(
-                        "Insufficient material '" + material.getComponent().getItemCode() +
-                        "': need " + consumeQty +
-                        ", available " + availableToConsume +
-                        " (issued " + material.getIssuedQuantity() +
-                        " - consumed " + material.getConsumedQuantity() + ")"
-                );
-            }
-
-            // Consume material
-            material.setConsumedQuantity(material.getConsumedQuantity().add(consumeQty));
-            workOrderMaterialRepository.save(material);
-
-            logger.info("Consumed {} of '{}' for operation {} (total consumed: {})",
-                    consumeQty,
-                    material.getComponent().getItemCode(),
-                    operation.getOperationName(),
-                    material.getConsumedQuantity());
+        // For scrap units, additionally record scrap on material records
+        if (scrapQty.compareTo(BigDecimal.ZERO) > 0) {
+            recordScrapOnMaterials(operation, workOrder, scrapQty);
         }
 
-        // ─── Update Operation ───────────────────────────────────────────────────
-
-        // Add scrapped quantity if provided
-        if (partialCompleteDTO.getScrappedQuantity() != null &&
-                partialCompleteDTO.getScrappedQuantity().compareTo(BigDecimal.ZERO) > 0) {
-            operation.setScrappedQuantity(
-                    operation.getScrappedQuantity().add(partialCompleteDTO.getScrappedQuantity())
-            );
-        }
-
+        // ─── Update Operation quantities ────────────────────────────────────────
         operation.setCompletedQuantity(newCompleted);
-        operation.setStatus(OperationStatus.IN_PROGRESS);
+        operation.setScrappedQuantity(operation.getScrappedQuantity().add(scrapQty));
+        operation.setRejectedQuantity(operation.getRejectedQuantity().add(rejectedQty));
 
+        if (partialCompleteDTO.getRejectionReasonCode() != null) {
+            operation.setRejectionReasonCode(partialCompleteDTO.getRejectionReasonCode());
+        }
+        if (partialCompleteDTO.getScrapReasonCode() != null) {
+            operation.setScrapReasonCode(partialCompleteDTO.getScrapReasonCode());
+        }
+
+        operation.setStatus(OperationStatus.IN_PROGRESS);
         if (operation.getActualStartDate() == null) {
             operation.setActualStartDate(new Date());
         }
 
+        // ─── Create RejectionEntry for units pending MRB disposition ───────────
+        if (rejectedQty.compareTo(BigDecimal.ZERO) > 0) {
+            RejectionEntry rejection = new RejectionEntry();
+            rejection.setWorkOrder(workOrder);
+            rejection.setOperation(operation);
+            rejection.setRejectedQuantity(rejectedQty);
+            rejection.setDispositionStatus(DispositionStatus.PENDING);
+            try {
+                rejection.setCreatedBy(
+                    SecurityContextHolder.getContext().getAuthentication().getName());
+            } catch (Exception ignored) {
+                rejection.setCreatedBy("system");
+            }
+            rejectionEntryRepository.save(rejection);
+            logger.info("RejectionEntry created: {} units pending disposition on op '{}' WO {}",
+                    rejectedQty, operation.getOperationName(), workOrder.getWorkOrderNumber());
+        }
+
         // ─── Mark as COMPLETED or forward partial qty ───────────────────────────
-        if (newCompleted.compareTo(operation.getPlannedQuantity()) >= 0) {
-            // Operation fully done — unlock downstream operations
+        if (wasAlreadyCompleted) {
+            // Over-completion on an already-COMPLETED op: push extra batch forward and restore COMPLETED.
+            // Must NOT call unlockEligibleDependents again — that would double-add the full qty.
+            forwardPartialQuantityToDependents(operation, batchQty, workOrder);
+            operation.setStatus(OperationStatus.COMPLETED); // line 1499 set it IN_PROGRESS; restore it
+            logger.info("Op [{} - {}] over-completion: extra {} forwarded to dependents for WO {}",
+                    operation.getSequence(), operation.getOperationName(),
+                    batchQty, workOrder.getWorkOrderNumber());
+        } else if (newCompleted.compareTo(operation.getPlannedQuantity()) >= 0) {
             operation.setStatus(OperationStatus.COMPLETED);
             operation.setActualEndDate(new Date());
             unlockEligibleDependents(operation, newCompleted, workOrder);
-
             logger.info("Operation [{} - {}] fully COMPLETED for WorkOrder {}",
-                    operation.getSequence(),
-                    operation.getOperationName(),
+                    operation.getSequence(), operation.getOperationName(),
                     workOrder.getWorkOrderNumber());
         } else {
+            // Only good units flow forward to downstream operations
+            forwardPartialQuantityToDependents(operation, batchQty, workOrder);
             logger.info("Operation [{} - {}] partially completed ({}/{}) for WorkOrder {}",
-                    operation.getSequence(),
-                    operation.getOperationName(),
-                    newCompleted,
-                    operation.getPlannedQuantity(),
+                    operation.getSequence(), operation.getOperationName(),
+                    newCompleted, operation.getPlannedQuantity(),
                     workOrder.getWorkOrderNumber());
         }
 
         workOrderOperationRepository.save(operation);
 
-        // Update WorkOrder progress
+        // ─── Update WorkOrder aggregate quantities ──────────────────────────────
         BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
         workOrder.setCompletedQuantity(totalCompleted);
 
-        // Update WorkOrder status if first operation being started
-        if (workOrder.getWorkOrderStatus() == WorkOrderStatus.RELEASED ||
-                workOrder.getWorkOrderStatus() == WorkOrderStatus.SCHEDULED) {
+        WorkOrderStatus batchWoStatus = workOrder.getWorkOrderStatus();
+        if (batchWoStatus == WorkOrderStatus.READY_FOR_PRODUCTION
+                || batchWoStatus == WorkOrderStatus.PARTIALLY_READY
+                || batchWoStatus == WorkOrderStatus.RELEASED
+                || batchWoStatus == WorkOrderStatus.SCHEDULED) {
             workOrder.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
             workOrder.setActualStartDate(new Date());
         }
 
         workOrderRepository.save(workOrder);
 
-        // Audit
+        // ─── Audit ──────────────────────────────────────────────────────────────
+        String detail = "good=" + batchQty + ", rejected=" + rejectedQty + ", scrap=" + scrapQty;
+        if (partialCompleteDTO.getRejectionReasonCode() != null)
+            detail += ", rejectionCode=" + partialCompleteDTO.getRejectionReasonCode();
+        if (partialCompleteDTO.getScrapReasonCode() != null)
+            detail += ", scrapCode=" + partialCompleteDTO.getScrapReasonCode();
+        if (partialCompleteDTO.getRemarks() != null)
+            detail += ". " + partialCompleteDTO.getRemarks();
+
         auditService.record(
                 workOrder,
                 WorkOrderEventType.OPERATION_COMPLETED,
                 "operation",
                 currentCompleted.toString(),
                 newCompleted.toString(),
-                "Operation partial completion (" + batchQty + " units): " +
-                        (partialCompleteDTO.getRemarks() != null ? partialCompleteDTO.getRemarks() : "")
+                detail
         );
+
+        return warnings;
+    }
+
+    /**
+     * Marks scrap material quantity on WorkOrderMaterial records.
+     * Called after consumeMaterialsForBatch so consumption is already recorded.
+     */
+    private void recordScrapOnMaterials(WorkOrderOperation operation, WorkOrder workOrder, BigDecimal scrapQty) {
+        List<WorkOrderMaterial> opMaterials =
+                workOrderMaterialRepository.findByWorkOrderOperationId(operation.getId());
+
+        boolean isFirstOperation = workOrderOperationRepository
+                .findTopByWorkOrderAndSequenceLessThanOrderBySequenceDesc(
+                        workOrder, operation.getSequence()) == null;
+        if (isFirstOperation) {
+            opMaterials = new ArrayList<>(opMaterials);
+            opMaterials.addAll(workOrderMaterialRepository.findByWorkOrderAndWorkOrderOperationIsNull(workOrder));
+        }
+
+        BigDecimal woPlannedQty = workOrder.getPlannedQuantity();
+        if (woPlannedQty.compareTo(BigDecimal.ZERO) <= 0) woPlannedQty = BigDecimal.ONE;
+
+        for (WorkOrderMaterial material : opMaterials) {
+            if (material.getDeletedDate() != null) continue;
+            BigDecimal reqPerUnit = material.getNetRequiredQuantity()
+                    .divide(woPlannedQty, 10, RoundingMode.HALF_UP);
+            BigDecimal scrapMaterialQty = scrapQty.multiply(reqPerUnit).setScale(5, RoundingMode.HALF_UP);
+            if (scrapMaterialQty.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            BigDecimal existing = material.getScrappedQuantity() != null
+                    ? material.getScrappedQuantity() : BigDecimal.ZERO;
+            material.setScrappedQuantity(existing.add(scrapMaterialQty));
+            workOrderMaterialRepository.save(material);
+        }
+    }
+
+    /**
+     * Hard gate: upstream input must be ≥ 1 to start. No material check — materials are
+     * enforced at batch completion time (completeOperationPartial).
+     */
+    private void validateOperationReadiness(WorkOrderOperation op) {
+        if (op.getAvailableInputQuantity().compareTo(BigDecimal.ONE) < 0) {
+            throw new IllegalStateException(
+                    "Operation '" + op.getOperationName() + "' cannot start: " +
+                    "no output forwarded from upstream dependencies yet " +
+                    "(availableInput=" + op.getAvailableInputQuantity() + ")"
+            );
+        }
+    }
+
+    /**
+     * Consumes materials proportional to batchQty at partial-completion time.
+     * Hard gate if allowBackflush is false and floor qty is insufficient.
+     */
+    private void consumeMaterialsForBatch(WorkOrderOperation operation, WorkOrder workOrder, BigDecimal batchQty) {
+        List<WorkOrderMaterial> opMaterials =
+                workOrderMaterialRepository.findByWorkOrderOperationId(operation.getId());
+
+        boolean isFirstOperation = workOrderOperationRepository
+                .findTopByWorkOrderAndSequenceLessThanOrderBySequenceDesc(
+                        workOrder, operation.getSequence()) == null;
+
+        if (isFirstOperation) {
+            opMaterials = new ArrayList<>(opMaterials);
+            opMaterials.addAll(workOrderMaterialRepository.findByWorkOrderAndWorkOrderOperationIsNull(workOrder));
+        }
+
+        BigDecimal woPlannedQty = workOrder.getPlannedQuantity();
+        if (woPlannedQty.compareTo(BigDecimal.ZERO) <= 0) woPlannedQty = BigDecimal.ONE;
+
+        for (WorkOrderMaterial material : opMaterials) {
+            if (material.getDeletedDate() != null) continue;
+
+            BigDecimal reqPerUnit = material.getNetRequiredQuantity()
+                    .divide(woPlannedQty, 10, RoundingMode.HALF_UP);
+            BigDecimal consumeQty = batchQty.multiply(reqPerUnit).setScale(5, RoundingMode.HALF_UP);
+
+            if (consumeQty.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            BigDecimal issued = material.getIssuedQuantity() != null ? material.getIssuedQuantity() : BigDecimal.ZERO;
+            BigDecimal consumed = material.getConsumedQuantity() != null ? material.getConsumedQuantity() : BigDecimal.ZERO;
+            BigDecimal availableOnFloor = issued.subtract(consumed);
+
+            if (consumeQty.compareTo(availableOnFloor) > 0) {
+                if (!workOrder.isAllowBackflush()) {
+                    throw new IllegalStateException("Insufficient issued material for '" +
+                            material.getComponent().getItemCode() + "'. Needed: " +
+                            consumeQty.setScale(2, RoundingMode.HALF_UP) + ", On Floor: " +
+                            availableOnFloor.setScale(2, RoundingMode.HALF_UP) +
+                            ". Please issue materials first.");
+                }
+                BigDecimal deficit = consumeQty.subtract(availableOnFloor);
+                BigDecimal newIssued = issued.add(deficit);
+
+                // Backflush still respects the Stores approval gate — auto-issued total
+                // cannot exceed what was actually approved (original MR + reorder MRs).
+                BigDecimal approvedCap = approvedIssueCap(material);
+                if (newIssued.compareTo(approvedCap) > 0) {
+                    throw new IllegalStateException("Backflush blocked for '" +
+                            material.getComponent().getItemCode() + "'. Approved: " +
+                            approvedCap.setScale(2, RoundingMode.HALF_UP) + ", needed: " +
+                            newIssued.setScale(2, RoundingMode.HALF_UP) +
+                            ". Get the Material Request approved before recording this batch.");
+                }
+
+                material.setIssuedQuantity(newIssued);
+                logger.info("Backflush: auto-issued {} of '{}' (within approved cap {})",
+                        deficit, material.getComponent().getItemCode(), approvedCap);
+            }
+
+            try {
+                InventoryTransactionDTO consumeDto = new InventoryTransactionDTO();
+                consumeDto.setInventoryItemId(material.getComponent().getInventoryItemId());
+                consumeDto.setQuantity(consumeQty.doubleValue());
+                consumeDto.setTransactionType("CONSUME");
+                consumeDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                inventoryTransactionService.consumeStock(consumeDto);
+            } catch (Exception e) {
+                throw new IllegalStateException("Consumption failed for '" +
+                        material.getComponent().getItemCode() + "': " + e.getMessage(), e);
+            }
+
+            material.setConsumedQuantity(consumed.add(consumeQty));
+            workOrderMaterialRepository.save(material);
+
+            logger.info("Consumed {} of '{}' for batch on operation '{}' (total consumed: {})",
+                    consumeQty, material.getComponent().getItemCode(),
+                    operation.getOperationName(), material.getConsumedQuantity());
+        }
+    }
+
+    /**
+     * Pushes partially completed quantity to all dependent operations.
+     */
+    private void forwardPartialQuantityToDependents(WorkOrderOperation completed,
+                                                   BigDecimal batchQty,
+                                                   WorkOrder workOrder) {
+        List<WorkOrderOperation> dependents =
+                workOrderOperationRepository.findByDependsOnOperationId(completed.getId());
+
+        if (!dependents.isEmpty()) {
+            for (WorkOrderOperation dep : dependents) {
+                dep.setAvailableInputQuantity(dep.getAvailableInputQuantity().add(batchQty));
+
+                if (dep.getStatus() == OperationStatus.WAITING_FOR_DEPENDENCY &&
+                        dep.getAvailableInputQuantity().compareTo(BigDecimal.ONE) >= 0) {
+                    dep.setStatus(OperationStatus.READY);
+                    logger.info("Op '{}' on WO {} → READY (input from '{}')",
+                            dep.getOperationName(), workOrder.getWorkOrderNumber(), completed.getOperationName());
+                }
+                workOrderOperationRepository.save(dep);
+            }
+        } else {
+            // Legacy sequential fallback
+            WorkOrderOperation nextOp = workOrderOperationRepository
+                    .findTopByWorkOrderAndSequenceGreaterThanOrderBySequenceAsc(workOrder, completed.getSequence());
+            if (nextOp != null) {
+                nextOp.setAvailableInputQuantity(nextOp.getAvailableInputQuantity().add(batchQty));
+                if (nextOp.getStatus() == OperationStatus.WAITING_FOR_DEPENDENCY &&
+                        nextOp.getAvailableInputQuantity().compareTo(BigDecimal.ONE) >= 0) {
+                    nextOp.setStatus(OperationStatus.READY);
+                    logger.info("Next op '{}' on WO {} → READY", nextOp.getOperationName(), workOrder.getWorkOrderNumber());
+                }
+                workOrderOperationRepository.save(nextOp);
+            }
+        }
     }
 
     @Transactional
@@ -1612,6 +1900,35 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             );
         }
 
+        // Handle Backflushing
+        if (workOrder.isAllowBackflush()) {
+            IssueWorkOrderMaterialDTO autoIssueDTO = new IssueWorkOrderMaterialDTO();
+            autoIssueDTO.setWorkOrderId(workOrder.getId());
+            List<IssueWorkOrderMaterialDTO.MaterialIssueItem> issueItems = new ArrayList<>();
+
+            for (WorkOrderMaterial material : workOrderMaterialRepository.findByWorkOrderId(workOrder.getId())) {
+                if (material.getDeletedDate() != null) continue;
+
+                BigDecimal issued = material.getIssuedQuantity() != null ? material.getIssuedQuantity() : BigDecimal.ZERO;
+                BigDecimal scrapped = material.getScrappedQuantity() != null ? material.getScrappedQuantity() : BigDecimal.ZERO;
+                BigDecimal goodIssued = issued.subtract(scrapped);
+
+                if (goodIssued.compareTo(material.getNetRequiredQuantity()) < 0) {
+                    BigDecimal gap = material.getNetRequiredQuantity().subtract(goodIssued);
+                    IssueWorkOrderMaterialDTO.MaterialIssueItem item = new IssueWorkOrderMaterialDTO.MaterialIssueItem();
+                    item.setWorkOrderMaterialId(material.getId());
+                    item.setIssuedQuantity(gap);
+                    item.setScrappedQuantity(BigDecimal.ZERO);
+                    issueItems.add(item);
+                }
+            }
+            if (!issueItems.isEmpty()) {
+                autoIssueDTO.setMaterials(issueItems);
+                logger.info("Auto-Backflushing {} materials for WorkOrder {}", issueItems.size(), workOrder.getWorkOrderNumber());
+                this.issueMaterials(autoIssueDTO);
+            }
+        }
+
         // Validate that all required material quantities are met
         // Check: issuedQty - scrappedQty (good consumed) >= netRequiredQuantity
         List<WorkOrderMaterial> materials = workOrderMaterialRepository.findByWorkOrderId(workOrder.getId());
@@ -1645,6 +1962,71 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
         // Finalize quantities
         BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
+
+        // Compute aggregated actual cost
+        BigDecimal totalMaterialCost = BigDecimal.ZERO;
+        for (WorkOrderMaterial material : materials) {
+            if (material.getDeletedDate() != null) continue;
+            BigDecimal consumed = material.getConsumedQuantity() != null ? material.getConsumedQuantity() : BigDecimal.ZERO;
+            com.nextgenmanager.nextgenmanager.items.model.InventoryItem item = material.getComponent();
+            double unitCost = Optional.ofNullable(item)
+                    .map(InventoryItem::getProductFinanceSettings)
+                    .map(ProductFinanceSettings::getStandardCost)
+                    .orElse(0.0);
+            totalMaterialCost = totalMaterialCost.add(BigDecimal.valueOf(unitCost).multiply(consumed));
+        }
+
+        BigDecimal totalOperationCost = BigDecimal.ZERO;
+        List<WorkOrderOperation> operations = workOrderOperationRepository.findByWorkOrderIdOrderBySequence(workOrder.getId());
+        for (WorkOrderOperation op : operations) {
+            if (op.getWorkCenter() != null && op.getWorkCenter().getMachineCostPerHour() != null) {
+                BigDecimal hoursPerUnit = BigDecimal.ZERO;
+                if (op.getRoutingOperation() != null && op.getRoutingOperation().getRunTime() != null) {
+                     hoursPerUnit = op.getRoutingOperation().getRunTime().divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+                }
+                BigDecimal totalHours = hoursPerUnit.multiply(op.getCompletedQuantity());
+                BigDecimal opCost = totalHours.multiply(op.getWorkCenter().getMachineCostPerHour());
+                
+                if (op.getWorkCenter().getOverheadPercentage() != null) {
+                    BigDecimal overheadFactor = BigDecimal.ONE.add(op.getWorkCenter().getOverheadPercentage().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                    opCost = opCost.multiply(overheadFactor);
+                }
+                totalOperationCost = totalOperationCost.add(opCost);
+            }
+        }
+
+        BigDecimal totalCost = totalMaterialCost.add(totalOperationCost);
+        BigDecimal realUnitCost = BigDecimal.ZERO;
+        if (totalCompleted.compareTo(BigDecimal.ZERO) > 0) {
+            realUnitCost = totalCost.divide(totalCompleted, 2, RoundingMode.HALF_UP);
+        }
+
+        // PRODUCE: add finished goods to inventory (the only event that increases stock)
+        if (totalCompleted.compareTo(BigDecimal.ZERO) > 0) {
+            InventoryTransactionDTO produceDto = new InventoryTransactionDTO();
+            produceDto.setInventoryItemId(workOrder.getBom().getParentInventoryItem().getInventoryItemId());
+            produceDto.setQuantity(totalCompleted.doubleValue());
+            produceDto.setCostPerUnit(realUnitCost.doubleValue());
+            produceDto.setTransactionType("PRODUCE");
+            produceDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+            inventoryTransactionService.produceStock(produceDto);
+            logger.info("PRODUCE {} units for WorkOrder {} at unit cost {}", totalCompleted, workOrder.getWorkOrderNumber(), realUnitCost);
+
+            // Auto-reserve finished goods for the linked Sales Order
+            if (workOrder.getSalesOrder() != null) {
+                try {
+                    InventoryTransactionDTO reserveDto = new InventoryTransactionDTO();
+                    reserveDto.setInventoryItemId(workOrder.getBom().getParentInventoryItem().getInventoryItemId());
+                    reserveDto.setQuantity(totalCompleted.doubleValue());
+                    reserveDto.setTransactionType("RESERVE");
+                    reserveDto.setReferenceDocNo(workOrder.getSalesOrder().getOrderNumber());
+                    inventoryTransactionService.reserveStock(reserveDto);
+                    logger.info("Auto-reserved {} finished goods for SalesOrder {}", totalCompleted, workOrder.getSalesOrder().getOrderNumber());
+                } catch (Exception e) {
+                    logger.error("Auto-reserve for SalesOrder failed (WO {}): {}", workOrder.getWorkOrderNumber(), e.getMessage());
+                }
+            }
+        }
 
         workOrder.setCompletedQuantity(totalCompleted);
 
@@ -1712,23 +2094,6 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             );
         }
 
-        //  Safety check: no pending materials
-        boolean pendingMaterials =
-                workOrderMaterialRepository
-                        .existsByWorkOrderAndIssueStatusNot(
-                                workOrder, MaterialIssueStatus.ISSUED
-                        );
-
-        if (pendingMaterials) {
-            logger.error(
-                    "Close blocked: materials not fully issued for WorkOrder {}",
-                    workOrder.getWorkOrderNumber()
-            );
-            throw new IllegalStateException(
-                    "Cannot close WorkOrder with pending material issues"
-            );
-        }
-
         // Close Work Order
         workOrder.setWorkOrderStatus(WorkOrderStatus.CLOSED);
         workOrderRepository.save(workOrder);
@@ -1782,14 +2147,35 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                                 workOrder, OperationStatus.IN_PROGRESS
                         );
 
-        if (opInProgress) {
-            logger.warn(
-                    "Cancel blocked: operation IN_PROGRESS for WorkOrder {}",
-                    workOrder.getWorkOrderNumber()
-            );
-            throw new IllegalStateException(
-                    "Cannot cancel WorkOrder while an operation is in progress"
-            );
+//        if (opInProgress) {
+//            logger.warn(
+//                    "Cancel blocked: operation IN_PROGRESS for WorkOrder {}",
+//                    workOrder.getWorkOrderNumber()
+//            );
+//            throw new IllegalStateException(
+//                    "Cannot cancel WorkOrder while an operation is in progress"
+//            );
+//        }
+
+        // RETURN reserved stock to available for each material
+        List<WorkOrderMaterial> materials = workOrderMaterialRepository.findByWorkOrderId(workOrder.getId());
+        for (WorkOrderMaterial material : materials) {
+            if (material.getDeletedDate() != null) continue;
+            BigDecimal consumed = material.getConsumedQuantity() != null ? material.getConsumedQuantity() : BigDecimal.ZERO;
+            BigDecimal scrapped = material.getScrappedQuantity() != null ? material.getScrappedQuantity() : BigDecimal.ZERO;
+            BigDecimal toReturn = material.getPlannedRequiredQuantity().subtract(consumed).subtract(scrapped);
+            if (toReturn.compareTo(BigDecimal.ZERO) > 0) {
+                try {
+                    InventoryTransactionDTO returnDto = new InventoryTransactionDTO();
+                    returnDto.setInventoryItemId(material.getComponent().getInventoryItemId());
+                    returnDto.setQuantity(toReturn.doubleValue());
+                    returnDto.setTransactionType("RETURN");
+                    returnDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                    inventoryTransactionService.returnStock(returnDto);
+                } catch (Exception e) {
+                    logger.warn("Could not return stock for material {} on WO cancel: {}", material.getComponent().getItemCode(), e.getMessage());
+                }
+            }
         }
 
         // Cancel operations (non-completed)
@@ -1821,6 +2207,211 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 status.toString(),
                 "CANCELLED",
                 "WorkOrder Cancelled"
+        );
+    }
+
+    @Transactional
+    @Override
+    public void shortCloseWorkOrder(int workOrderId, String remarks) {
+
+        logger.info("Short-closing WorkOrder id={}", workOrderId);
+
+        // ── Fetch Work Order ─────────────────────────────────────────────────
+        WorkOrder workOrder = workOrderRepository.findById(workOrderId)
+                .orElseThrow(() -> {
+                    logger.error("WorkOrder not found id={}", workOrderId);
+                    return new EntityNotFoundException("WorkOrder not found");
+                });
+
+        WorkOrderStatus currentStatus = workOrder.getWorkOrderStatus();
+
+        // ── Status guard: can short-close from any active production status ──
+        if (currentStatus != WorkOrderStatus.READY_FOR_PRODUCTION
+                && currentStatus != WorkOrderStatus.PARTIALLY_READY
+                && currentStatus != WorkOrderStatus.IN_PROGRESS
+                && currentStatus != WorkOrderStatus.RELEASED) {
+            logger.warn(
+                    "Short-close rejected for WorkOrder {} due to status {}",
+                    workOrder.getWorkOrderNumber(),
+                    currentStatus
+            );
+            throw new IllegalStateException(
+                    "WorkOrder can only be short-closed when READY_FOR_PRODUCTION, PARTIALLY_READY, or IN_PROGRESS. Current: " + currentStatus
+            );
+        }
+
+        List<WorkOrderMaterial> materials = workOrderMaterialRepository.findByWorkOrderId(workOrder.getId());
+        List<WorkOrderOperation> operations = workOrderOperationRepository.findByWorkOrderIdOrderBySequence(workOrder.getId());
+
+        // ── Step 1: Backflush if enabled ─────────────────────────────────────
+        // For backflush WOs, auto-issue materials proportional to what was
+        // actually completed so that cost calculations are accurate.
+        if (workOrder.isAllowBackflush()) {
+            BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
+            BigDecimal plannedQty = workOrder.getPlannedQuantity();
+
+            if (totalCompleted.compareTo(BigDecimal.ZERO) > 0 && plannedQty.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal completionRatio = totalCompleted.divide(plannedQty, 10, RoundingMode.HALF_UP);
+
+                IssueWorkOrderMaterialDTO autoIssueDTO = new IssueWorkOrderMaterialDTO();
+                autoIssueDTO.setWorkOrderId(workOrder.getId());
+                List<IssueWorkOrderMaterialDTO.MaterialIssueItem> issueItems = new ArrayList<>();
+
+                for (WorkOrderMaterial material : materials) {
+                    if (material.getDeletedDate() != null) continue;
+
+                    BigDecimal issued = material.getIssuedQuantity() != null ? material.getIssuedQuantity() : BigDecimal.ZERO;
+                    BigDecimal proportionalNeed = material.getNetRequiredQuantity()
+                            .multiply(completionRatio)
+                            .setScale(5, RoundingMode.HALF_UP);
+                    BigDecimal gap = proportionalNeed.subtract(issued);
+
+                    if (gap.compareTo(BigDecimal.ZERO) > 0) {
+                        IssueWorkOrderMaterialDTO.MaterialIssueItem item = new IssueWorkOrderMaterialDTO.MaterialIssueItem();
+                        item.setWorkOrderMaterialId(material.getId());
+                        item.setIssuedQuantity(gap);
+                        item.setScrappedQuantity(BigDecimal.ZERO);
+                        issueItems.add(item);
+                    }
+                }
+
+                if (!issueItems.isEmpty()) {
+                    autoIssueDTO.setMaterials(issueItems);
+                    logger.info("Short-close backflush: auto-issuing {} materials for WorkOrder {}",
+                            issueItems.size(), workOrder.getWorkOrderNumber());
+                    try {
+                        this.issueMaterials(autoIssueDTO);
+                    } catch (Exception e) {
+                        logger.warn("Backflush during short-close failed for WorkOrder {}: {}",
+                                workOrder.getWorkOrderNumber(), e.getMessage());
+                    }
+                    // Refresh materials after auto-issue
+                    materials = workOrderMaterialRepository.findByWorkOrderId(workOrder.getId());
+                }
+            }
+        }
+
+        // ── Step 2: Add finished goods to inventory (partial output) ─────────
+        BigDecimal totalCompleted = calculateWorkOrderCompletedQuantity(workOrder);
+
+        if (totalCompleted.compareTo(BigDecimal.ZERO) > 0) {
+            // Calculate actual cost for the partial output
+            BigDecimal totalMaterialCost = BigDecimal.ZERO;
+            for (WorkOrderMaterial material : materials) {
+                if (material.getDeletedDate() != null) continue;
+                BigDecimal consumed = material.getConsumedQuantity() != null ? material.getConsumedQuantity() : BigDecimal.ZERO;
+                com.nextgenmanager.nextgenmanager.items.model.InventoryItem item = material.getComponent();
+                double unitCost = Optional.ofNullable(item.getProductFinanceSettings())
+                        .map(p -> p.getStandardCost())
+                        .orElse(0.0);
+                totalMaterialCost = totalMaterialCost.add(BigDecimal.valueOf(unitCost).multiply(consumed));
+            }
+
+            BigDecimal totalOperationCost = BigDecimal.ZERO;
+            for (WorkOrderOperation op : operations) {
+                if (op.getWorkCenter() != null && op.getWorkCenter().getMachineCostPerHour() != null) {
+                    BigDecimal hoursPerUnit = BigDecimal.ZERO;
+                    if (op.getRoutingOperation() != null && op.getRoutingOperation().getRunTime() != null) {
+                        hoursPerUnit = op.getRoutingOperation().getRunTime()
+                                .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+                    }
+                    BigDecimal completedQty = op.getCompletedQuantity() != null ? op.getCompletedQuantity() : BigDecimal.ZERO;
+                    BigDecimal totalHours = hoursPerUnit.multiply(completedQty);
+                    BigDecimal opCost = totalHours.multiply(op.getWorkCenter().getMachineCostPerHour());
+
+                    if (op.getWorkCenter().getOverheadPercentage() != null) {
+                        BigDecimal overheadFactor = BigDecimal.ONE.add(
+                                op.getWorkCenter().getOverheadPercentage().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                        opCost = opCost.multiply(overheadFactor);
+                    }
+                    totalOperationCost = totalOperationCost.add(opCost);
+                }
+            }
+
+            BigDecimal totalCost = totalMaterialCost.add(totalOperationCost);
+            BigDecimal realUnitCost = totalCost.divide(totalCompleted, 2, RoundingMode.HALF_UP);
+
+            com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest addInvReq =
+                    new com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest();
+            addInvReq.setInventoryItemId(workOrder.getBom().getParentInventoryItem().getInventoryItemId());
+            addInvReq.setProcurementDecision(
+                    com.nextgenmanager.nextgenmanager.Inventory.model.ProcurementDecision.WORK_ORDER);
+            addInvReq.setReferenceId((long) workOrder.getId());
+            addInvReq.setQuantity(totalCompleted.doubleValue());
+            addInvReq.setCostPerUnit(realUnitCost.doubleValue());
+            addInvReq.setCreatedBy("System");
+            inventoryInstanceService.addInventory(addInvReq);
+
+            logger.info("Short-close: Added {} units to inventory for WorkOrder {} with cost ₹{}",
+                    totalCompleted, workOrder.getWorkOrderNumber(), realUnitCost);
+        }
+
+        workOrder.setCompletedQuantity(totalCompleted);
+
+        // ── Step 3: Return unused materials to store ─────────────────────────
+        // Materials that were issued but not consumed should go back to inventory
+        for (WorkOrderMaterial material : materials) {
+            if (material.getDeletedDate() != null) continue;
+
+            BigDecimal consumed = material.getConsumedQuantity() != null ? material.getConsumedQuantity() : BigDecimal.ZERO;
+            BigDecimal scrapped = material.getScrappedQuantity() != null ? material.getScrappedQuantity() : BigDecimal.ZERO;
+            // Return everything reserved but not yet consumed: planned - consumed - scrapped
+            // This covers both: issued-to-floor-but-not-consumed AND reserved-but-not-issued
+            BigDecimal toReturn = material.getPlannedRequiredQuantity().subtract(consumed).subtract(scrapped);
+
+            if (toReturn.compareTo(BigDecimal.ZERO) > 0) {
+                try {
+                    InventoryTransactionDTO returnDto = new InventoryTransactionDTO();
+                    returnDto.setInventoryItemId(material.getComponent().getInventoryItemId());
+                    returnDto.setQuantity(toReturn.doubleValue());
+                    returnDto.setTransactionType("RETURN");
+                    returnDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                    inventoryTransactionService.returnStock(returnDto);
+
+                    logger.info("Short-close: Returned {} units of {} | WO {}",
+                            toReturn, material.getComponent().getItemCode(), workOrder.getWorkOrderNumber());
+                    auditService.record(workOrder, WorkOrderEventType.MATERIAL_RETURNED,
+                            "material", material.getComponent().getItemCode(),
+                            toReturn.toPlainString(), "Returned uncommitted material on short-close");
+                } catch (Exception e) {
+                    logger.warn("Could not return material {} for WO short-close: {}",
+                            material.getComponent().getItemCode(), e.getMessage());
+                }
+            }
+        }
+
+        // ── Step 4: Cancel non-completed operations ──────────────────────────
+        for (WorkOrderOperation op : operations) {
+            if (op.getStatus() != OperationStatus.COMPLETED) {
+                op.setStatus(OperationStatus.CANCELLED);
+            }
+        }
+        workOrderOperationRepository.saveAll(operations);
+
+        // ── Step 5: Finalize work order ──────────────────────────────────────
+        workOrder.setWorkOrderStatus(WorkOrderStatus.SHORT_CLOSED);
+        workOrder.setActualEndDate(new Date());
+        workOrder.setRemarks(
+                (workOrder.getRemarks() != null ? workOrder.getRemarks() + " | " : "")
+                        + "SHORT-CLOSED: " + (remarks != null ? remarks : "No reason provided")
+        );
+        workOrderRepository.save(workOrder);
+
+        logger.info(
+                "WorkOrder {} SHORT_CLOSED successfully with completedQty={} out of plannedQty={}",
+                workOrder.getWorkOrderNumber(),
+                totalCompleted,
+                workOrder.getPlannedQuantity()
+        );
+
+        auditService.record(
+                workOrder,
+                WorkOrderEventType.SHORT_CLOSED,
+                "status",
+                currentStatus.toString(),
+                "SHORT_CLOSED",
+                "WorkOrder Short-Closed. Reason: " + (remarks != null ? remarks : "N/A")
+                        + ". Completed: " + totalCompleted + "/" + workOrder.getPlannedQuantity()
         );
     }
 
@@ -1924,6 +2515,224 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     @Transactional
     public ScheduleResultDTO rescheduleWorkOrder(int workOrderId, Date newStartDate) {
         return productionSchedulerService.rescheduleWorkOrder(workOrderId, newStartDate);
+    }
+
+    // ──────────────────────────────── Material Re-order ──────────────────────────
+
+    @Override
+    @Transactional
+    public WorkOrderMaterialReorderDTO reorderMaterial(Long workOrderId, Long materialId, ReorderMaterialRequestDTO dto) {
+
+        WorkOrder workOrder = workOrderRepository.findById(workOrderId.intValue())
+                .orElseThrow(() -> new EntityNotFoundException("WorkOrder not found with ID: " + workOrderId));
+
+        if (workOrder.getWorkOrderStatus() == WorkOrderStatus.CREATED
+                || workOrder.getWorkOrderStatus() == WorkOrderStatus.SCHEDULED
+                || workOrder.getWorkOrderStatus() == WorkOrderStatus.COMPLETED
+                || workOrder.getWorkOrderStatus() == WorkOrderStatus.CLOSED
+                || workOrder.getWorkOrderStatus() == WorkOrderStatus.CANCELLED) {
+            throw new IllegalStateException(
+                    "Cannot re-order materials for a work order with status: " + workOrder.getWorkOrderStatus());
+        }
+
+        com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial material =
+                workOrderMaterialRepository.findById(materialId)
+                        .orElseThrow(() -> new EntityNotFoundException("Material not found with ID: " + materialId));
+
+        if (material.getWorkOrder().getId() != workOrderId.intValue()) {
+            throw new IllegalArgumentException("Material does not belong to this work order");
+        }
+
+        if (dto.getRequestedQuantity() == null || dto.getRequestedQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Requested quantity must be greater than zero");
+        }
+
+        BigDecimal shortfall = material.getPlannedRequiredQuantity()
+                .subtract(material.getIssuedQuantity())
+                .max(BigDecimal.ZERO);
+
+        long reorderCount = workOrderMaterialReorderRepository.countByWorkOrderMaterialId(materialId);
+
+        com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest mr =
+                new com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest();
+        mr.setRequestSource(com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource.WORK_ORDER);
+        mr.setSourceId((long) workOrder.getId());
+        mr.setInventoryItem(material.getComponent());
+        mr.setRequestedQuantity(dto.getRequestedQuantity());
+        mr.setApprovalStatus(com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PENDING);
+        mr.setRequestedDate(new Date());
+        mr.setReferenceNumber(workOrder.getWorkOrderNumber() + "-MAT-" + materialId + "-R" + (reorderCount + 1));
+        mr.setRequestRemarks(dto.getRemarks());
+        try {
+            mr.setRequestedBy(SecurityContextHolder.getContext().getAuthentication().getName());
+        } catch (Exception ignored) {
+            mr.setRequestedBy("SYSTEM");
+        }
+        mr = inventoryRequestRepository.save(mr);
+
+        com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterialReorder reorder =
+                new com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterialReorder();
+        reorder.setWorkOrderMaterial(material);
+        reorder.setInventoryRequestId(mr.getId());
+        reorder.setRequestedQuantity(dto.getRequestedQuantity());
+        reorder.setShortfallQuantity(shortfall);
+        reorder.setRemarks(dto.getRemarks());
+        try {
+            reorder.setCreatedBy(SecurityContextHolder.getContext().getAuthentication().getName());
+        } catch (Exception ignored) {
+            reorder.setCreatedBy("SYSTEM");
+        }
+        reorder = workOrderMaterialReorderRepository.save(reorder);
+
+        // Flag WO as waiting for additional material
+        if (workOrder.getWorkOrderStatus() == WorkOrderStatus.IN_PROGRESS) {
+            workOrder.setWorkOrderStatus(WorkOrderStatus.MATERIAL_REORDER);
+            workOrderRepository.save(workOrder);
+            logger.info("WO {} transitioned to MATERIAL_REORDER", workOrder.getWorkOrderNumber());
+        }
+
+        logger.info("Material re-order created for WO {} material {} quantity {} ref {}",
+                workOrder.getWorkOrderNumber(), materialId, dto.getRequestedQuantity(), mr.getReferenceNumber());
+
+        return buildReorderDTO(reorder, mr);
+    }
+
+    @Override
+    public List<WorkOrderMaterialReorderDTO> getMaterialReorders(Long workOrderId, Long materialId) {
+
+        com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial material =
+                workOrderMaterialRepository.findById(materialId)
+                        .orElseThrow(() -> new EntityNotFoundException("Material not found with ID: " + materialId));
+
+        if (material.getWorkOrder().getId() != workOrderId.intValue()) {
+            throw new IllegalArgumentException("Material does not belong to this work order");
+        }
+
+        return workOrderMaterialReorderRepository
+                .findByWorkOrderMaterialIdOrderByCreatedDateDesc(materialId)
+                .stream()
+                .map(reorder -> {
+                    com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest mr = null;
+                    if (reorder.getInventoryRequestId() != null) {
+                        mr = inventoryRequestRepository.findById(reorder.getInventoryRequestId()).orElse(null);
+                    }
+                    return buildReorderDTO(reorder, mr);
+                })
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
+     * Extra processable production units unlocked by approved reorders for this operation's materials.
+     * Calculated as min(approvedReorderQty / reqPerUnit) across all materials — the bottleneck material
+     * limits how many extra units can actually be produced.
+     * Only meaningful for the first operation (where raw material = direct input).
+     */
+    private BigDecimal extraInputFromReorders(WorkOrderOperation operation, WorkOrder workOrder) {
+        List<WorkOrderMaterial> opMaterials =
+                new ArrayList<>(workOrderMaterialRepository.findByWorkOrderOperationId(operation.getId()));
+
+        boolean isFirstOp = workOrderOperationRepository
+                .findTopByWorkOrderAndSequenceLessThanOrderBySequenceDesc(workOrder, operation.getSequence()) == null;
+        if (isFirstOp) {
+            opMaterials.addAll(workOrderMaterialRepository.findByWorkOrderAndWorkOrderOperationIsNull(workOrder));
+        }
+
+        if (opMaterials.isEmpty()) return BigDecimal.ZERO;
+
+        BigDecimal woPlannedQty = workOrder.getPlannedQuantity();
+        if (woPlannedQty.compareTo(BigDecimal.ZERO) <= 0) woPlannedQty = BigDecimal.ONE;
+
+        BigDecimal minExtra = null;
+        for (WorkOrderMaterial material : opMaterials) {
+            if (material.getDeletedDate() != null) continue;
+            BigDecimal reqPerUnit = material.getNetRequiredQuantity()
+                    .divide(woPlannedQty, 10, RoundingMode.HALF_UP);
+            if (reqPerUnit.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            BigDecimal approvedReorder = workOrderMaterialReorderRepository
+                    .findByWorkOrderMaterialIdOrderByCreatedDateDesc(material.getId())
+                    .stream()
+                    .filter(r -> r.getInventoryRequestId() != null)
+                    .map(r -> inventoryRequestRepository.findById(r.getInventoryRequestId()).orElse(null))
+                    .filter(r -> r != null
+                            && (r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.APPROVED
+                            || r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PARTIAL))
+                    .map(r -> r.getApprovedQuantity() != null ? r.getApprovedQuantity() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            BigDecimal extraForMaterial = approvedReorder.divide(reqPerUnit, 5, RoundingMode.FLOOR);
+            minExtra = (minExtra == null) ? extraForMaterial : minExtra.min(extraForMaterial);
+        }
+
+        return minExtra != null ? minExtra.max(BigDecimal.ZERO) : BigDecimal.ZERO;
+    }
+
+    /**
+     * Actual approved quantity available for issuance (original MR + reorder MRs).
+     * Used by auto-backflush to enforce the Stores approval gate even when materials
+     * are auto-issued at consumption time.
+     */
+    private BigDecimal approvedIssueCap(com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial material) {
+        BigDecimal originalApproved = BigDecimal.ZERO;
+        if (material.getInventoryRequestId() != null) {
+            com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest mr =
+                    inventoryRequestRepository.findById(material.getInventoryRequestId()).orElse(null);
+            if (mr != null
+                    && (mr.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.APPROVED
+                    || mr.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PARTIAL)
+                    && mr.getApprovedQuantity() != null) {
+                originalApproved = mr.getApprovedQuantity();
+            }
+        }
+
+        BigDecimal reorderApproved = workOrderMaterialReorderRepository
+                .findByWorkOrderMaterialIdOrderByCreatedDateDesc(material.getId())
+                .stream()
+                .filter(r -> r.getInventoryRequestId() != null)
+                .map(r -> inventoryRequestRepository.findById(r.getInventoryRequestId()).orElse(null))
+                .filter(r -> r != null
+                        && (r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.APPROVED
+                        || r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PARTIAL))
+                .map(r -> r.getApprovedQuantity() != null ? r.getApprovedQuantity() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return originalApproved.add(reorderApproved);
+    }
+
+    private BigDecimal effectiveIssueCap(com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial material) {
+        BigDecimal approvedReorderQty = workOrderMaterialReorderRepository
+                .findByWorkOrderMaterialIdOrderByCreatedDateDesc(material.getId())
+                .stream()
+                .filter(r -> r.getInventoryRequestId() != null)
+                .map(r -> inventoryRequestRepository.findById(r.getInventoryRequestId()).orElse(null))
+                .filter(r -> r != null && (r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.APPROVED
+                        || r.getApprovalStatus() == com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PARTIAL))
+                .map(r -> r.getApprovedQuantity() != null ? r.getApprovedQuantity() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return material.getPlannedRequiredQuantity().add(approvedReorderQty);
+    }
+
+    private WorkOrderMaterialReorderDTO buildReorderDTO(
+            com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterialReorder reorder,
+            com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest mr) {
+
+        WorkOrderMaterialReorderDTO dto = new WorkOrderMaterialReorderDTO();
+        dto.setId(reorder.getId());
+        dto.setWorkOrderMaterialId(reorder.getWorkOrderMaterial().getId());
+        dto.setMaterialCode(reorder.getWorkOrderMaterial().getComponent().getItemCode());
+        dto.setMaterialName(reorder.getWorkOrderMaterial().getComponent().getName());
+        dto.setInventoryRequestId(reorder.getInventoryRequestId());
+        dto.setRequestedQuantity(reorder.getRequestedQuantity());
+        dto.setShortfallQuantity(reorder.getShortfallQuantity());
+        dto.setRemarks(reorder.getRemarks());
+        dto.setCreatedDate(reorder.getCreatedDate());
+        dto.setCreatedBy(reorder.getCreatedBy());
+        if (mr != null) {
+            dto.setMrStatus(mr.getApprovalStatus() != null ? mr.getApprovalStatus().name() : null);
+            dto.setMrApprovedQuantity(mr.getApprovedQuantity());
+            dto.setReferenceNumber(mr.getReferenceNumber());
+        }
+        return dto;
     }
 
 }

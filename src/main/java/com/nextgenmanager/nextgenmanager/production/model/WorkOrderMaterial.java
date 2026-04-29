@@ -82,7 +82,11 @@ public class WorkOrderMaterial {
      */
     private Boolean backflush = false;
 
-
+    /**
+     * Link to the InventoryRequest generated upon Work Order Release.
+     * Used for consuming inventory.
+     */
+    private Long inventoryRequestId;
 
     @CreationTimestamp
     @Column(updatable = false)

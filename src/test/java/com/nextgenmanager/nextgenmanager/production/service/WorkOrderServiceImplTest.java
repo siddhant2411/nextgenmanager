@@ -81,7 +81,9 @@ class WorkOrderServiceImplTest {
                 List.of(new IssueWorkOrderMaterialDTO.MaterialIssueItem(
                         101L,
                         new BigDecimal("8"),
-                        BigDecimal.ZERO
+                        BigDecimal.ZERO,
+                        null,
+                        null
                 ))
         );
 
@@ -110,7 +112,9 @@ class WorkOrderServiceImplTest {
                 List.of(new IssueWorkOrderMaterialDTO.MaterialIssueItem(
                         201L,
                         new BigDecimal("20"),
-                        BigDecimal.ZERO
+                        BigDecimal.ZERO,
+                        null,
+                        null
                 ))
         );
 
@@ -534,10 +538,8 @@ class WorkOrderServiceImplTest {
         pos.setScrapPercentage(scrap);
         pos.setRoutingOperation(routingOperation);
 
-        Bom childBom = new Bom();
         InventoryItem component = inventoryItem(100, componentCode, componentName);
-        childBom.setParentInventoryItem(component);
-        pos.setChildBom(childBom);
+        pos.setChildInventoryItem(component);
         return pos;
     }
 

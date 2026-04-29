@@ -139,18 +139,24 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         }
 
         so.setSubTotal(subTotal);
-        so.setDiscountPercentage(dto.getDiscountPercentage());
-        so.setDiscountAmount(subTotal.multiply(dto.getDiscountPercentage().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
+        BigDecimal discountPercent = dto.getDiscountPercentage() != null ? dto.getDiscountPercentage() : BigDecimal.ZERO;
+        so.setDiscountPercentage(discountPercent);
+
+        BigDecimal discountAmount = subTotal.multiply(discountPercent.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+        so.setDiscountAmount(discountAmount);
+
         so.setIncludeFreightCharges(dto.isIncludeFreightCharges());
-        so.setFreightAndForwardingCharges(dto.getFreightAndForwardingCharges());
-        BigDecimal taxableValue = subTotal.subtract(so.getDiscountAmount());
+        
+        BigDecimal freightCharges = dto.getFreightAndForwardingCharges() != null ? dto.getFreightAndForwardingCharges() : BigDecimal.ZERO;
+        so.setFreightAndForwardingCharges(freightCharges);
+
+        BigDecimal taxableValue = subTotal.subtract(discountAmount);
         if (dto.isIncludeFreightCharges()) {
-            taxableValue = taxableValue.add(dto.getFreightAndForwardingCharges());
+            taxableValue = taxableValue.add(freightCharges);
         }
         so.setTaxableValue(taxableValue);
 
-
-        BigDecimal taxPercentage = dto.getTaxPercentage();
+        BigDecimal taxPercentage = dto.getTaxPercentage() != null ? dto.getTaxPercentage() : BigDecimal.ZERO;
         BigDecimal taxValue = so.getTaxableValue().multiply(taxPercentage).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
         if(dto.getTaxType()==TaxType.CGST_SGST){
 
@@ -286,21 +292,26 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
         // 5. Discounts + Freight
         existing.setSubTotal(subTotal);
-        existing.setDiscountPercentage(dto.getDiscountPercentage());
-        BigDecimal discountAmount = subTotal.multiply(dto.getDiscountPercentage().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+        
+        BigDecimal discountPercent = dto.getDiscountPercentage() != null ? dto.getDiscountPercentage() : BigDecimal.ZERO;
+        existing.setDiscountPercentage(discountPercent);
+        
+        BigDecimal discountAmount = subTotal.multiply(discountPercent.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
         existing.setDiscountAmount(discountAmount);
 
         existing.setIncludeFreightCharges(dto.isIncludeFreightCharges());
-        existing.setFreightAndForwardingCharges(dto.getFreightAndForwardingCharges());
+        
+        BigDecimal freightCharges = dto.getFreightAndForwardingCharges() != null ? dto.getFreightAndForwardingCharges() : BigDecimal.ZERO;
+        existing.setFreightAndForwardingCharges(freightCharges);
 
         BigDecimal taxableValue = subTotal.subtract(discountAmount);
         if (dto.isIncludeFreightCharges()) {
-            taxableValue = taxableValue.add(dto.getFreightAndForwardingCharges());
+            taxableValue = taxableValue.add(freightCharges);
         }
         existing.setTaxableValue(taxableValue);
 
         // 6. Tax
-        BigDecimal taxPercentage = dto.getTaxPercentage();
+        BigDecimal taxPercentage = dto.getTaxPercentage() != null ? dto.getTaxPercentage() : BigDecimal.ZERO;
         BigDecimal taxValue = taxableValue.multiply(taxPercentage).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
 
         if (dto.getTaxType() == TaxType.CGST_SGST) {

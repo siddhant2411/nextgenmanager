@@ -1,8 +1,8 @@
 package com.nextgenmanager.nextgenmanager.bom.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -18,16 +18,17 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class BomPositionRequestDTO {
 
-    private Bom childBom;
+    private InventoryItem childInventoryItem;
     private Integer position;
     private Double quantity;
     private BigDecimal scrapPercentage;
     private Long routingOperationId;
+    private Integer routingOperationSequenceNumber;
 
     public BomPosition toEntity() {
         BomPosition entity = new BomPosition();
 
-        entity.setChildBom(childBom);
+        entity.setChildInventoryItem(childInventoryItem);
         if (position != null) {
             entity.setPosition(position);
         }

@@ -18,7 +18,7 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
     // This method finds all items where itemCode starts with the given prefix
     List<InventoryItem> findByItemCodeStartingWith(String prefix);
 
-    @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NULL AND (LOWER(i.name) LIKE %:search% OR LOWER(i.itemCode) LIKE %:search% OR LOWER(i.hsnCode) LIKE %:search%)", nativeQuery = true)
+    @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NULL AND (LOWER(CAST(i.name AS text)) LIKE %:search% OR LOWER(CAST(i.itemCode AS text)) LIKE %:search% OR LOWER(CAST(i.hsnCode AS text)) LIKE %:search%)", nativeQuery = true)
     Page<InventoryItem> findAllActiveCategory(@Param("search") String search, Pageable pageable);
 
 
@@ -27,7 +27,7 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
 //    @Query(value = "SELECT * FROM find_active_inventory_item_by_id(:idParam)", nativeQuery = true)
 //    InventoryItem findByActiveId(@Param("idParam") int id);
 
-    @Query("SELECT i FROM InventoryItem i WHERE i.inventoryItemId = :id AND i.deletedDate IS NULL")
+    @Query("SELECT i FROM InventoryItem i LEFT JOIN FETCH i.productInventorySettings WHERE i.inventoryItemId = :id AND i.deletedDate IS NULL")
     InventoryItem findByActiveId(@Param("id") int id);
 
 
@@ -35,14 +35,14 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
     boolean checkItemCodeExists(@Param("itemCodeParam") String itemCode);
 
     @Query(value = "SELECT * FROM inventoryItem i WHERE " +
-            "(LOWER(i.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "LOWER(i.itemCode) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "LOWER(i.hsnCode) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
+            "(LOWER(CAST(i.name AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(CAST(i.itemCode AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(CAST(i.hsnCode AS text)) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
             "i.deletedDate IS NULL",
             countQuery = "SELECT COUNT(*) FROM inventoryItem i WHERE " +
-                    "(LOWER(i.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-                    "LOWER(i.itemCode) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-                    "LOWER(i.hsnCode) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
+                    "(LOWER(CAST(i.name AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+                    "LOWER(CAST(i.itemCode AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+                    "LOWER(CAST(i.hsnCode AS text)) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
                     "i.deletedDate IS NULL",
             nativeQuery = true)
     Page<InventoryItem> searchActiveInventoryItems(@Param("query") String query, Pageable pageable);

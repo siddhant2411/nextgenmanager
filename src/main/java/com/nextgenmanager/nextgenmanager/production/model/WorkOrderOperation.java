@@ -71,6 +71,15 @@ public class WorkOrderOperation {
     @Column(nullable = false, precision = 15, scale = 5)
     private BigDecimal scrappedQuantity = BigDecimal.ZERO;
 
+    @Column(nullable = false, precision = 15, scale = 5)
+    private BigDecimal rejectedQuantity = BigDecimal.ZERO;
+
+    @Column(length = 50)
+    private String rejectionReasonCode;
+
+    @Column(length = 50)
+    private String scrapReasonCode;
+
     /**
      * How much qty this operation is allowed to process.
      * First operation: availableInputQuantity = plannedQuantity

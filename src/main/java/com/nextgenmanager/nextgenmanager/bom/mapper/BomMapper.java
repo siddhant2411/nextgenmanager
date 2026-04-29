@@ -9,11 +9,19 @@ import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 
 import java.util.Collections;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class BomMapper {
 
     public static BomDTO toDto(Bom bom) {
+        return toDto(bom, Collections.emptyMap());
+    }
+
+    /**
+     * @param activeBomMap maps childInventoryItemId -> activeBomId (null entry = no active BOM)
+     */
+    public static BomDTO toDto(Bom bom, Map<Integer, Integer> activeBomMap) {
         if (bom == null) return null;
 
         return BomDTO.builder()
@@ -23,9 +31,7 @@ public class BomMapper {
                 .positions(
                         bom.getPositions() != null ?
                                 bom.getPositions().stream()
-                                        .map(pos -> toChildBomDto(pos)
-
-                                        )
+                                        .map(pos -> toPositionDto(pos, activeBomMap))
                                         .collect(Collectors.toList())
                                 : Collections.emptyList()
                 )
@@ -48,26 +54,26 @@ public class BomMapper {
     }
 
 
-    public static BomPositionDTO toChildBomDto(BomPosition position) {
-        if (position.getChildBom() == null) return null;
+    public static BomPositionDTO toPositionDto(BomPosition position, Map<Integer, Integer> activeBomMap) {
+        if (position.getChildInventoryItem() == null) return null;
 
-        Bom child = position.getChildBom();
-        InventoryItem item = child.getParentInventoryItem();
+        InventoryItem item = position.getChildInventoryItem();
+        Integer activeBomId = activeBomMap.get(item.getInventoryItemId());
+        boolean hasActiveBom = activeBomId != null;
 
         return BomPositionDTO.builder()
                 .positionId(position.getId())
-                .childBomId(child.getId())
-                .bomName(child.getBomName())
-                .revision(child.getRevision())
-                .parentDrawingNumber(item!=null ? (item.getProductSpecification()!=null?
-                        item.getProductSpecification().getDrawingNumber():null):null)
-                .parentItemCode(item != null ? item.getItemCode() : null)
-                .parentItemName(item != null ? item.getName() : null)
-                .uom(item != null ? item.getUom() : null)
+                .childInventoryItemId(item.getInventoryItemId())
+                .itemName(item.getName())
+                .itemCode(item.getItemCode())
+                .drawingNumber(item.getProductSpecification() != null
+                        ? item.getProductSpecification().getDrawingNumber() : null)
+                .uom(item.getUom())
                 .position(position.getPosition())
                 .quantity(position.getQuantity())
                 .scrapPercentage(position.getScrapPercentage())
-                .hasChildBom(!position.getChildBom().getPositions().isEmpty())
+                .hasActiveBom(hasActiveBom)
+                .activeBomId(activeBomId)
                 .routingOperationId(position.getRoutingOperation() != null
                         ? position.getRoutingOperation().getId() : null)
                 .routingOperationName(position.getRoutingOperation() != null
@@ -86,8 +92,8 @@ public class BomMapper {
                 .itemCode(item.getItemCode())
                 .itemType(item.getItemType())
                 .uom(item.getUom())
-                .purchased(item.getProductInventorySettings().isPurchased())
-                .manufactured(item.getProductInventorySettings().isManufactured())
+                .purchased(item.getProductInventorySettings() != null && item.getProductInventorySettings().isPurchased())
+                .manufactured(item.getProductInventorySettings() != null && item.getProductInventorySettings().isManufactured())
                 .build();
     }
 
@@ -98,7 +104,7 @@ public class BomMapper {
                 .id(position.getId())
                 .position(position.getPosition())
                 .quantity(position.getQuantity())
-                .childBom(position.getChildBom())
+                .childInventoryItem(position.getChildInventoryItem())
                 .build();
     }
 

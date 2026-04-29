@@ -26,7 +26,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices — all vendors for this item */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
     @Operation(summary = "List all vendor prices for an item (PURCHASE + JOB_WORK)")
     public ResponseEntity<List<ItemVendorPriceDTO>> getAll(@PathVariable int itemId) {
         return ResponseEntity.ok(service.getByItem(itemId));
@@ -34,7 +34,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices?priceType=PURCHASE */
     @GetMapping(params = "priceType")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
     @Operation(summary = "List vendor prices for an item filtered by priceType (PURCHASE or JOB_WORK)")
     public ResponseEntity<List<ItemVendorPriceDTO>> getByType(
             @PathVariable int itemId,
@@ -44,7 +44,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices/{id} */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
     public ResponseEntity<ItemVendorPriceDTO> getById(
             @PathVariable int itemId, @PathVariable Long id) {
         return ResponseEntity.ok(service.getById(id));
@@ -91,7 +91,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices/{id}/history — price change log, newest first */
     @GetMapping("/{id}/history")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
     @Operation(summary = "Price change history for a vendor-price entry (newest first)")
     public ResponseEntity<List<ItemVendorPriceHistory>> getHistory(
             @PathVariable int itemId, @PathVariable Long id) {

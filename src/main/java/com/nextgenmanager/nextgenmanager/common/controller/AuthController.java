@@ -100,14 +100,20 @@ public class AuthController {
 
         String accessToken = jwtService.generateAccessToken(Map.of("roles", roles), userDetails);
         String refreshToken = jwtService.generateRefreshToken(userDetails);
+        logger.debug("Generated refresh token length: {}", refreshToken.length());
         AppUser appUser = appUserRepository.findByUsernameAndDeletedDateIsNull(userDetails.getUsername())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
-        refreshTokenService.issueToken(
-                appUser,
-                refreshToken,
-                jwtService.extractClaim(refreshToken, Claims::getExpiration),
-                userDetails.getUsername()
-        );
+        try {
+            refreshTokenService.issueToken(
+                    appUser,
+                    refreshToken,
+                    jwtService.extractClaim(refreshToken, Claims::getExpiration),
+                    userDetails.getUsername()
+            );
+        } catch (Exception ex) {
+            logger.error("Failed to store refresh token during login for user: {}", userDetails.getUsername(), ex);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to complete login");
+        }
         updateLastLoginDate(userDetails.getUsername());
         logger.info("Login successful for user: {}", userDetails.getUsername());
 
@@ -138,10 +144,12 @@ public class AuthController {
 
         try {
             String incomingRefreshToken = request.refreshToken().trim();
+            logger.debug("Refresh token request received, token length: {}", incomingRefreshToken.length());
             var storedToken = refreshTokenService.findActiveToken(incomingRefreshToken)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
 
             String username = jwtService.extractUsername(incomingRefreshToken);
+            logger.debug("Refresh token validated for user: {}", username);
             UserDetails userDetails = customUserDetailsService.loadUserByUsername(username);
             if (!jwtService.isRefreshTokenValid(incomingRefreshToken, userDetails)) {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");

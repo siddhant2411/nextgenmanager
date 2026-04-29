@@ -26,6 +26,8 @@ public class WorkOrderMaterialDTO {
 
     private BigDecimal scrappedQuantity;
 
+    private BigDecimal consumedQuantity;
+
     private MaterialIssueStatus issueStatus;
 
     /** ID of the work-order operation this material is gated behind. Null = no gate. */
@@ -33,5 +35,21 @@ public class WorkOrderMaterialDTO {
 
     /** Name of that operation, for display. Null when not gated. */
     private String operationName;
+
+    // --- Material Request Details ---
+    private Long inventoryRequestId;
+    private String mrStatus;
+    private BigDecimal mrApprovedQuantity;
+    private String mrRejectionReason;
+
+    // --- Reorder Summary ---
+    /** Total quantity approved across all reorder MRs (APPROVED + PARTIAL approvedQty). */
+    private BigDecimal approvedReorderQuantity;
+
+    /** plannedRequiredQuantity + approvedReorderQuantity — the actual cap for issuance. */
+    private BigDecimal effectiveRequiredQuantity;
+
+    /** Number of reorder requests ever submitted for this material. */
+    private int reorderCount;
 
 }

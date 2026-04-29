@@ -39,5 +39,7 @@ public class IssueWorkOrderMaterialDTO {
          * Scrapped quantity (optional)
          */
         private BigDecimal scrappedQuantity = BigDecimal.ZERO;
+        private List<Long> overrideInstanceIds;
+        private String overrideReason;
     }
 }

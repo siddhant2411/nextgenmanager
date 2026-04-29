@@ -1,11 +1,14 @@
 package com.nextgenmanager.nextgenmanager.production.service;
 
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.model.Routing;
 import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
+import io.minio.GetObjectResponse;
 import jakarta.xml.bind.ValidationException;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -47,4 +50,16 @@ public interface RoutingService {
      * Used by BomServiceImpl to verify an operation belongs to this BOM's routing.
      */
     Long getRoutingIdForOperation(Long operationId);
+
+    // ---- Operation Attachments ----
+
+    void uploadOperationAttachment(Long operationId, MultipartFile file) throws Exception;
+
+    List<FileAttachment> getOperationAttachments(Long operationId);
+
+    void deleteOperationAttachment(Long operationId, Long fileId) throws Exception;
+
+    GetObjectResponse downloadOperationAttachment(Long fileId);
+
+    FileAttachment getOperationAttachment(Long fileId);
 }

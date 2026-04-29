@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 
@@ -93,9 +94,9 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             "   FROM inventoryInstance i " +
             "   INNER JOIN inventoryItem item ON i.inventoryItemRef = item.inventoryItemId " +
             "   WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
-            "   AND (:queryCode IS NULL OR LOWER(item.itemCode) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
-            "   OR (:queryName IS NULL OR LOWER(item.name) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
-            "   AND (:queryHsnCode IS NULL OR LOWER(item.hsnCode) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
+            "   AND (:queryCode IS NULL OR LOWER(CAST(item.itemCode AS text)) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
+            "   AND (:queryName IS NULL OR LOWER(CAST(item.name AS text)) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
+            "   AND (:queryHsnCode IS NULL OR LOWER(CAST(item.hsnCode AS text)) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
             "   AND (:uom IS NULL OR item.uom = :uom) " +
             "   AND (:itemTypeValue IS NULL OR item.itemType = :itemTypeValue) " +
             "   GROUP BY i.inventoryItemRef, item.itemCode, item.name, item.hsnCode, item.itemType, item.uom " +
@@ -150,9 +151,9 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     @Query(value = "SELECT i.* FROM inventoryInstance i " +
             "JOIN inventoryItem item ON item.InventoryItemId = i.inventoryItemRef " +
             "WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
-            "  AND (:queryCode IS NULL OR LOWER(item.itemCode::text) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
-            "  AND (:queryName IS NULL OR LOWER(item.name::text) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
-            "  AND (:queryHsnCode IS NULL OR LOWER(item.hsnCode::text) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
+            "  AND (:queryCode IS NULL OR LOWER(CAST(item.itemCode AS text)) LIKE LOWER(CONCAT('%', :queryCode, '%'))) " +
+            "  AND (:queryName IS NULL OR LOWER(CAST(item.name AS text)) LIKE LOWER(CONCAT('%', :queryName, '%'))) " +
+            "  AND (:queryHsnCode IS NULL OR LOWER(CAST(item.hsnCode AS text)) LIKE LOWER(CONCAT('%', :queryHsnCode, '%'))) " +
             "  AND (:uom IS NULL OR item.uom = :uom) " +
             "  AND (:itemTypeValue IS NULL OR item.itemType = :itemTypeValue) ",
             nativeQuery = true)
@@ -164,16 +165,25 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             @Param("itemTypeValue") Integer itemTypeValue
     );
 
-    @Query(value = "SELECT COUNT(*) FROM InventoryInstance i  WHERE  i.deletedDate IS NULL AND (:status IS NULL OR i.inventoryInstanceStatus = :status)",nativeQuery = true)
-    public Object countByInventoryInstanceStatus(@Param("status") String status);
+    @Query(value = "SELECT COUNT(*) FROM InventoryInstance i WHERE i.deletedDate IS NULL AND (:status IS NULL OR i.inventoryInstanceStatus = :status)", nativeQuery = true)
+    Long countByInventoryInstanceStatus(@Param("status") String status);
 
-    @Query("SELECT SUM(i.costPerUnit) FROM InventoryInstance i " +
+    @Query("SELECT SUM(i.quantity) FROM InventoryInstance i " +
+           "WHERE i.inventoryInstanceStatus = 'AVAILABLE' " +
+           "AND i.deletedDate IS NULL")
+    BigDecimal sumAvailableQuantity();
+
+    @Query("SELECT COALESCE(SUM(i.costPerUnit * i.quantity), 0) FROM InventoryInstance i " +
             "WHERE i.deletedDate IS NULL " +
             "AND i.inventoryInstanceStatus <> 'CONSUMED'")
-    Double countSumOfInventoryValue();
+    BigDecimal countSumOfInventoryValue();
 
-    @Query(value = "SELECT * FROM InventoryInstance i  WHERE  i.deletedDate IS NULL AND i.inventoryItemRef = :inventoryItemId AND (:status IS NULL OR i.inventoryInstanceStatus = :status)  LIMIT  :qty",nativeQuery = true)
-    public List<InventoryInstance> inventoryInstanceByStatus(@Param("inventoryItemId") int inventoryItemId, String status, double qty);
+    @Query(value = "SELECT * FROM InventoryInstance i WHERE i.deletedDate IS NULL AND i.inventoryItemRef = :inventoryItemId AND (:status IS NULL OR i.inventoryInstanceStatus = :status) LIMIT :qty", nativeQuery = true)
+    List<InventoryInstance> inventoryInstanceByStatus(@Param("inventoryItemId") int inventoryItemId, String status, double qty);
+
+    /** FIFO selection of instances in a given status — used for CONSUME and RETURN operations. */
+    @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :itemId AND i.inventoryInstanceStatus = :status AND i.deletedDate IS NULL ORDER BY i.entryDate ASC", nativeQuery = true)
+    List<InventoryInstance> findByItemAndStatusFIFO(@Param("itemId") int itemId, @Param("status") String status);
 
 //    @Query("""
 //    SELECT i FROM InventoryInstance i

@@ -87,6 +87,8 @@ public class InventoryInstance {
     @Enumerated(EnumType.STRING)
     private InventoryInstanceStatus inventoryInstanceStatus = InventoryInstanceStatus.PENDING;
 
+    private String consumptionReferenceNo; // Tracks the document (e.g., Work Order) that consumed this instance
+
 
     private static String generateShortUUID() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
