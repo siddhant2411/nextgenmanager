@@ -20,9 +20,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.nextgenmanager.nextgenmanager.production.service.WorkOrderExportService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -43,6 +46,9 @@ public class WorkOrderController {
 
     @Autowired
     private WorkOrderService workOrderService;
+
+    @Autowired
+    private WorkOrderExportService workOrderExportService;
 
     @Autowired
     private RejectionService rejectionService;
@@ -1652,6 +1658,75 @@ public class WorkOrderController {
         logger.error("Invalid argument: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("error", "Invalid input: " + e.getMessage()));
+    }
+
+    @GetMapping("/{id}/export/job-sheet")
+    public ResponseEntity<byte[]> exportJobSheet(@PathVariable Integer id) {
+        try {
+            byte[] pdf = workOrderExportService.generateWorkOrderJobSheet(id);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Work_Order_Job_Sheet.pdf\"")
+                    .body(pdf);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Work order not found for job sheet export, id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (Exception e) {
+            logger.error("Error generating work order job sheet for id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+
+    @GetMapping("/{id}/export/operation-instruction-cards")
+    public ResponseEntity<byte[]> exportOperationInstructionCards(@PathVariable Integer id) {
+        try {
+            byte[] pdf = workOrderExportService.generateOperationInstructionCards(id);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Operation_Cards_WO_" + id + ".pdf\"")
+                    .body(pdf);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Work order not found for operation cards export, id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (Exception e) {
+            logger.error("Error generating operation instruction cards for id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    @GetMapping("/{id}/export/material-pick-list")
+    public ResponseEntity<byte[]> exportMaterialPickList(@PathVariable Integer id) {
+        try {
+            byte[] pdf = workOrderExportService.generateMaterialPickList(id);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Material_Pick_List_WO_" + id + ".pdf\"")
+                    .body(pdf);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Work order not found for pick list export, id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (Exception e) {
+            logger.error("Error generating material pick list for id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    @GetMapping("/{id}/export/move-tickets")
+    public ResponseEntity<byte[]> exportMoveTickets(@PathVariable Integer id) {
+        try {
+            byte[] pdf = workOrderExportService.generateMoveTickets(id);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Move_Tickets_WO_" + id + ".pdf\"")
+                    .body(pdf);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Work order not found for move tickets export, id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (Exception e) {
+            logger.error("Error generating move tickets for id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
     }
 
     @ExceptionHandler(EntityNotFoundException.class)

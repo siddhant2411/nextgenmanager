@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Move Tickets</title>
+    <style>
+        @page {
+            margin: 0.6cm;
+            @bottom-right { content: "Page " counter(page); font-size: 7pt; }
+        }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9pt; color: #222; margin: 0; padding: 0; }
+
+        .ticket {
+            border: 2px dashed #555;
+            border-radius: 4px;
+            padding: 8px 10px;
+            margin-bottom: 10px;
+            page-break-inside: avoid;
+        }
+
+        .ticket-header {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 5px;
+        }
+        .ticket-header td { padding: 2px 4px; vertical-align: middle; }
+
+        .ticket-title {
+            background-color: #0f2744;
+            color: white;
+            font-weight: bold;
+            font-size: 9pt;
+            padding: 3px 8px;
+            letter-spacing: 0.5px;
+            text-align: center;
+            margin-bottom: 5px;
+        }
+
+        .op-badge {
+            display: inline-block;
+            background: #1565c0;
+            color: white;
+            font-size: 14pt;
+            font-weight: bold;
+            width: 30px;
+            height: 30px;
+            text-align: center;
+            line-height: 30px;
+            border-radius: 4px;
+        }
+
+        .label { font-weight: bold; font-size: 6.5pt; color: #666; display: block; margin-bottom: 1px; text-transform: uppercase; }
+        .val { font-size: 8.5pt; font-weight: bold; }
+
+        .info-row { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
+        .info-row td { border: 1px solid #ddd; padding: 2px 5px; vertical-align: top; }
+
+        .arrow-row { text-align: center; padding: 3px 0; font-size: 14pt; color: #1565c0; font-weight: bold; }
+
+        .qr-code { text-align: center; }
+        .qr-code img { width: 50px; height: 50px; }
+
+        .sign-row { width: 100%; border-collapse: collapse; margin-top: 3px; }
+        .sign-row td { border: 1px solid #999; padding: 3px 5px; height: 22px; font-size: 7pt; font-weight: bold; color: #555; }
+
+        .cut-line {
+            border-top: 1px dashed #aaa;
+            margin: 6px 0;
+            text-align: center;
+            font-size: 7pt;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+<div th:each="ticket, idx : ${tickets}">
+
+    <div class="ticket">
+        <div class="ticket-title">MOVE TICKET / ROUTING TAG</div>
+
+        <table class="ticket-header">
+            <tr>
+                <td style="width:38px;">
+                    <span class="op-badge" th:text="${ticket.seq}"></span>
+                </td>
+                <td>
+                    <span style="font-size:11pt; font-weight:bold; color:#0f2744;" th:text="${ticket.operationName}"></span>
+                </td>
+                <td style="width:55px;" class="qr-code">
+                    <img th:src="'data:image/png;base64,' + ${qrCode}" alt="QR"/>
+                </td>
+            </tr>
+        </table>
+
+        <!-- WO and Product Info -->
+        <table class="info-row">
+            <tr>
+                <td><span class="label">Work Order</span><span class="val" th:text="${woNumber}"></span></td>
+                <td><span class="label">Product</span><span class="val" th:text="${parentCode}"></span></td>
+                <td><span class="label">Qty</span><span class="val" th:text="${ticket.plannedQty}"></span></td>
+                <td><span class="label">Due Date</span><span class="val" th:text="${dueDate}"></span></td>
+            </tr>
+        </table>
+
+        <!-- From / To -->
+        <table class="info-row">
+            <tr>
+                <td style="width:45%;">
+                    <span class="label">From (Current Station)</span>
+                    <span class="val" th:text="${ticket.workCenter + (#strings.equals(ticket.machine, '-') ? '' : ' / ' + ticket.machine)}"></span>
+                </td>
+                <td style="width:10%; text-align:center; font-size:16pt; color:#1565c0; font-weight:bold;">&#8594;</td>
+                <td style="width:45%;">
+                    <span class="label">To (Next Station)</span>
+                    <span class="val" th:text="${ticket.nextStation}"></span>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Sign-off -->
+        <table class="sign-row">
+            <tr>
+                <td>Sent By:</td>
+                <td>Received By:</td>
+                <td>Date / Time:</td>
+                <td>Qty Moved:</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="cut-line" th:if="${!idx.last}">&#9986; &#8212;&#8212;&#8212;&#8212; CUT HERE &#8212;&#8212;&#8212;&#8212; &#9986;</div>
+
+</div>
+
+</body>
+</html>

@@ -38,6 +38,8 @@ public class ProductFinanceSettings {
 
     private String taxCategory;
 
+    private Double gstRate;
+
     private String currency;
 
     private Date lastUpdatedOn;

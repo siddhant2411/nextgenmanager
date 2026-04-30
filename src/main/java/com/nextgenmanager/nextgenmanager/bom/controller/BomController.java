@@ -387,22 +387,60 @@ public class BomController {
     }
 
 
-    @GetMapping("/{bomId}/export")
-    public ResponseEntity<InputStreamResource> exportBom(@PathVariable int bomId) {
+    @GetMapping("/export/flat")
+    public ResponseEntity<byte[]> exportFlatBom(@RequestParam List<Integer> ids) {
+        try {
+            byte[] fileBytes = bomExportService.generateFlatBomExcel(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Flat_BOM_Export.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating flat BOM export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
 
-        ByteArrayInputStream stream = bomExportService.exportUnifiedBom(bomId);
+    @GetMapping("/export/indented")
+    public ResponseEntity<byte[]> exportIndentedBom(@RequestParam List<Integer> ids) {
+        try {
+            byte[] fileBytes = bomExportService.generateIndentedBomExcel(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Indented_BOM_Export.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating indented BOM export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
 
-        return ResponseEntity.ok()
-                .header(
-                        HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"BOM_" + bomId + ".xlsx\""
-                )
-                .contentType(
-                        MediaType.parseMediaType(
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                )
-                .body(new InputStreamResource(stream));
+    @GetMapping("/export/pdf")
+    public ResponseEntity<byte[]> exportManufacturingBomPdf(@RequestParam List<Integer> ids) {
+        try {
+            byte[] fileBytes = bomExportService.generateManufacturingBomPdf(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Manufacturing_BOM_Sheet.pdf\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating manufacturing BOM PDF: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    @GetMapping("/export/job-sheet")
+    public ResponseEntity<byte[]> exportBomJobSheet(@RequestParam List<Integer> ids) {
+        try {
+            byte[] fileBytes = bomExportService.generateBomJobSheet(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"BOM_Job_Sheet.pdf\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating BOM job sheet: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
     }
 
     @GetMapping("/{itemId}/bom-history")

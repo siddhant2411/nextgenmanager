@@ -7,6 +7,7 @@ import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
+import com.nextgenmanager.nextgenmanager.items.service.InventoryItemExportService;
 import io.minio.GetObjectResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
@@ -41,6 +42,8 @@ public class InventoryItemController {
     @Autowired
     private FileAttachmentRepository fileAttachmentRepository;
 
+    @Autowired
+    private InventoryItemExportService inventoryItemExportService;
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItemController.class);
 
@@ -222,6 +225,109 @@ public class InventoryItemController {
         return inventoryItemService.filterInventoryItems(request);
     }
 
+    @GetMapping("/export/catalog")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_SALES_ADMIN','ROLE_SALES_MANAGER')")
+    public ResponseEntity<byte[]> exportProductCatalog(@RequestParam(required = false) List<Integer> ids) {
+        try {
+            byte[] fileBytes = inventoryItemExportService.generateProductCatalogExcel(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Product_Catalog.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating product catalog export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/export/bulk")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    public ResponseEntity<byte[]> exportBulkItemMaster(@RequestParam(required = false) List<Integer> ids) {
+        try {
+            byte[] fileBytes = inventoryItemExportService.generateBulkItemExportExcel(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Bulk_Item_Master.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating bulk item export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/export/pdf")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_ENGINEERING')")
+    public ResponseEntity<byte[]> exportProductMasterPdf(@RequestParam(required = false) List<Integer> ids) {
+        try {
+            byte[] fileBytes = inventoryItemExportService.generateProductMasterDataSheetPdf(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Product_Master_Data_Sheet.pdf\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating product master PDF export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/export/vendor-prices")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    public ResponseEntity<byte[]> exportVendorPrices(@RequestParam(required = false) List<Integer> ids) {
+        try {
+            byte[] fileBytes = inventoryItemExportService.generateVendorPriceComparisonExcel(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Vendor_Price_Comparison.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating vendor price comparison export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/export/gst-import")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_FINANCE_ADMIN','ROLE_SALES_ADMIN')")
+    public ResponseEntity<byte[]> exportGstImport(@RequestParam(required = false) List<Integer> ids) {
+        try {
+            byte[] fileBytes = inventoryItemExportService.generateEWayBillTallyExcel(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"GST_EWay_Tally_Import.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating GST import export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/export/low-stock-indent")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    public ResponseEntity<byte[]> exportLowStockIndent() {
+        try {
+            byte[] fileBytes = inventoryItemExportService.generateLowStockIndentExcel();
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Low_Stock_Purchase_Indent.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating low stock indent export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/export/job-work-items")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_PRODUCTION_ADMIN','ROLE_PURCHASE_ADMIN')")
+    public ResponseEntity<byte[]> exportJobWorkItems(@RequestParam(required = false) List<Integer> ids) {
+        try {
+            byte[] fileBytes = inventoryItemExportService.generateJobWorkItemsExcel(ids);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Job_Work_Items.xlsx\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating job work items export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 
 }
-

@@ -55,6 +55,8 @@ public class InvoicePdfService {
         String htmlContent = templateEngine.process("/invoice/invoice", context);
 
         // Convert HTML → PDF
+        // Sanitize HTML to replace undefined entities like &nbsp;
+        htmlContent = htmlContent.replace("&nbsp;", "&#160;");
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
         builder.useFastMode();

@@ -80,3 +80,6 @@ application-docker.properties
 /docs/work_order/
 /docs/ASSETS_PUBLIC_BACKEND_SEO_AI_DOCUMENTATION.md
 /docs/AUTH_AUTHZ_TECHNICAL_SPEC.md
+
+/bulk_import/
+/scratch/

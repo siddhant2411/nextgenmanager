@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Operation Instruction Cards</title>
+    <style>
+        @page {
+            margin: 0.8cm;
+            @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; }
+        }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9pt; color: #222; margin: 0; padding: 0; }
+
+        .card {
+            border: 2px solid #1565c0;
+            border-radius: 4px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            page-break-inside: avoid;
+        }
+
+        .card-header {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+        .card-header td {
+            padding: 3px 5px;
+            vertical-align: top;
+        }
+        .card-title {
+            background-color: #1565c0;
+            color: white;
+            font-weight: bold;
+            font-size: 11pt;
+            padding: 5px 10px;
+            letter-spacing: 0.5px;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .op-seq {
+            display: inline-block;
+            background: #0f2744;
+            color: white;
+            font-size: 16pt;
+            font-weight: bold;
+            width: 36px;
+            height: 36px;
+            text-align: center;
+            line-height: 36px;
+            border-radius: 4px;
+        }
+        .op-name {
+            font-size: 13pt;
+            font-weight: bold;
+            color: #0f2744;
+        }
+
+        .label { font-weight: bold; font-size: 7pt; color: #666; display: block; margin-bottom: 1px; text-transform: uppercase; }
+        .val { font-size: 9pt; font-weight: bold; color: #222; }
+
+        .info-row {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 6px;
+        }
+        .info-row td {
+            border: 1px solid #ddd;
+            padding: 3px 6px;
+            vertical-align: top;
+        }
+
+        .section-label {
+            background-color: #f1f5f9;
+            padding: 3px 6px;
+            font-weight: bold;
+            font-size: 8pt;
+            border-left: 4px solid #1565c0;
+            margin: 8px 0 4px 0;
+            letter-spacing: 0.3px;
+            color: #475569;
+        }
+
+        table.mini { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 6px; }
+        table.mini th { background: #f8fafc; border: 1px solid #d1d5db; padding: 3px 5px; text-align: left; font-size: 7pt; color: #475569; }
+        table.mini td { border: 1px solid #d1d5db; padding: 3px 5px; }
+
+        .insp-flag {
+            display: inline-block;
+            background: #fff3e0;
+            color: #e65100;
+            font-weight: bold;
+            font-size: 8pt;
+            padding: 2px 8px;
+            border: 1px solid #e65100;
+            border-radius: 3px;
+        }
+
+        .notes-box {
+            border: 1px solid #ccc;
+            padding: 5px 8px;
+            min-height: 25px;
+            font-size: 8.5pt;
+            color: #444;
+            background: #fefefe;
+        }
+
+        .sign-area {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+        }
+        .sign-area td {
+            border: 1px solid #999;
+            padding: 4px 6px;
+            height: 30px;
+            vertical-align: top;
+            font-size: 8pt;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .qr-code { text-align: center; }
+        .qr-code img { width: 60px; height: 60px; }
+    </style>
+</head>
+<body>
+
+<div th:each="card : ${cards}" class="card">
+
+    <!-- Card Title -->
+    <div class="card-title">OPERATION INSTRUCTION CARD</div>
+
+    <!-- Operation Header -->
+    <table class="card-header">
+        <tr>
+            <td style="width:45px;">
+                <span class="op-seq" th:text="${card.seq}"></span>
+            </td>
+            <td>
+                <span class="op-name" th:text="${card.operationName}"></span>
+                <span class="insp-flag" th:if="${card.inspection}">&#9888; INSPECTION REQUIRED</span>
+            </td>
+            <td style="width:70px;" class="qr-code">
+                <img th:src="'data:image/png;base64,' + ${qrCode}" alt="QR"/>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Work Order and Product Info -->
+    <table class="info-row">
+        <tr>
+            <td><span class="label">Work Order</span><span class="val" th:text="${woNumber}"></span></td>
+            <td><span class="label">Product</span><span class="val" th:text="${parentCode + ' - ' + parentName}"></span></td>
+            <td><span class="label">Order Qty</span><span class="val" th:text="${orderQty}"></span></td>
+            <td><span class="label">Due Date</span><span class="val" th:text="${dueDate}"></span></td>
+        </tr>
+    </table>
+
+    <!-- Station Details -->
+    <table class="info-row">
+        <tr>
+            <td><span class="label">Work Center</span><span class="val" th:text="${card.workCenter}"></span></td>
+            <td><span class="label">Machine</span><span class="val" th:text="${card.machine}"></span></td>
+            <td><span class="label">Labor Role</span><span class="val" th:text="${card.laborRole}"></span></td>
+            <td><span class="label">No. of Operators</span><span class="val" th:text="${card.numOperators}"></span></td>
+        </tr>
+        <tr>
+            <td><span class="label">Setup Time</span><span class="val" th:text="${card.setupTime}"></span></td>
+            <td><span class="label">Run Time / Unit</span><span class="val" th:text="${card.runTime}"></span></td>
+            <td><span class="label">Planned Qty</span><span class="val" th:text="${card.plannedQty}"></span></td>
+            <td><span class="label">Available Input Qty</span><span class="val" th:text="${card.availableInputQty}"></span></td>
+        </tr>
+        <tr>
+            <td colspan="2"><span class="label">Status</span><span class="val" th:text="${card.status}"></span></td>
+            <td colspan="2"></td>
+        </tr>
+    </table>
+
+    <!-- Materials for this operation -->
+    <div class="section-label" th:if="${card.materials != null and !card.materials.isEmpty()}">MATERIALS FOR THIS OPERATION</div>
+    <table class="mini" th:if="${card.materials != null and !card.materials.isEmpty()}">
+        <thead>
+            <tr>
+                <th>Component Code</th>
+                <th>Component Name</th>
+                <th>UOM</th>
+                <th>Required Qty</th>
+                <th>Issued Qty</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="m : ${card.materials}">
+                <td th:text="${m.code}"></td>
+                <td th:text="${m.name}"></td>
+                <td th:text="${m.uom}"></td>
+                <td th:text="${m.plannedQty}"></td>
+                <td th:text="${m.issuedQty}"></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Special Instructions / Notes -->
+    <div class="section-label">INSTRUCTIONS / NOTES</div>
+    <div class="notes-box" th:text="${card.notes != null ? card.notes : ''}"></div>
+
+    <!-- Sign-off -->
+    <table class="sign-area">
+        <tr>
+            <td>Operator Name:</td>
+            <td>Start Time:</td>
+            <td>End Time:</td>
+            <td>Qty Completed:</td>
+            <td>Qty Rejected:</td>
+            <td>Qty Scrapped:</td>
+            <td>Operator Sign:</td>
+        </tr>
+    </table>
+
+</div>
+
+</body>
+</html>

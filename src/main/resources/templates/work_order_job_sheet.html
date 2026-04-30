@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Work Order Job Sheet</title>
+    <style>
+        @page {
+            margin: 1cm;
+            @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; }
+            @bottom-left  { content: "Shop Floor Copy — Do not alter without authorisation."; font-size: 8pt; color: #666; }
+        }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #222; margin: 0; padding: 0; }
+
+        /* ── Header ──────────────────────────────────────────────── */
+        .header-block { width: 100%; border: 2px solid #0f2744; margin-bottom: 14px; border-collapse: collapse; }
+        .header-block td { border: 1px solid #0f2744; padding: 5px 7px; vertical-align: top; }
+        .company-name { font-size: 15pt; font-weight: bold; color: #0f2744; text-align: center; }
+        .doc-title { background-color: #0f2744; color: white; text-align: center; font-weight: bold; padding: 5px; font-size: 11pt; letter-spacing: 1px; }
+        .qr-code { text-align: center; }
+        .qr-code img { width: 75px; height: 75px; }
+        .label { font-weight: bold; font-size: 7.5pt; color: #555; display: block; margin-bottom: 2px; }
+
+        /* ── Status badges ───────────────────────────────────────── */
+        .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 8pt; font-weight: bold; }
+        .badge-created    { background: #e3f2fd; color: #1565c0; }
+        .badge-released   { background: #e8f5e9; color: #2e7d32; }
+        .badge-inprogress { background: #fff3e0; color: #e65100; }
+        .badge-completed  { background: #e8f5e9; color: #1b5e20; }
+        .badge-cancelled  { background: #fce4ec; color: #b71c1c; }
+
+        /* ── Section heading ─────────────────────────────────────── */
+        .section-title {
+            background-color: #f1f5f9;
+            padding: 4px 8px;
+            font-weight: bold;
+            font-size: 9pt;
+            border-left: 5px solid #1565c0;
+            margin: 14px 0 8px 0;
+            letter-spacing: 0.5px;
+        }
+
+        /* ── Data tables ─────────────────────────────────────────── */
+        table.dt { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 8.5pt; }
+        table.dt th { background: #f8fafc; border: 1px solid #d1d5db; padding: 5px 6px; text-align: left; font-size: 8pt; color: #475569; }
+        table.dt td { border: 1px solid #d1d5db; padding: 5px 6px; vertical-align: middle; }
+        .sign-row td { height: 28px; }
+        .cb { width: 14px; height: 14px; border: 1px solid #333; display: inline-block; }
+
+        /* ── Progress indicator ──────────────────────────────────── */
+        .pct-bar-wrap { width: 60px; height: 8px; background: #e5e7eb; border-radius: 4px; display: inline-block; vertical-align: middle; }
+        .pct-bar-fill { height: 8px; background: #1565c0; border-radius: 4px; }
+
+        /* ── Approval footer ─────────────────────────────────────── */
+        .approval { width: 100%; border-collapse: collapse; margin-top: 24px; }
+        .approval td { border: 1px solid #555; padding: 8px 10px; width: 25%; height: 55px; vertical-align: top; font-size: 9pt; }
+        .approval .albl { font-weight: bold; font-size: 8pt; color: #555; }
+    </style>
+</head>
+<body>
+
+    <!-- ── Document Header ── -->
+    <table class="header-block">
+        <tr>
+            <td colspan="4" class="company-name">NEXTGEN MANAGER ERP</td>
+            <td rowspan="2" class="qr-code">
+                <img th:src="'data:image/png;base64,' + ${qrCode}" alt="QR"/>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="4" class="doc-title">WORK ORDER JOB SHEET</td>
+        </tr>
+        <tr>
+            <td>
+                <span class="label">WORK ORDER NO.</span>
+                <strong th:text="${wo.workOrderNumber}"></strong>
+            </td>
+            <td>
+                <span class="label">STATUS</span>
+                <span class="badge"
+                      th:classappend="${wo.workOrderStatus.name() == 'CREATED' ? 'badge-created' :
+                                       wo.workOrderStatus.name() == 'RELEASED' ? 'badge-released' :
+                                       wo.workOrderStatus.name() == 'IN_PROGRESS' ? 'badge-inprogress' :
+                                       wo.workOrderStatus.name() == 'COMPLETED' ? 'badge-completed' : 'badge-cancelled'}"
+                      th:text="${wo.workOrderStatus}"></span>
+            </td>
+            <td>
+                <span class="label">PRIORITY</span>
+                <strong th:text="${wo.priority}"></strong>
+            </td>
+            <td>
+                <span class="label">SOURCE TYPE</span>
+                <span th:text="${wo.sourceType}"></span>
+            </td>
+            <td>
+                <span class="label">PRINT DATE</span>
+                <strong th:text="${#dates.format(#dates.createNow(), 'dd-MMM-yyyy HH:mm')}"></strong>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <span class="label">PRODUCT CODE</span>
+                <strong th:text="${parentCode}"></strong>
+            </td>
+            <td colspan="2">
+                <span class="label">PRODUCT NAME</span>
+                <strong th:text="${parentName}"></strong>
+            </td>
+            <td>
+                <span class="label">BOM / REVISION</span>
+                <span th:text="${bomCode + ' / Rev ' + bomRevision}"></span>
+            </td>
+            <td>
+                <span class="label">PLANNED QTY</span>
+                <strong th:text="${wo.plannedQuantity}"></strong>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <span class="label">DRAWING NO.</span>
+                <span th:text="${drawingNo}"></span>
+            </td>
+            <td>
+                <span class="label">SIZE</span>
+                <span th:text="${size}"></span>
+            </td>
+            <td>
+                <span class="label">NET WEIGHT (Finished Part)</span>
+                <span th:text="${weight}"></span>
+            </td>
+            <td>
+                <span class="label">BASE MATERIAL</span>
+                <span th:text="${basicMaterial}"></span>
+            </td>
+            <td>
+                <span class="label">BATCH / LOT NO.</span>
+                &#160;
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <span class="label">DUE DATE</span>
+                <strong th:text="${wo.dueDate != null ? #dates.format(wo.dueDate, 'dd-MMM-yyyy') : 'N/A'}"></strong>
+            </td>
+            <td>
+                <span class="label">PLANNED START</span>
+                <span th:text="${wo.plannedStartDate != null ? #dates.format(wo.plannedStartDate, 'dd-MMM-yyyy') : 'N/A'}"></span>
+            </td>
+            <td>
+                <span class="label">PLANNED END</span>
+                <span th:text="${wo.plannedEndDate != null ? #dates.format(wo.plannedEndDate, 'dd-MMM-yyyy') : 'N/A'}"></span>
+            </td>
+            <td>
+                <span class="label">COMPLETED QTY</span>
+                <span th:text="${wo.completedQuantity != null ? wo.completedQuantity : 0}"></span>
+            </td>
+            <td>
+                <span class="label">REMARKS</span>
+                <span th:text="${wo.remarks != null ? wo.remarks : '-'}"></span>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <span class="label">EST. PRODUCTION TIME</span>
+                <span th:text="${wo.estimatedProductionMinutes != null ? wo.estimatedProductionMinutes + ' min' : 'N/A'}"></span>
+            </td>
+            <td>
+                <span class="label">EST. TOTAL COST</span>
+                <span th:text="${wo.estimatedTotalCost != null ? wo.estimatedTotalCost : 'N/A'}"></span>
+            </td>
+            <td>
+                <span class="label">ACTUAL START</span>
+                <span th:text="${wo.actualStartDate != null ? #dates.format(wo.actualStartDate, 'dd-MMM-yyyy') : '—'}"></span>
+            </td>
+            <td>
+                <span class="label">ACTUAL END</span>
+                <span th:text="${wo.actualEndDate != null ? #dates.format(wo.actualEndDate, 'dd-MMM-yyyy') : '—'}"></span>
+            </td>
+            <td>
+                <span class="label">FIRST PASS YIELD</span>
+                <strong th:text="${firstPassYield}"></strong>
+            </td>
+        </tr>
+    </table>
+
+    <!-- ── Materials ── -->
+    <div class="section-title">MATERIAL ISSUE LIST</div>
+    <table class="dt">
+        <thead>
+            <tr>
+                <th style="width:22px;">&#10003;</th>
+                <th style="width:85px;">Component Code</th>
+                <th>Component Name</th>
+                <th style="width:38px;">UOM</th>
+                <th style="width:65px;">Net Required</th>
+                <th style="width:65px;">Plan (w/Scrap)</th>
+                <th style="width:65px;">Issued Qty</th>
+                <th style="width:65px;">Remaining</th>
+                <th>Issue Gate (Op.)</th>
+                <th style="width:60px;">Status</th>
+                <th style="width:90px;">Batch / Lot No.</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="m : ${materials}">
+                <td style="text-align:center;"><div class="cb"></div></td>
+                <td><strong th:text="${m.code}"></strong></td>
+                <td th:text="${m.name}"></td>
+                <td th:text="${m.uom}"></td>
+                <td th:text="${m.netQty}"></td>
+                <td th:text="${m.plannedQty}"></td>
+                <td th:text="${m.issuedQty}"></td>
+                <td th:text="${m.remaining}"></td>
+                <td th:text="${m.opName}"></td>
+                <td th:text="${m.status}"></td>
+                <td></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(materials)}">
+                <td colspan="11" style="text-align:center; color:#888; padding:12px;">No materials assigned to this work order.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ── Operations ── -->
+    <div class="section-title">OPERATIONS LOG &amp; SIGN-OFF</div>
+    <table class="dt">
+        <thead>
+            <tr>
+                <th style="width:30px;">Seq</th>
+                <th>Operation</th>
+                <th>Work Center</th>
+                <th>Machine</th>
+                <th style="width:55px;">Plan Qty</th>
+                <th style="width:55px;">Done Qty</th>
+                <th style="width:75px;">Plan Start</th>
+                <th style="width:75px;">Plan End</th>
+                <th style="width:75px;">Actual Start</th>
+                <th style="width:75px;">Actual End</th>
+                <th style="width:60px;">Status</th>
+                <th style="width:85px;">Operator Sign</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr class="sign-row" th:each="op : ${operations}">
+                <td th:text="${op.seq}"></td>
+                <td th:text="${op.name}"></td>
+                <td th:text="${op.wc}"></td>
+                <td th:text="${op.machine}"></td>
+                <td th:text="${op.plannedQty}"></td>
+                <td th:text="${op.completedQty}"></td>
+                <td th:text="${op.plannedStart != null ? #dates.format(op.plannedStart, 'dd-MMM HH:mm') : '-'}"></td>
+                <td th:text="${op.plannedEnd   != null ? #dates.format(op.plannedEnd,   'dd-MMM HH:mm') : '-'}"></td>
+                <td th:text="${op.actualStart  != null ? #dates.format(op.actualStart,  'dd-MMM HH:mm') : ''}"></td>
+                <td th:text="${op.actualEnd    != null ? #dates.format(op.actualEnd,    'dd-MMM HH:mm') : ''}"></td>
+                <td th:text="${op.status}"></td>
+                <td></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(operations)}">
+                <td colspan="12" style="text-align:center; color:#888; padding:12px;">No operations assigned to this work order.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ── Quality / Inspection Notes ── -->
+    <div class="section-title">QUALITY / INSPECTION NOTES</div>
+    <table class="dt">
+        <tr><td style="height:45px;"></td></tr>
+    </table>
+
+    <!-- ── Sign-off Block ── -->
+    <table class="approval">
+        <tr>
+            <td><span class="albl">PRODUCTION SUPERVISOR:</span><br/><br/><br/><span class="albl">Sign / Date:</span></td>
+            <td><span class="albl">QUALITY INSPECTOR:</span><br/><br/><br/><span class="albl">Sign / Date:</span></td>
+            <td><span class="albl">STORE INCHARGE:</span><br/><br/><br/><span class="albl">Sign / Date:</span></td>
+            <td><span class="albl">APPROVED BY:</span><br/><br/><br/><span class="albl">Sign / Date:</span></td>
+        </tr>
+    </table>
+
+</body>
+</html>

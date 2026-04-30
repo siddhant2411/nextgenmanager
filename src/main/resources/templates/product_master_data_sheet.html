@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Product Master Data Sheet</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .page {
+            page-break-after: always;
+        }
+        .page:last-child {
+            page-break-after: avoid;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #1565c0;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            color: #0f2744;
+            font-size: 24px;
+        }
+        .header p {
+            margin: 5px 0 0;
+            color: #666;
+            font-size: 14px;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section-title {
+            background-color: #f1f5f9;
+            color: #0f2744;
+            padding: 8px 12px;
+            font-size: 16px;
+            font-weight: bold;
+            border-left: 4px solid #1565c0;
+            margin-bottom: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 8px 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8fafc;
+            color: #475569;
+            width: 25%;
+            font-weight: 600;
+        }
+        td {
+            width: 25%;
+            color: #1e293b;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            background-color: #e3f2fd;
+            color: #1565c0;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .qr-panel {
+            float: right;
+            width: 132px;
+            text-align: center;
+            margin-top: -6px;
+        }
+        .qr-panel img {
+            width: 96px;
+            height: 96px;
+        }
+        .qr-panel div {
+            font-size: 9px;
+            color: #475569;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+<div th:each="item : ${items}" class="page">
+    <div class="header">
+        <div class="qr-panel">
+            <img th:src="${exportService.qrCodeDataUri(item)}" alt="Item QR Code"/>
+            <div th:text="${exportService.itemPageUrl(item)}"></div>
+        </div>
+        <h1>Product Master Data Sheet</h1>
+        <p>Item Code: <span th:text="${item.itemCode}"></span> | Revision: <span th:text="${item.revision}"></span></p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">1. Basic Details</div>
+        <table>
+            <tr>
+                <th>Item Name</th>
+                <td colspan="3" th:text="${item.name}"></td>
+            </tr>
+            <tr>
+                <th>Item Type</th>
+                <td><span class="badge" th:text="${item.itemType}"></span></td>
+                <th>Item Group</th>
+                <td th:text="${item.itemGroupCode}"></td>
+            </tr>
+            <tr>
+                <th>UOM</th>
+                <td th:text="${item.uom}"></td>
+                <th>HSN Code</th>
+                <td th:text="${item.hsnCode}"></td>
+            </tr>
+            <tr th:if="${item.productFinanceSettings != null}">
+                <th>Tax Category</th>
+                <td th:text="${item.productFinanceSettings.taxCategory}"></td>
+                <th>GST Rate %</th>
+                <td th:text="${item.productFinanceSettings.gstRate}"></td>
+            </tr>
+            <tr>
+                <th>Remarks</th>
+                <td colspan="3" th:text="${item.remarks}"></td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section" th:if="${item.productSpecification != null}">
+        <div class="section-title">2. Engineering Specifications</div>
+        <table>
+            <tr>
+                <th>Drawing Number</th>
+                <td th:text="${item.productSpecification.drawingNumber}"></td>
+                <th>Basic Material</th>
+                <td th:text="${item.productSpecification.basicMaterial}"></td>
+            </tr>
+            <tr>
+                <th>Dimensions</th>
+                <td th:text="${item.productSpecification.dimension}"></td>
+                <th>Size</th>
+                <td th:text="${item.productSpecification.size}"></td>
+            </tr>
+            <tr>
+                <th>Weight</th>
+                <td th:text="${item.productSpecification.weight}"></td>
+                <th>Process Type</th>
+                <td th:text="${item.productSpecification.processType}"></td>
+            </tr>
+        </table>
+    </div>
+    
+    <div class="section" th:if="${item.productInventorySettings != null}">
+        <div class="section-title">3. Inventory Rules</div>
+        <table>
+            <tr>
+                <th>Source</th>
+                <td>
+                    <span th:if="${item.productInventorySettings.purchased}">Purchased</span>
+                    <span th:if="${item.productInventorySettings.manufactured}">Manufactured</span>
+                </td>
+                <th>Tracking</th>
+                <td>
+                    <span th:if="${item.productInventorySettings.batchTracked}">Batch</span>
+                    <span th:if="${item.productInventorySettings.serialTracked}">Serial</span>
+                    <span th:if="${!item.productInventorySettings.batchTracked and !item.productInventorySettings.serialTracked}">Quantity</span>
+                </td>
+            </tr>
+            <tr>
+                <th>Min Stock</th>
+                <td th:text="${item.productInventorySettings.minStock}"></td>
+                <th>Max Stock</th>
+                <td th:text="${item.productInventorySettings.maxStock}"></td>
+            </tr>
+            <tr>
+                <th>Reorder Level</th>
+                <td th:text="${item.productInventorySettings.reorderLevel}"></td>
+                <th>Lead Time (Days)</th>
+                <td th:text="${item.productInventorySettings.leadTime}"></td>
+            </tr>
+        </table>
+    </div>
+
+</div>
+
+</body>
+</html>
