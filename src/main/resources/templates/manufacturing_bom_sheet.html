@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Manufacturing BOM Sheet</title>
+    <style>
+        @page {
+            margin: 1cm;
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 8pt;
+            }
+            @bottom-left {
+                content: "This is a controlled document. Verify latest revision.";
+                font-size: 8pt;
+                color: #666;
+            }
+        }
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 10pt;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .header-block {
+            width: 100%;
+            border: 2px solid #0f2744;
+            margin-bottom: 20px;
+            border-collapse: collapse;
+        }
+        .header-block td {
+            border: 1px solid #0f2744;
+            padding: 5px;
+            vertical-align: top;
+        }
+        .company-name {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #0f2744;
+            text-align: center;
+        }
+        .doc-title {
+            background-color: #0f2744;
+            color: white;
+            text-align: center;
+            font-weight: bold;
+            padding: 5px;
+            font-size: 12pt;
+        }
+        .qr-code {
+            text-align: center;
+        }
+        .qr-code img {
+            width: 80px;
+            height: 80px;
+        }
+        .label {
+            font-weight: bold;
+            font-size: 7.5pt;
+            color: #555;
+            display: block;
+            margin-bottom: 2px;
+        }
+        .section-title {
+            background-color: #f1f5f9;
+            padding: 5px;
+            font-weight: bold;
+            border-left: 5px solid #1565c0;
+            margin: 15px 0 10px 0;
+        }
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 9pt;
+        }
+        table.data-table th, table.data-table td {
+            border: 1px solid #ddd;
+            padding: 5px 6px;
+            text-align: left;
+        }
+        table.data-table th {
+            background-color: #f8fafc;
+            font-size: 8pt;
+            color: #475569;
+        }
+        .totals-row td {
+            font-weight: bold;
+            background-color: #f1f5f9;
+        }
+        .checkbox-container {
+            text-align: center;
+        }
+        .checkbox {
+            width: 12px;
+            height: 12px;
+            border: 1px solid #333;
+            display: inline-block;
+        }
+        .type-badge {
+            font-size: 7pt;
+            padding: 1px 4px;
+            border-radius: 2px;
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        .approval-block {
+            width: 100%;
+            margin-top: 30px;
+            border-collapse: collapse;
+        }
+        .approval-block td {
+            border: 1px solid #333;
+            padding: 10px;
+            width: 33%;
+            height: 60px;
+            vertical-align: top;
+        }
+        .page-break {
+            page-break-after: always;
+        }
+    </style>
+</head>
+<body>
+
+<div th:each="data, iterStat : ${boms}" th:class="${!iterStat.last} ? 'page-break' : ''">
+    <!-- Header Block -->
+    <table class="header-block">
+        <tr>
+            <td colspan="3" class="company-name">NEXTGEN MANAGER ERP</td>
+            <td rowspan="3" class="qr-code">
+                <img th:src="'data:image/png;base64,' + ${data.qrCode}" alt="QR Code"/>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="3" class="doc-title">MANUFACTURING BOM SHEET</td>
+        </tr>
+        <tr>
+            <td><span class="label">ITEM CODE</span><strong th:text="${data.parent.itemCode}"></strong></td>
+            <td colspan="2"><span class="label">ITEM NAME</span><strong th:text="${data.parent.name}"></strong></td>
+        </tr>
+        <tr>
+            <td><span class="label">DRAWING NO.</span><strong th:text="${data.spec != null ? data.spec.drawingNumber : 'N/A'}"></strong></td>
+            <td><span class="label">REVISION</span><strong th:text="${data.bom.revision}"></strong></td>
+            <td><span class="label">ECO NO.</span><span th:text="${data.bom.ecoNumber != null ? data.bom.ecoNumber : 'N/A'}"></span></td>
+            <td><span class="label">PRINT DATE</span><strong th:text="${#dates.format(#dates.createNow(), 'dd-MMM-yyyy')}"></strong></td>
+        </tr>
+        <tr>
+            <td><span class="label">SIZE</span><span th:text="${data.spec != null ? data.spec.size : 'N/A'}"></span></td>
+            <td><span class="label">NET WEIGHT (Finished Part)</span><span th:text="${data.spec != null ? data.spec.weight : 'N/A'}"></span></td>
+            <td><span class="label">BASE MATERIAL</span><span th:text="${data.spec != null ? data.spec.basicMaterial : 'N/A'}"></span></td>
+            <td><span class="label">TOTAL COMPONENTS</span><strong th:text="${data.totalComponents}"></strong></td>
+        </tr>
+        <tr>
+            <td><span class="label">EFFECTIVE FROM</span><span th:text="${data.effectiveFrom != null ? #dates.format(data.effectiveFrom, 'dd-MMM-yyyy') : 'N/A'}"></span></td>
+            <td><span class="label">EFFECTIVE TO</span><span th:text="${data.effectiveTo != null ? #dates.format(data.effectiveTo, 'dd-MMM-yyyy') : 'Open'}"></span></td>
+            <td><span class="label">APPROVED BY</span><span th:text="${data.approvedBy != null ? data.approvedBy : 'N/A'}"></span></td>
+            <td><span class="label">APPROVAL DATE</span><span th:text="${data.approvalDate != null ? #dates.format(data.approvalDate, 'dd-MMM-yyyy') : 'N/A'}"></span></td>
+        </tr>
+    </table>
+
+    <!-- Material List -->
+    <div class="section-title">MATERIAL CONSUMPTION LIST</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 24px;">[ ]</th>
+                <th style="width: 30px;">Pos</th>
+                <th style="width: 85px;">Component Code</th>
+                <th>Component Name</th>
+                <th style="width: 55px;">Type</th>
+                <th style="width: 45px;">Qty</th>
+                <th style="width: 38px;">UOM</th>
+                <th style="width: 45px;">Scrap %</th>
+                <th>Consumed At Operation</th>
+                <th style="width: 80px;">Issued Qty</th>
+                <th style="width: 100px;">Batch / Lot No</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="pos : ${data.positions}">
+                <td class="checkbox-container"><div class="checkbox"></div></td>
+                <td th:text="${pos.pos}"></td>
+                <td><strong th:text="${pos.code}"></strong></td>
+                <td th:text="${pos.name}"></td>
+                <td><span class="type-badge" th:text="${pos.type}"></span></td>
+                <td th:text="${pos.qty}"></td>
+                <td th:text="${pos.uom}"></td>
+                <td th:text="${pos.scrap}"></td>
+                <td>
+                    <span th:text="${pos.op}"></span>
+                    <small th:if="${!#strings.equals(pos.wc, '-')}" style="color:#666;"> — <span th:text="${pos.wc}"></span></small>
+                </td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Routing Summary -->
+    <div class="section-title" th:if="${data.operations != null}">PROCESS FLOW / ROUTING SUMMARY</div>
+    <table class="data-table" th:if="${data.operations != null}">
+        <thead>
+            <tr>
+                <th style="width: 40px;">Seq</th>
+                <th>Operation Description</th>
+                <th>Work Center</th>
+                <th style="width: 80px;">Est. Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="op : ${data.operations}">
+                <td th:text="${op.seq}"></td>
+                <td th:text="${op.name}"></td>
+                <td th:text="${op.wc}"></td>
+                <td th:text="${op.estTime}"></td>
+            </tr>
+            <tr class="totals-row" th:if="${data.totalEstTime != null}">
+                <td colspan="3" style="text-align: right;">Total Estimated Time:</td>
+                <td th:text="${data.totalEstTime}"></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Approval Block -->
+    <table class="approval-block">
+        <tr>
+            <td>
+                <span class="label">PREPARED BY:</span>
+                <br/><br/><br/>
+                <span class="label">Sign/Date:</span>
+            </td>
+            <td>
+                <span class="label">CHECKED BY:</span>
+                <br/><br/><br/>
+                <span class="label">Sign/Date:</span>
+            </td>
+            <td>
+                <span class="label">APPROVED BY:</span>
+                <br/><br/><br/>
+                <span class="label">Sign/Date:</span>
+            </td>
+        </tr>
+    </table>
+</div>
+
+</body>
+</html>

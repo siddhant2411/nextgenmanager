@@ -52,4 +52,8 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
 
     @Query(value = "SELECT COUNT(*) FROM inventoryItem i  WHERE  i.deletedDate IS NULL",nativeQuery = true)
     public Object countByDeletedDateIsNull();
+
+    List<InventoryItem> findAllByDeletedDateIsNull();
+
+    List<InventoryItem> findByInventoryItemIdInAndDeletedDateIsNull(List<Integer> ids);
 }
