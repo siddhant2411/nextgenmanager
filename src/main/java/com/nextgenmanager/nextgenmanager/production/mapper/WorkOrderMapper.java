@@ -7,7 +7,7 @@ import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
-@Mapper(componentModel = "spring", uses = {RoutingMapper.class})
+@Mapper(componentModel = "spring", uses = {RoutingMapper.class, WorkOrderLabourEntryMapper.class})
 public interface WorkOrderMapper {
 
     @Mapping(target = "workCenter", source = "workCenter.centerCode")

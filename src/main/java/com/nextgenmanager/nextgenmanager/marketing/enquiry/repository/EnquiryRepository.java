@@ -18,7 +18,7 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
 
 
 
-    @Query(value = "SELECT * FROM Enquiry e WHERE e.id=:id AND e.deletedDate IS NULL", nativeQuery = true)
+    @Query(value = "SELECT * FROM enquiry e WHERE e.id=:id AND e.deletedDate IS NULL", nativeQuery = true)
     public Enquiry getActiveEnquiryById(@Param("id") Long id);
 
 
@@ -26,7 +26,8 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
     SELECT 
         e.id as id, e.enqNo as enqNo, e.enqDate as enqDate, c.companyName as companyName, 
         e.lastContactedDate as lastContactedDate, e.daysForNextFollowup as daysForNextFollowup,
-         e.closedDate as closedDate
+        e.closedDate as closedDate, e.status as status, e.expectedRevenue as expectedRevenue,
+        e.opportunityname as opportunityName
     FROM enquiry e
     INNER JOIN contact c ON e.contact_id = c.id
     WHERE e.deletedDate IS NULL

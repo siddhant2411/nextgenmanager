@@ -56,6 +56,12 @@ public class WorkOrderController {
     @Autowired
     private TestTemplateService testTemplateService;
 
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.production.service.WorkOrderLabourService workOrderLabourService;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.production.service.CostOfProductionService costOfProductionService;
+
     private static final Logger logger = LoggerFactory.getLogger(WorkOrderController.class);
 
     // ============================================================================
@@ -1726,6 +1732,73 @@ public class WorkOrderController {
         } catch (Exception e) {
             logger.error("Error generating move tickets for id {}: {}", id, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    // ============================================================================
+    // COST OF PRODUCTION REPORT
+    // ============================================================================
+
+    @GetMapping("/{id}/cost-report")
+    public ResponseEntity<?> getCostReport(@PathVariable int id) {
+        try {
+            return ResponseEntity.ok(costOfProductionService.compute(id));
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error computing cost report for WO {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ============================================================================
+    // LABOUR TIME TRACKING
+    // ============================================================================
+
+    @PostMapping("/operation/{operationId}/labour")
+    public ResponseEntity<?> logLabour(
+            @PathVariable Long operationId,
+            @RequestBody com.nextgenmanager.nextgenmanager.production.dto.WorkOrderLabourEntryRequestDTO request) {
+        try {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(workOrderLabourService.logLabour(operationId, request));
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/operation/{operationId}/labour")
+    public ResponseEntity<?> getLabourForOperation(@PathVariable Long operationId) {
+        return ResponseEntity.ok(workOrderLabourService.getEntriesForOperation(operationId));
+    }
+
+    @GetMapping("/{workOrderId}/labour")
+    public ResponseEntity<?> getLabourForWorkOrder(@PathVariable Long workOrderId) {
+        return ResponseEntity.ok(workOrderLabourService.getEntriesForWorkOrder(workOrderId));
+    }
+
+    @PutMapping("/labour/{entryId}")
+    public ResponseEntity<?> updateLabourEntry(
+            @PathVariable Long entryId,
+            @RequestBody com.nextgenmanager.nextgenmanager.production.dto.WorkOrderLabourEntryRequestDTO request) {
+        try {
+            return ResponseEntity.ok(workOrderLabourService.updateEntry(entryId, request));
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/labour/{entryId}")
+    public ResponseEntity<?> deleteLabourEntry(@PathVariable Long entryId) {
+        try {
+            workOrderLabourService.deleteEntry(entryId);
+            return ResponseEntity.noContent().build();
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
 

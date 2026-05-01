@@ -5,8 +5,6 @@ import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingRequestMapper;
 import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
-import com.nextgenmanager.nextgenmanager.production.model.Routing;
 import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import org.slf4j.Logger;
@@ -27,9 +25,6 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
 
     @Autowired
     private RoutingService routingService;
-
-    @Autowired
-    private RoutingMapper routingMapper;
 
     @Autowired
     private com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository bomPositionRepository;
@@ -86,10 +81,8 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
             logger.debug("BOM saved with ID: {}", savedBom.getId());
 
             // Create associated WorkOrderProductionTemplate
-            Routing routing = bomRoutingRequestMapper.getRouting();
-            routing.setBom(savedBom); // Ensure linkage
             RoutingDto savedRouting =
-                    routingService.createOrUpdateRouting(savedBom.getId(),routingMapper.toDTO(routing),"SYSTEM");
+                    routingService.createOrUpdateRouting(savedBom.getId(), bomRoutingRequestMapper.getRouting(), "SYSTEM");
 
             logger.debug("WorkOrderProductionTemplate saved with ID: {}", savedRouting.getId());
 
@@ -133,9 +126,7 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
             bomToUpdate.setId(bomId);
             Bom updatedBom = bomService.editBom(bomId,bomToUpdate);
 
-            Routing routing = bomTemplateMapper.getRouting();
-            routing.setBom(updatedBom);
-            RoutingDto routingDto = routingService.createOrUpdateRouting(bomId,routingMapper.toDTO(routing),"SYSTEM");
+            RoutingDto routingDto = routingService.createOrUpdateRouting(bomId, bomTemplateMapper.getRouting(), "SYSTEM");
             
             linkOperationsToBomPositions(updatedBom, bomTemplateMapper, routingDto);
 

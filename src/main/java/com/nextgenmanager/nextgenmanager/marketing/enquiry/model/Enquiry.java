@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 @Entity
 @Getter
@@ -57,6 +58,12 @@ public class Enquiry {
     @OneToMany(mappedBy = "enquiry", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference
     private List<EnquiryConversationRecord> enquiryConversationRecords;
+
+    @Column(precision = 15, scale = 2)
+    private BigDecimal expectedRevenue = BigDecimal.ZERO;
+    
+    private Integer probability; // 0-100%
+    private LocalDate targetCloseDate;
 
     private LocalDate closedDate;
     private String closeReason;

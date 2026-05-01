@@ -73,6 +73,19 @@ public class EnquiryServiceImpl implements EnquiryService {
                     fetchedClosedDate = ((java.sql.Date) record[6]).toLocalDate();
                 }
 
+                com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus fetchedStatus = null;
+                if (record[7] != null) {
+                    fetchedStatus = com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.valueOf(record[7].toString());
+                }
+                java.math.BigDecimal fetchedExpectedRevenue = java.math.BigDecimal.ZERO;
+                if (record[8] != null) {
+                    fetchedExpectedRevenue = new java.math.BigDecimal(record[8].toString());
+                }
+                String fetchedOpportunityName = null;
+                if (record[9] != null) {
+                    fetchedOpportunityName = record[9].toString();
+                }
+
                 return new EnquiryTableDTO(
                         enquiryId,
                         fetchedEnqNo,
@@ -80,7 +93,10 @@ public class EnquiryServiceImpl implements EnquiryService {
                         fetchedCompanyName,
                         fetchedLastContactedDate,
                         fetchedDaysNextToContact,
-                        fetchedClosedDate
+                        fetchedClosedDate,
+                        fetchedStatus,
+                        fetchedExpectedRevenue,
+                        fetchedOpportunityName
                 );
             } catch (Exception e) {
                 logger.error("Error mapping enquiry data: {}", e.getMessage());
@@ -126,6 +142,9 @@ public class EnquiryServiceImpl implements EnquiryService {
         existingEnquiry.setOpportunityName(updatedEnquiry.getOpportunityName());
         existingEnquiry.setCloseReason(updatedEnquiry.getCloseReason());
         existingEnquiry.setClosedDate(updatedEnquiry.getClosedDate());
+        existingEnquiry.setExpectedRevenue(updatedEnquiry.getExpectedRevenue());
+        existingEnquiry.setProbability(updatedEnquiry.getProbability());
+        existingEnquiry.setTargetCloseDate(updatedEnquiry.getTargetCloseDate());
     }
 
     private void updateConversationRecords(Enquiry existingEnquiry, List<EnquiryConversationRecord> updatedRecords) {
@@ -225,6 +244,30 @@ public class EnquiryServiceImpl implements EnquiryService {
             }
         } catch (Exception e) {
             logger.error("Error while closing enquiry with id: {}", id);
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void updateEnquiryStatus(Long id, com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus status) {
+        logger.info("Updating status for Enquiry with ID: {}", id);
+        Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
+        try {
+            if (enquiry == null) {
+                throw new ResourceNotFoundException("Enquiry with id:" + id + " does not exist");
+            }
+            enquiry.setStatus(status);
+            if (status == com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.CLOSED || status == com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.LOST) {
+                if (enquiry.getClosedDate() == null) {
+                    enquiry.setClosedDate(LocalDate.now());
+                }
+            } else {
+                enquiry.setClosedDate(null);
+                enquiry.setCloseReason(null);
+            }
+            enquiryRepository.save(enquiry);
+        } catch (Exception e) {
+            logger.error("Error while updating status for enquiry with id: {}", id);
             throw new RuntimeException(e);
         }
     }

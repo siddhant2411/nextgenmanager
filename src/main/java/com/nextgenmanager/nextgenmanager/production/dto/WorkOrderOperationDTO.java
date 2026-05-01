@@ -1,12 +1,14 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
+import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderLabourEntryDTO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 import java.util.Set;
 
 @Data
@@ -74,4 +76,6 @@ public class WorkOrderOperationDTO {
      * Null until the last blocking dependency transitions to COMPLETED.
      */
     private Date dependencyResolvedDate;
+
+    private List<WorkOrderLabourEntryDTO> labourEntries;
 }

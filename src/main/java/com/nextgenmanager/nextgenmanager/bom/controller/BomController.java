@@ -10,7 +10,6 @@ import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.mapper.RoutingMapper;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import io.minio.GetObjectResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -51,9 +50,6 @@ public class BomController {
 
     @Autowired
     private BomWorkflowService bomWorkflowService;
-
-    @Autowired
-    private RoutingMapper routingMapper;
 
     @Autowired
     private BomExportService bomExportService;
@@ -108,7 +104,7 @@ public class BomController {
         try {
 
             Bom bom = bomService.addBom(bomRoutingRequestMapper.toBomEntity());
-            RoutingDto routingDto = routingService.createOrUpdateRouting(bom.getId(),routingMapper.toDTO(bomRoutingRequestMapper.getRouting()),"SYSTEM");
+            RoutingDto routingDto = routingService.createOrUpdateRouting(bom.getId(), bomRoutingRequestMapper.getRouting(), "SYSTEM");
 
             BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
             bomRoutingMapper.setBom(BomMapper.toDto(bom));
@@ -126,8 +122,8 @@ public class BomController {
     @PutMapping("/{id}")
     public ResponseEntity<?> updateBom(@PathVariable Integer id, @RequestBody BOMRoutingRequestMapper bomRoutingRequestMapper) {
         try{
-            Bom bom = bomService.editBom(id,bomRoutingRequestMapper.toBomEntity());
-            RoutingDto routingDto = routingService.createOrUpdateRouting(bom.getId(),routingMapper.toDTO(bomRoutingRequestMapper.getRouting()),"SYSTEM");
+            Bom bom = bomService.editBom(id, bomRoutingRequestMapper.toBomEntity());
+            RoutingDto routingDto = routingService.createOrUpdateRouting(bom.getId(), bomRoutingRequestMapper.getRouting(), "SYSTEM");
 
             BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
             bomRoutingMapper.setBom(BomMapper.toDto(bom));

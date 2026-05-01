@@ -6,12 +6,14 @@ import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 @Builder
+@NoArgsConstructor
 @AllArgsConstructor
 @Getter
 @Setter

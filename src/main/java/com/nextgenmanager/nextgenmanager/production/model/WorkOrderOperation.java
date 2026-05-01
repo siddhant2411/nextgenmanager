@@ -13,8 +13,10 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -129,6 +131,9 @@ public class WorkOrderOperation {
      * Set automatically when the last blocking dependency completes.
      */
     private Date dependencyResolvedDate;
+
+    @OneToMany(mappedBy = "workOrderOperation", fetch = FetchType.LAZY)
+    private List<WorkOrderLabourEntry> labourEntries = new ArrayList<>();
 
     @CreationTimestamp
     @Column(updatable = false)

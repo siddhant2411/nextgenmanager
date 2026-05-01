@@ -25,6 +25,8 @@ public interface EnquiryService {
 
     public void closeEnquiry(Long id, String closeReason);
 
+    public void updateEnquiryStatus(Long id, com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus status);
+
     public Enquiry getEnquiryByEnquiryNo(String enquiryNo);
 
 //    public Enquiry getEnquiryWithProductPrice(int id);

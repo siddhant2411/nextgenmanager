@@ -112,6 +112,19 @@ public class EnquiryController {
         }
     }
 
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<?> updateEnquiryStatus(@PathVariable Long id, @RequestBody com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus status) {
+        try {
+            if (id <= 0) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid ID: ID must be greater than zero.");
+            }
+            enquiryService.updateEnquiryStatus(id, status);
+            return ResponseEntity.status(HttpStatus.OK).body("Enquiry status updated");
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        }
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteEnquiry(@PathVariable Long id) {
         try {

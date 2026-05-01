@@ -4,6 +4,7 @@ import com.nextgenmanager.nextgenmanager.production.enums.DependencyType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
@@ -13,6 +14,7 @@ import lombok.Setter;
  * with type SEQUENTIAL — meaning Assembly cannot start until Cutting is COMPLETED.
  */
 @Builder
+@NoArgsConstructor
 @AllArgsConstructor
 @Getter
 @Setter
