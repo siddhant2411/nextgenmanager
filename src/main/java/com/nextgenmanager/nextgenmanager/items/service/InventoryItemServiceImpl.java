@@ -177,7 +177,9 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             }
 
 
-            return activeItems.map(inventoryItemMapper::toDTO);
+            Page<InventoryItemDTO> dtos = activeItems.map(inventoryItemMapper::toDTO);
+            populateDrawingFileIds(dtos);
+            return dtos;
 
         } catch (Exception e) {
             logger.error("Error while fetching all active inventory items: {}", e.getMessage());
@@ -325,7 +327,37 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         Specification<InventoryItem> spec = InventoryItemSpecification.buildSpecification(filters,JOIN_FIELD_MAP);
         Page<InventoryItem> inventoryItems =inventoryItemRepository.findAll(spec, pageable);
 
-        return inventoryItems.map(inventoryItemMapper::toDTO);
+        Page<InventoryItemDTO> dtos = inventoryItems.map(inventoryItemMapper::toDTO);
+        populateDrawingFileIds(dtos);
+        return dtos;
+    }
+
+    private void populateDrawingFileIds(Page<InventoryItemDTO> dtos) {
+        if (dtos.isEmpty()) return;
+
+        List<Long> ids = dtos.stream()
+                .map(d -> (long) d.getInventoryItemId())
+                .toList();
+
+        List<FileAttachment> allAttachments = fileAttachmentRepository.findByReferenceTypeAndReferenceIdIn("inventoryItem", ids);
+
+        Map<Long, List<FileAttachment>> attachmentMap = new HashMap<>();
+        for (FileAttachment fa : allAttachments) {
+            attachmentMap.computeIfAbsent(fa.getReferenceId(), k -> new ArrayList<>()).add(fa);
+        }
+
+        for (InventoryItemDTO dto : dtos) {
+            List<FileAttachment> attachments = attachmentMap.get((long) dto.getInventoryItemId());
+            if (attachments != null && !attachments.isEmpty()) {
+                // Heuristic: Find attachment matching drawingNumber, or first one
+                FileAttachment drawing = attachments.stream()
+                        .filter(a -> dto.getDrawingNumber() != null && !dto.getDrawingNumber().isBlank() &&
+                                a.getOriginalName().toLowerCase().contains(dto.getDrawingNumber().toLowerCase()))
+                        .findFirst()
+                        .orElse(attachments.get(0));
+                dto.setDrawingFileId(drawing.getId());
+            }
+        }
     }
 
     @Override

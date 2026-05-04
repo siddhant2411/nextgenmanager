@@ -9,10 +9,14 @@ import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
+import com.nextgenmanager.nextgenmanager.bom.model.BomQaParameter;
 import com.nextgenmanager.nextgenmanager.bom.model.BomStatus;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
+import com.nextgenmanager.nextgenmanager.bom.repository.BomQaParameterRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
+import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.production.repository.RoutingOperationRepository;
 import com.nextgenmanager.nextgenmanager.bom.spec.BomSpecifications;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
@@ -25,7 +29,6 @@ import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepositor
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import com.nextgenmanager.nextgenmanager.production.model.Routing;
-import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
 import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
 import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
 import io.minio.GetObjectResponse;
@@ -86,7 +89,16 @@ public class BomServiceImpl implements BomService {
     private RoutingService routingService;
 
     @Autowired
+    private RoutingOperationRepository routingOperationRepository;
+
+    @Autowired
+    private BomQaParameterRepository bomQaParameterRepository;
+
+    @Autowired
     private com.nextgenmanager.nextgenmanager.bom.repository.BomAuditRepository bomAuditRepository;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.production.repository.RoutingRepository routingRepository;
 
     private final  DomainEventPublisher domainEventPublisher;
 
@@ -684,34 +696,103 @@ public class BomServiceImpl implements BomService {
     @Override
     @Transactional
     public BOMRoutingMapper duplicateBom(int bomId) {
-        try{
-            Bom orginalBom = getBom(bomId);
-            Bom bomCopy = new Bom();
+        try {
+            Bom originalBom = getBom(bomId);
 
-            bomCopy.setBomName(orginalBom.getBomName());
-            bomCopy.setParentInventoryItem(orginalBom.getParentInventoryItem());
-            bomCopy.setPositions(bomCopy.getPositions());
-            bomCopy.setDescription(bomCopy.getDescription());
-            bomCopy.setVersionGroup(bomCopy.getVersionGroup());
+            // Capture old operation sequence → old operation ID mapping (for position re-assignment)
+            // and old operation ID → sequence (for QA parameter copy)
+            RoutingDto originalRouting = routingService.getByBom(originalBom.getId());
+            Map<Integer, Long> seqToOldOpId = new HashMap<>();
+            if (originalRouting != null && originalRouting.getOperations() != null) {
+                for (var opDto : originalRouting.getOperations()) {
+                    if (opDto.getSequenceNumber() != null && opDto.getId() != null) {
+                        seqToOldOpId.put(opDto.getSequenceNumber(), opDto.getId());
+                    }
+                }
+            }
+
+            // Build old position → sequence mapping before creating new BOM
+            Map<Integer, Integer> oldPositionIdToSeq = new HashMap<>();
+            if (originalBom.getPositions() != null) {
+                for (BomPosition pos : originalBom.getPositions()) {
+                    if (pos.getRoutingOperation() != null) {
+                        oldPositionIdToSeq.put(pos.getId(), pos.getRoutingOperation().getSequenceNumber());
+                    }
+                }
+            }
+
+            Bom bomCopy = new Bom();
+            bomCopy.setBomName(originalBom.getBomName());
+            bomCopy.setParentInventoryItem(originalBom.getParentInventoryItem());
+            bomCopy.setDescription(originalBom.getDescription());
+            bomCopy.setVersionGroup(originalBom.getVersionGroup());
 
             Bom newBom = addBom(bomCopy);
+
+            // Save positions without operation first (IDs not known yet)
             List<BomPosition> newBomPositions = new ArrayList<>();
-            orginalBom.getPositions().forEach(pos -> {
+            Map<BomPosition, Integer> newPosToSeq = new HashMap<>();
+            for (BomPosition pos : originalBom.getPositions()) {
                 BomPosition posCopy = new BomPosition();
                 posCopy.setChildInventoryItem(pos.getChildInventoryItem());
                 posCopy.setPosition(pos.getPosition());
                 posCopy.setQuantity(pos.getQuantity());
                 posCopy.setScrapPercentage(pos.getScrapPercentage());
                 posCopy.setParentBom(newBom);
-                newBomPositions.add(posCopy);
-                // routingOperation intentionally left null: the new routing will have
-                // different operation IDs; the user must re-assign after duplication.
                 bomPositionRepository.save(posCopy);
-            });
-
+                newBomPositions.add(posCopy);
+                Integer seq = oldPositionIdToSeq.get(pos.getId());
+                if (seq != null) newPosToSeq.put(posCopy, seq);
+            }
             newBom.setPositions(newBomPositions);
 
-            RoutingDto routingDto = routingService.createOrUpdateRouting(newBom.getId(),routingService.getByBom(orginalBom.getId()),"SYSTEM");
+            // Create new routing — this assigns new operation IDs
+            RoutingDto routingDto = routingService.createOrUpdateRouting(newBom.getId(), originalRouting, "SYSTEM");
+
+            // Build sequence → new operation ID map from the newly created routing
+            Map<Integer, Long> seqToNewOpId = new HashMap<>();
+            if (routingDto != null && routingDto.getOperations() != null) {
+                for (var opDto : routingDto.getOperations()) {
+                    if (opDto.getSequenceNumber() != null && opDto.getId() != null) {
+                        seqToNewOpId.put(opDto.getSequenceNumber(), opDto.getId());
+                    }
+                }
+            }
+
+            // Re-assign routing operations on positions using sequence as the bridge
+            for (Map.Entry<BomPosition, Integer> entry : newPosToSeq.entrySet()) {
+                Long newOpId = seqToNewOpId.get(entry.getValue());
+                if (newOpId != null) {
+                    routingOperationRepository.findById(newOpId).ifPresent(op -> {
+                        entry.getKey().setRoutingOperation(op);
+                        bomPositionRepository.save(entry.getKey());
+                    });
+                }
+            }
+
+            // Copy QA parameters from old operations to new operations (same sequence bridge)
+            for (Map.Entry<Integer, Long> entry : seqToOldOpId.entrySet()) {
+                Long newOpId = seqToNewOpId.get(entry.getKey());
+                if (newOpId == null) continue;
+                List<BomQaParameter> oldParams = bomQaParameterRepository
+                        .findByRoutingOperationIdAndDeletedDateIsNull(entry.getValue());
+                if (oldParams.isEmpty()) continue;
+                routingOperationRepository.findById(newOpId).ifPresent(newOp -> {
+                    for (BomQaParameter old : oldParams) {
+                        BomQaParameter copy = BomQaParameter.builder()
+                                .routingOperation(newOp)
+                                .name(old.getName())
+                                .parameterType(old.getParameterType())
+                                .minValue(old.getMinValue())
+                                .maxValue(old.getMaxValue())
+                                .unit(old.getUnit())
+                                .critical(old.getCritical())
+                                .build();
+                        bomQaParameterRepository.save(copy);
+                    }
+                });
+            }
+
             Map<Integer, Integer> activeBomMap = buildActiveBomMap(newBom.getPositions());
             BomDTO bomDTO = BomMapper.toDto(newBom, activeBomMap);
 
@@ -720,9 +801,9 @@ public class BomServiceImpl implements BomService {
             bomRoutingMapper.setRouting(routingDto);
             return bomRoutingMapper;
 
-        }catch (ResourceNotFoundException e){
-            logger.error("Bom not found with id : {} to duplicate ",bomId);
-            throw new RuntimeException("Bom not found with id : "+bomId+"  to duplicate",e);
+        } catch (ResourceNotFoundException e) {
+            logger.error("Bom not found with id : {} to duplicate ", bomId);
+            throw new RuntimeException("Bom not found with id : " + bomId + "  to duplicate", e);
         }
     }
 
@@ -1097,18 +1178,13 @@ public class BomServiceImpl implements BomService {
         List<OperationCostLineDTO> operationLines = new ArrayList<>();
         BigDecimal totalOperationCost = BigDecimal.ZERO;
 
-        try {
-            Routing routing = routingService.getRoutingEntityByBom(bomId);
-            if (routing != null && routing.getOperations() != null) {
-                for (RoutingOperation op : routing.getOperations()) {
-                    OperationCostLineDTO opLine = calculateOperationCost(op);
-                    operationLines.add(opLine);
-                    totalOperationCost = totalOperationCost.add(opLine.getTotalCost());
-                }
+        Routing routing = routingRepository.findByBomId(bomId).orElse(null);
+        if (routing != null && routing.getOperations() != null) {
+            for (RoutingOperation op : routing.getOperations()) {
+                OperationCostLineDTO opLine = calculateOperationCost(op);
+                operationLines.add(opLine);
+                totalOperationCost = totalOperationCost.add(opLine.getTotalCost());
             }
-        } catch (ResourceNotFoundException e) {
-            // No routing exists for this BOM — operation costs stay empty
-            logger.debug("No routing found for BOM {}, skipping operation costs", bomId);
         }
 
         return BomCostBreakdownDTO.builder()

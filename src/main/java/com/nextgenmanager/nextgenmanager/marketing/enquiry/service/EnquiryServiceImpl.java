@@ -85,6 +85,8 @@ public class EnquiryServiceImpl implements EnquiryService {
                 if (record[9] != null) {
                     fetchedOpportunityName = record[9].toString();
                 }
+                String fetchedPhone = record[10] != null ? record[10].toString() : null;
+                String fetchedEmail = record[11] != null ? record[11].toString() : null;
 
                 return new EnquiryTableDTO(
                         enquiryId,
@@ -96,7 +98,9 @@ public class EnquiryServiceImpl implements EnquiryService {
                         fetchedClosedDate,
                         fetchedStatus,
                         fetchedExpectedRevenue,
-                        fetchedOpportunityName
+                        fetchedOpportunityName,
+                        fetchedPhone,
+                        fetchedEmail
                 );
             } catch (Exception e) {
                 logger.error("Error mapping enquiry data: {}", e.getMessage());
@@ -135,6 +139,9 @@ public class EnquiryServiceImpl implements EnquiryService {
     private void updateBasicFields(Enquiry existingEnquiry, Enquiry updatedEnquiry) {
         existingEnquiry.setEnqDate(updatedEnquiry.getEnqDate());
         existingEnquiry.setContact(updatedEnquiry.getContact());
+        existingEnquiry.setContactPersonName(updatedEnquiry.getContactPersonName());
+        existingEnquiry.setContactPersonPhone(updatedEnquiry.getContactPersonPhone());
+        existingEnquiry.setContactPersonEmail(updatedEnquiry.getContactPersonEmail());
         existingEnquiry.setLastContactedDate(updatedEnquiry.getLastContactedDate());
         existingEnquiry.setDaysForNextFollowup(updatedEnquiry.getDaysForNextFollowup());
         existingEnquiry.setEnquirySource(updatedEnquiry.getEnquirySource());
@@ -284,6 +291,37 @@ public class EnquiryServiceImpl implements EnquiryService {
         } catch (Exception e) {
             logger.error("Error while fetching Enquiry with enqNo {}: {}", enqNo, e.getMessage());
             throw new RuntimeException("Failed to fetch Enquiry", e);
+        }
+    }
+
+    @Override
+    public com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquirySummaryDTO getEnquirySummary() {
+        logger.info("Calculating Enquiry Summary");
+        try {
+            long totalLeads = enquiryRepository.countByDeletedDateIsNull();
+            long newLeads = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.NEW);
+            long contacted = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.CONTACTED);
+            long followUp = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.FOLLOW_UP);
+            long won = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.CONVERTED);
+            long lost = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.LOST);
+            long overdue = enquiryRepository.countOverdueFollowups();
+            java.math.BigDecimal totalRevenue = enquiryRepository.sumExpectedRevenue();
+            java.math.BigDecimal wonRevenue = enquiryRepository.sumWonRevenue();
+
+            return com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquirySummaryDTO.builder()
+                    .totalLeads(totalLeads)
+                    .newLeads(newLeads)
+                    .contacted(contacted)
+                    .followUp(followUp)
+                    .won(won)
+                    .lost(lost)
+                    .overdueFollowups(overdue)
+                    .totalExpectedRevenue(totalRevenue != null ? totalRevenue : java.math.BigDecimal.ZERO)
+                    .wonRevenue(wonRevenue != null ? wonRevenue : java.math.BigDecimal.ZERO)
+                    .build();
+        } catch (Exception e) {
+            logger.error("Error while calculating Enquiry summary: {}", e.getMessage());
+            throw new RuntimeException("Failed to calculate Enquiry summary", e);
         }
     }
 }

@@ -29,6 +29,6 @@ public interface EnquiryService {
 
     public Enquiry getEnquiryByEnquiryNo(String enquiryNo);
 
-//    public Enquiry getEnquiryWithProductPrice(int id);
+    public com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquirySummaryDTO getEnquirySummary();
 
 }

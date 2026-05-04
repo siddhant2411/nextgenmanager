@@ -37,6 +37,7 @@ public class InventoryItemDTO {
     private boolean purchased;
     private double leadTime;
     private Double standardCost;
+    private Long drawingFileId;
 
 
 }

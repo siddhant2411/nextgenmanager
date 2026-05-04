@@ -14,4 +14,5 @@ public interface MachineProductionLogRepository extends JpaRepository<MachinePro
     Page<MachineProductionLog> findByMachineId(Long machineId, Pageable pageable);
     Optional<MachineProductionLog> findByMachineIdAndProductionDateAndShiftId(Long machineId, LocalDate productionDate, Long shiftId);
     Optional<MachineProductionLog> findByMachineIdAndProductionDateAndShiftIdIsNull(Long machineId, LocalDate productionDate);
+    java.util.List<MachineProductionLog> findByMachineIdAndProductionDate(Long machineId, LocalDate productionDate);
 }

@@ -57,4 +57,14 @@ public interface ContactRepository extends JpaRepository<Contact, Integer> {
     @Query("SELECT c.contactCode FROM Contact c WHERE c.contactCode LIKE :prefix% " +
            "AND c.deletedDate IS NULL ORDER BY c.contactCode DESC")
     List<String> findLastCodeByPrefix(@Param("prefix") String prefix, Pageable pageable);
+
+    long countByDeletedDateIsNull();
+
+    long countByMsmeRegisteredTrueAndDeletedDateIsNull();
+
+    @Query("SELECT COUNT(c) FROM Contact c WHERE c.gstNumber IS NOT NULL AND c.gstNumber <> '' AND c.deletedDate IS NULL")
+    long countGstRegistered();
+
+    @Query("SELECT COUNT(c) FROM Contact c WHERE c.creationDate >= :date AND c.deletedDate IS NULL")
+    long countRecentlyAdded(@Param("date") java.util.Date date);
 }

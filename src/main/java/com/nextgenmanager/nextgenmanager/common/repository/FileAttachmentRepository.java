@@ -13,4 +13,8 @@ public interface FileAttachmentRepository extends JpaRepository<FileAttachment,L
     @Query("SELECT f FROM FileAttachment f WHERE f.referenceType = :referenceType AND f.referenceId = :referenceId AND f.deletedDate IS NULL")
     List<FileAttachment> findByReferenceTypeAndReferenceId(@Param("referenceType") String referenceType,
                                                            @Param("referenceId") Long referenceId);
+
+    @Query("SELECT f FROM FileAttachment f WHERE f.referenceType = :referenceType AND f.referenceId IN :referenceIds AND f.deletedDate IS NULL")
+    List<FileAttachment> findByReferenceTypeAndReferenceIdIn(@Param("referenceType") String referenceType,
+                                                             @Param("referenceIds") List<Long> referenceIds);
 }

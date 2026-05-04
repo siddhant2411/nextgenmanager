@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +17,8 @@ public class OperationCostLineItemDTO {
     private Integer sequence;
     private String operationName;
     private String workCenterName;
+    private CostType costType;
+    private BigDecimal subcontractRatePerUnit;
 
     private BigDecimal plannedQuantity;
     private BigDecimal completedQuantity;

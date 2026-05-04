@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.production.model;
 
 
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderQaEntry;
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
@@ -134,6 +135,9 @@ public class WorkOrderOperation {
 
     @OneToMany(mappedBy = "workOrderOperation", fetch = FetchType.LAZY)
     private List<WorkOrderLabourEntry> labourEntries = new ArrayList<>();
+
+    @OneToMany(mappedBy = "workOrderOperation", fetch = FetchType.LAZY)
+    private List<WorkOrderQaEntry> qaEntries = new ArrayList<>();
 
     @CreationTimestamp
     @Column(updatable = false)

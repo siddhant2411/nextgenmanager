@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.service;
 import com.nextgenmanager.nextgenmanager.production.dto.CostOfProductionDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.MaterialCostLineItemDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.OperationCostLineItemDTO;
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLabourEntry;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
@@ -154,6 +155,54 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
 
             RoutingOperation ro = op.getRoutingOperation();
 
+            CostType costType = ro != null && ro.getCostType() != null ? ro.getCostType() : CostType.CALCULATED;
+
+            // ── Subcontract operations: flat rate × qty, no time breakdown ──
+            if (costType == CostType.SUB_CONTRACTED && ro != null) {
+                BigDecimal rate       = ro.getFixedCostPerUnit() != null ? ro.getFixedCostPerUnit() : BigDecimal.ZERO;
+                BigDecimal plannedQty = safe(op.getPlannedQuantity());
+                BigDecimal doneQty    = safe(op.getCompletedQuantity());
+                BigDecimal est        = rate.multiply(plannedQty).setScale(2, RM);
+                BigDecimal act        = rate.multiply(doneQty).setScale(2, RM);
+                WorkCenter wc = op.getWorkCenter() != null ? op.getWorkCenter() : ro.getWorkCenter();
+                lines.add(OperationCostLineItemDTO.builder()
+                        .sequence(op.getSequence())
+                        .operationName(op.getOperationName())
+                        .workCenterName(wc != null ? wc.getCenterName() : "")
+                        .costType(CostType.SUB_CONTRACTED)
+                        .subcontractRatePerUnit(scale2(rate))
+                        .plannedQuantity(plannedQty)
+                        .completedQuantity(doneQty)
+                        .estimatedTotalCost(est)
+                        .actualTotalCost(act)
+                        .variance(scale2(act.subtract(est)))
+                        .build());
+                continue;
+            }
+
+            // ── Fixed-rate operations: flat rate × qty, no time breakdown ──
+            if (costType == CostType.FIXED_RATE && ro != null && ro.getFixedCostPerUnit() != null) {
+                BigDecimal rate       = ro.getFixedCostPerUnit();
+                BigDecimal plannedQty = safe(op.getPlannedQuantity());
+                BigDecimal doneQty    = safe(op.getCompletedQuantity());
+                BigDecimal est        = rate.multiply(plannedQty).setScale(2, RM);
+                BigDecimal act        = rate.multiply(doneQty).setScale(2, RM);
+                WorkCenter wc = op.getWorkCenter() != null ? op.getWorkCenter() : ro.getWorkCenter();
+                lines.add(OperationCostLineItemDTO.builder()
+                        .sequence(op.getSequence())
+                        .operationName(op.getOperationName())
+                        .workCenterName(wc != null ? wc.getCenterName() : "")
+                        .costType(CostType.FIXED_RATE)
+                        .subcontractRatePerUnit(scale2(rate))
+                        .plannedQuantity(plannedQty)
+                        .completedQuantity(doneQty)
+                        .estimatedTotalCost(est)
+                        .actualTotalCost(act)
+                        .variance(scale2(act.subtract(est)))
+                        .build());
+                continue;
+            }
+
             BigDecimal setupTime   = ro != null && ro.getSetupTime()  != null ? ro.getSetupTime()  : BigDecimal.ZERO;
             BigDecimal runTime     = ro != null && ro.getRunTime()    != null ? ro.getRunTime()    : BigDecimal.ZERO;
             BigDecimal operators   = ro != null && ro.getNumberOfOperators() != null
@@ -200,6 +249,7 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
                     .sequence(op.getSequence())
                     .operationName(op.getOperationName())
                     .workCenterName(wcName)
+                    .costType(costType)
                     .plannedQuantity(plannedQty)
                     .completedQuantity(completedQty)
                     .setupTimeMinutes(scale2(setupTime))

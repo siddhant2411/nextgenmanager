@@ -80,5 +80,11 @@ public class ContactController {
             @RequestParam(required = false) ContactType type) {
         return ResponseEntity.ok(contactService.searchForDropdown(query, type));
     }
+
+    @GetMapping("/stats")
+    @Operation(summary = "Get dashboard statistics for contacts")
+    public ResponseEntity<com.nextgenmanager.nextgenmanager.contact.dto.ContactDashboardDTO> getStats() {
+        return ResponseEntity.ok(contactService.getDashboardStats());
+    }
 }
 

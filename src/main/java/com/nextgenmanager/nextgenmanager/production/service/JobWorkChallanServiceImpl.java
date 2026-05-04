@@ -6,6 +6,10 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.production.dto.*;
 import com.nextgenmanager.nextgenmanager.production.enums.ChallanStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.MaterialIssueStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.DispositionStatus;
+import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import com.nextgenmanager.nextgenmanager.production.model.*;
 import com.nextgenmanager.nextgenmanager.production.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +37,8 @@ public class JobWorkChallanServiceImpl implements JobWorkChallanService {
     @Autowired private InventoryItemRepository itemRepo;
     @Autowired private WorkOrderRepository workOrderRepo;
     @Autowired private WorkOrderOperationRepository operationRepo;
+    @Autowired private WorkOrderMaterialRepository workOrderMaterialRepo;
+    @Autowired private RejectionEntryRepository rejectionEntryRepo;
 
     // ─── Create ──────────────────────────────────────────────────────────────
 
@@ -76,9 +82,11 @@ public class JobWorkChallanServiceImpl implements JobWorkChallanService {
         Date today = new Date();
         challan.setDispatchDate(today);
 
-        // GST Rule 45 — material must return within 180 days
-        LocalDate returnBy = LocalDate.now().plusDays(180);
-        challan.setExpectedReturnDate(Date.from(returnBy.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+        // Use user-set due date if provided; otherwise default to GST Rule 45 (180 days)
+        if (challan.getExpectedReturnDate() == null) {
+            LocalDate returnBy = LocalDate.now().plusDays(180);
+            challan.setExpectedReturnDate(Date.from(returnBy.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+        }
         challan.setStatus(ChallanStatus.DISPATCHED);
 
         return toDTO(challanRepo.save(challan));
@@ -143,7 +151,15 @@ public class JobWorkChallanServiceImpl implements JobWorkChallanService {
             challan.setRemarks(receipt.getRemarks());
         }
 
-        return toDTO(challanRepo.save(challan));
+        JobWorkChallanDTO result = toDTO(challanRepo.save(challan));
+
+        // Sync operation status, quantities, and create rejection entries (one atomic save)
+        syncLinkedOperation(challan, receipt.getLines());
+
+        // Increment consumedQuantity on WorkOrderMaterial for each received line
+        consumeMaterials(challan, receipt.getLines());
+
+        return result;
     }
 
     // ─── Cancel ───────────────────────────────────────────────────────────────
@@ -214,6 +230,120 @@ public class JobWorkChallanServiceImpl implements JobWorkChallanService {
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
+    /**
+     * Single method that handles both operation status sync and rejection tracking.
+     * Completion is based on net received qty (received – rejected) across all
+     * non-cancelled challans for the operation — scrap is not considered.
+     */
+    private void syncLinkedOperation(JobWorkChallan challan, List<JobWorkChallanLineReceiptDTO> receiptLines) {
+        WorkOrderOperation op = challan.getWorkOrderOperation();
+        if (op == null || op.getDeletedDate() != null) return;
+
+        // ── 1. Create RejectionEntry for any rejected units in THIS receipt ──────
+        BigDecimal thisReceiptRejected = receiptLines == null ? BigDecimal.ZERO : receiptLines.stream()
+                .map(l -> l.getQuantityRejected() != null ? l.getQuantityRejected() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (thisReceiptRejected.compareTo(BigDecimal.ZERO) > 0) {
+            RejectionEntry entry = new RejectionEntry();
+            entry.setWorkOrder(challan.getWorkOrder());
+            entry.setOperation(op);
+            entry.setRejectedQuantity(thisReceiptRejected);
+            entry.setDispositionStatus(DispositionStatus.PENDING);
+            try {
+                entry.setCreatedBy(SecurityContextHolder.getContext().getAuthentication().getName());
+            } catch (Exception ignored) {
+                entry.setCreatedBy("system");
+            }
+            rejectionEntryRepo.save(entry);
+        }
+
+        // ── 2. Recalculate operation quantities from ALL challans ─────────────
+        List<JobWorkChallan> allChallans = challanRepo
+                .findByWorkOrderOperation_IdAndDeletedDateIsNull(op.getId());
+
+        BigDecimal totalReceived = BigDecimal.ZERO;  // good units returned by subcontractor
+        BigDecimal totalRejected = BigDecimal.ZERO;
+        boolean allAccountedFor  = true;             // every dispatched item has been returned
+        for (JobWorkChallan c : allChallans) {
+            if (c.getStatus() == ChallanStatus.CANCELLED) continue;
+            for (JobWorkChallanLine l : c.getLines()) {
+                BigDecimal dispatched = l.getQuantityDispatched() != null ? l.getQuantityDispatched() : BigDecimal.ZERO;
+                BigDecimal recv = l.getQuantityReceived() != null ? l.getQuantityReceived() : BigDecimal.ZERO;
+                BigDecimal rej  = l.getQuantityRejected() != null ? l.getQuantityRejected() : BigDecimal.ZERO;
+                totalReceived = totalReceived.add(recv);
+                totalRejected = totalRejected.add(rej);
+                if (recv.add(rej).compareTo(dispatched) < 0) {
+                    allAccountedFor = false;
+                }
+            }
+        }
+
+        // completedQuantity = received (good units); rejected is tracked separately via RejectionEntry
+        op.setCompletedQuantity(totalReceived);
+        op.setRejectedQuantity(totalRejected);
+
+        // ── 3. Complete when every dispatched item has been returned (received + rejected = dispatched) ──
+        BigDecimal planned = op.getPlannedQuantity() != null ? op.getPlannedQuantity() : BigDecimal.ZERO;
+
+        if (allAccountedFor) {
+            // All items returned from subcontractor → operation is done.
+            // completedQuantity stays as totalReceived (the actual good units, not planned).
+            op.setStatus(OperationStatus.COMPLETED);
+            if (op.getActualEndDate() == null) {
+                op.setActualEndDate(new Date());
+            }
+        } else if (op.getStatus() != OperationStatus.COMPLETED
+                && op.getStatus() != OperationStatus.CANCELLED) {
+            op.setStatus(OperationStatus.IN_PROGRESS);
+            if (op.getActualStartDate() == null) {
+                op.setActualStartDate(new Date());
+            }
+        }
+
+        operationRepo.save(op);
+    }
+
+    private void consumeMaterials(JobWorkChallan challan, List<JobWorkChallanLineReceiptDTO> lines) {
+        if (challan.getWorkOrder() == null || lines == null) return;
+        WorkOrder wo = challan.getWorkOrder();
+        for (JobWorkChallanLineReceiptDTO lineReceipt : lines) {
+            BigDecimal received = lineReceipt.getQuantityReceived() != null
+                    ? lineReceipt.getQuantityReceived() : BigDecimal.ZERO;
+            BigDecimal rejected = lineReceipt.getQuantityRejected() != null
+                    ? lineReceipt.getQuantityRejected() : BigDecimal.ZERO;
+            // Both received and rejected material was dispatched to the subcontractor → consumed
+            BigDecimal totalConsumed = received.add(rejected);
+            if (totalConsumed.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            challan.getLines().stream()
+                    .filter(l -> l.getId().equals(lineReceipt.getLineId()) && l.getItem() != null)
+                    .findFirst()
+                    .ifPresent(line -> {
+                        List<WorkOrderMaterial> mats = workOrderMaterialRepo
+                                .findByWorkOrderAndItemId(wo, (long) line.getItem().getInventoryItemId());
+                        for (WorkOrderMaterial mat : mats) {
+                            // Backflush: auto-issue the material (was never manually issued)
+                            if (wo.isAllowBackflush()) {
+                                BigDecimal curIssued = mat.getIssuedQuantity() != null
+                                        ? mat.getIssuedQuantity() : BigDecimal.ZERO;
+                                BigDecimal newIssued = curIssued.add(totalConsumed);
+                                mat.setIssuedQuantity(newIssued);
+                                BigDecimal planned = mat.getPlannedRequiredQuantity() != null
+                                        ? mat.getPlannedRequiredQuantity() : BigDecimal.ZERO;
+                                mat.setIssueStatus(newIssued.compareTo(planned) >= 0
+                                        ? MaterialIssueStatus.ISSUED
+                                        : MaterialIssueStatus.PARTIAL_ISSUED);
+                            }
+                            BigDecimal cur = mat.getConsumedQuantity() != null
+                                    ? mat.getConsumedQuantity() : BigDecimal.ZERO;
+                            mat.setConsumedQuantity(cur.add(totalConsumed));
+                            workOrderMaterialRepo.save(mat);
+                        }
+                    });
+        }
+    }
+
     private JobWorkChallan findActive(Long id) {
         JobWorkChallan c = challanRepo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -251,6 +381,7 @@ public class JobWorkChallanServiceImpl implements JobWorkChallanService {
         challan.setAgreedRatePerUnit(req.getAgreedRatePerUnit());
         challan.setDispatchDetails(req.getDispatchDetails());
         challan.setRemarks(req.getRemarks());
+        challan.setExpectedReturnDate(req.getExpectedReturnDate());
 
         List<JobWorkChallanLine> lines = new ArrayList<>();
         for (JobWorkChallanLineRequestDTO lineReq : req.getLines()) {

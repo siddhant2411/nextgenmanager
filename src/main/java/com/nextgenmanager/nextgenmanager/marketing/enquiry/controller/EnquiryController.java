@@ -138,4 +138,15 @@ public class EnquiryController {
         }
     }
 
+    @GetMapping("/summary")
+    public ResponseEntity<?> getEnquirySummary() {
+        try {
+            return ResponseEntity.ok(enquiryService.getEnquirySummary());
+        } catch (Exception e) {
+            logger.error("Error while fetching enquiry summary", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", "Failed to fetch enquiry summary: " + e.getMessage()));
+        }
+    }
+
 }

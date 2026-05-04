@@ -34,6 +34,9 @@ public class WorkOrderOperationDTO {
 
     private BigDecimal rejectedQuantity;
 
+    /** Sum of rejectedQuantity across all PENDING RejectionEntries for this operation. */
+    private BigDecimal pendingRejectionQuantity;
+
     private String rejectionReasonCode;
 
     private String scrapReasonCode;
@@ -78,4 +81,6 @@ public class WorkOrderOperationDTO {
     private Date dependencyResolvedDate;
 
     private List<WorkOrderLabourEntryDTO> labourEntries;
+
+    private List<WorkOrderQaEntryDTO> qaEntries;
 }

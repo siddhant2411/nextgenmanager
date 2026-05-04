@@ -4,12 +4,15 @@ import com.nextgenmanager.nextgenmanager.production.dto.JobWorkChallanDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.JobWorkChallanReceiptDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.JobWorkChallanRequestDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.ChallanStatus;
+import com.nextgenmanager.nextgenmanager.production.service.JobWorkChallanExportService;
 import com.nextgenmanager.nextgenmanager.production.service.JobWorkChallanService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -21,8 +24,8 @@ import java.util.List;
 @Tag(name = "Job Work Challan", description = "GST Rule 45 / Section 143 — dispatch & receipt of materials sent to job workers")
 public class JobWorkChallanController {
 
-    @Autowired
-    private JobWorkChallanService service;
+    @Autowired private JobWorkChallanService service;
+    @Autowired private JobWorkChallanExportService exportService;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
@@ -103,5 +106,22 @@ public class JobWorkChallanController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/print")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @Operation(summary = "Download Job Work Challan as PDF")
+    public ResponseEntity<byte[]> printChallan(@PathVariable Long id) {
+        try {
+            byte[] pdf = exportService.generateChallanPdf(id);
+            JobWorkChallanDTO challan = service.getById(id);
+            String filename = "JobWorkChallan_" + challan.getChallanNumber().replace("/", "-") + ".pdf";
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .body(pdf);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 }

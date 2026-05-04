@@ -24,5 +24,7 @@ public class EnquiryTableDTO {
     private EnquiryStatus status;
     private BigDecimal expectedRevenue;
     private String opportunityName;
+    private String phone;
+    private String email;
 
 }

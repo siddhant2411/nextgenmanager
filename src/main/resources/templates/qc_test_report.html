@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>QC Test Report</title>
+    <style>
+        @page {
+            margin: 1.2cm 1cm;
+            @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 7.5pt; color: #888; }
+            @bottom-left  { content: "Quality Control Report — Confidential"; font-size: 7.5pt; color: #888; }
+        }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #1a1a1a; margin: 0; padding: 0; }
+
+        /* ── Header ──────────────────────────────────────────────────── */
+        .header-block { width: 100%; border: 2px solid #0f2744; margin-bottom: 14px; border-collapse: collapse; }
+        .header-block td { border: 1px solid #0f2744; padding: 5px 8px; vertical-align: top; }
+        .company-name { font-size: 15pt; font-weight: bold; color: #0f2744; }
+        .doc-title { background-color: #0f2744; color: white; text-align: center; font-weight: bold;
+                     padding: 5px 8px; font-size: 11pt; letter-spacing: 1px; }
+        .lbl { font-weight: bold; font-size: 7.5pt; color: #555; display: block; margin-bottom: 1px; }
+        .val { font-size: 9.5pt; color: #111; }
+
+        /* ── Summary Cards ───────────────────────────────────────────── */
+        .summary-row { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        .summary-row td { width: 20%; padding: 0 4px; }
+        .card { border: 1.5px solid #d1d5db; border-radius: 5px; padding: 8px 10px; text-align: center; }
+        .card .c-label { font-size: 7.5pt; color: #666; font-weight: 600; display: block; margin-bottom: 3px; }
+        .card .c-value { font-size: 18pt; font-weight: bold; }
+        .card-blue   { border-color: #3b82f6; }  .card-blue   .c-value { color: #3b82f6; }
+        .card-indigo { border-color: #6366f1; }  .card-indigo .c-value { color: #6366f1; }
+        .card-green  { border-color: #22c55e; }  .card-green  .c-value { color: #22c55e; }
+        .card-red    { border-color: #ef4444; }  .card-red    .c-value { color: #ef4444; }
+        .card-gray   { border-color: #9ca3af; }  .card-gray   .c-value { color: #9ca3af; }
+
+        /* ── Overall Badge ───────────────────────────────────────────── */
+        .overall-row { text-align: center; margin-bottom: 14px; }
+        .badge { display: inline-block; padding: 5px 20px; border-radius: 4px; font-weight: bold;
+                 font-size: 11pt; color: #fff; letter-spacing: 0.5px; }
+        .badge-pass   { background: #22c55e; }
+        .badge-fail   { background: #ef4444; }
+        .badge-pending { background: #9ca3af; }
+
+        /* ── Section heading ─────────────────────────────────────────── */
+        .section-title { background-color: #f1f5f9; padding: 4px 8px; font-weight: bold;
+                         font-size: 9pt; border-left: 5px solid #1565c0;
+                         margin: 14px 0 8px 0; letter-spacing: 0.5px; }
+
+        /* ── Data table ──────────────────────────────────────────────── */
+        table.dt { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+        table.dt th { background: #0f2744; color: #e6edf5; border: 1px solid #1e3a5f;
+                      padding: 5px 6px; text-align: left; font-size: 8pt; }
+        table.dt td { border: 1px solid #d1d5db; padding: 5px 6px; vertical-align: middle; }
+        table.dt tr:nth-child(even) td { background: #f8fafc; }
+
+        .result-pass   { color: #16a34a; font-weight: 700; }
+        .result-fail   { color: #dc2626; font-weight: 700; }
+        .result-cond   { color: #ca8a04; font-weight: 700; }
+        .result-pending { color: #6b7280; font-weight: 600; }
+
+        .mandatory-star { color: #dc2626; font-weight: bold; }
+        .range-cell { white-space: nowrap; }
+
+        /* ── Acceptance / Signature footer ───────────────────────────── */
+        .approval { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .approval td { border: 1px solid #555; padding: 8px 10px; width: 33.33%; height: 55px; vertical-align: top; font-size: 9pt; }
+        .approval .albl { font-weight: bold; font-size: 8pt; color: #555; }
+
+        .footnote { font-size: 7.5pt; color: #888; margin-top: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<!-- ══════════════ HEADER ══════════════ -->
+<table class="header-block">
+    <tr>
+        <td style="width:60%">
+            <span class="company-name">NextGen Manager</span><br/>
+            <span style="font-size:8pt;color:#555">Quality Control &amp; Testing Report</span>
+        </td>
+        <td style="width:40%; text-align:right">
+            <span class="doc-title">QC TEST REPORT</span>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <span class="lbl">Work Order</span>
+            <span class="val" th:text="${report.workOrderNumber}">WO-001</span>
+        </td>
+        <td>
+            <span class="lbl">Product</span>
+            <span class="val" th:text="${report.productName + ' [' + report.productCode + ']'}">Product Name</span>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <span class="lbl">Report Date</span>
+            <span class="val" th:text="${#dates.format(report.reportDate, 'dd-MMM-yyyy HH:mm')}">01 Jan 2025</span>
+        </td>
+        <td>
+            <span class="lbl">Status</span>
+            <span class="val" th:text="${report.overallPass ? 'PASSED' : 'FAILED / PENDING'}">PASSED</span>
+        </td>
+    </tr>
+</table>
+
+<!-- ══════════════ SUMMARY CARDS ══════════════ -->
+<table class="summary-row">
+    <tr>
+        <td><div class="card card-blue">
+            <span class="c-label">Total Tests</span>
+            <span class="c-value" th:text="${report.totalTests}">0</span>
+        </div></td>
+        <td><div class="card card-indigo">
+            <span class="c-label">Completed</span>
+            <span class="c-value" th:text="${report.completedTests}">0</span>
+        </div></td>
+        <td><div class="card card-green">
+            <span class="c-label">Passed</span>
+            <span class="c-value" th:text="${report.passedTests}">0</span>
+        </div></td>
+        <td><div class="card card-red">
+            <span class="c-label">Failed</span>
+            <span class="c-value" th:text="${report.failedTests}">0</span>
+        </div></td>
+        <td><div class="card card-gray">
+            <span class="c-label">Pending</span>
+            <span class="c-value" th:text="${report.pendingTests}">0</span>
+        </div></td>
+    </tr>
+</table>
+
+<!-- ══════════════ OVERALL VERDICT ══════════════ -->
+<div class="overall-row">
+    <span th:if="${report.overallPass}" class="badge badge-pass">OVERALL: PASS</span>
+    <span th:unless="${report.overallPass and report.completedTests == report.totalTests}" class="badge badge-pending"
+          th:text="${report.pendingTests > 0 ? 'OVERALL: PENDING' : 'OVERALL: FAIL'}" th:if="${!report.overallPass}">
+        OVERALL: PENDING
+    </span>
+</div>
+
+<!-- ══════════════ TEST RESULTS TABLE ══════════════ -->
+<div class="section-title">TEST RESULTS</div>
+
+<table class="dt">
+    <thead>
+        <tr>
+            <th style="width:4%">#</th>
+            <th style="width:22%">Test Name</th>
+            <th style="width:12%">Type</th>
+            <th style="width:8%">Sample</th>
+            <th style="width:14%">Spec Range</th>
+            <th style="width:10%">Value</th>
+            <th style="width:7%">Tested</th>
+            <th style="width:7%">Passed</th>
+            <th style="width:8%">Result</th>
+            <th style="width:8%">Tested By</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr th:each="t, iter : ${report.testResults}">
+            <td th:text="${t.sequence != null ? t.sequence : iter.index + 1}">1</td>
+            <td>
+                <span th:text="${t.testName}">Test Name</span>
+                <span th:if="${t.isMandatory}" class="mandatory-star"> *</span>
+                <div th:if="${t.acceptanceCriteria != null and !#strings.isEmpty(t.acceptanceCriteria)}"
+                     style="font-size:7.5pt;color:#666;margin-top:2px" th:text="${t.acceptanceCriteria}"></div>
+            </td>
+            <td th:text="${t.inspectionType != null ? t.inspectionType.name() : '-'}">DIMENSIONAL</td>
+            <td th:text="${t.sampleSize != null ? t.sampleSize : '-'}">5</td>
+            <td class="range-cell">
+                <span th:if="${t.minValue != null and t.maxValue != null}"
+                      th:text="${t.minValue + ' – ' + t.maxValue + (t.unitOfMeasure != null ? ' ' + t.unitOfMeasure : '')}">
+                    0 – 100 mm
+                </span>
+                <span th:unless="${t.minValue != null and t.maxValue != null}">—</span>
+            </td>
+            <td>
+                <span th:if="${t.resultValue != null}"
+                      th:text="${t.resultValue + (t.unitOfMeasure != null ? ' ' + t.unitOfMeasure : '')}">50 mm</span>
+                <span th:unless="${t.resultValue != null}">—</span>
+            </td>
+            <td th:text="${t.testedQuantity != null ? t.testedQuantity : '-'}">5</td>
+            <td th:text="${t.passedQuantity != null ? t.passedQuantity : '-'}">5</td>
+            <td>
+                <span th:if="${t.result != null and t.result.name() == 'PASS'}"       class="result-pass">PASS</span>
+                <span th:if="${t.result != null and t.result.name() == 'FAIL'}"       class="result-fail">FAIL</span>
+                <span th:if="${t.result != null and t.result.name() == 'CONDITIONAL_PASS'}" class="result-cond">COND.</span>
+                <span th:if="${t.result == null or t.result.name() == 'PENDING'}"     class="result-pending">PENDING</span>
+            </td>
+            <td th:text="${t.testedBy != null ? t.testedBy : '-'}">Inspector</td>
+        </tr>
+        <tr th:if="${#lists.isEmpty(report.testResults)}">
+            <td colspan="10" style="text-align:center;color:#888;font-style:italic">No test results recorded.</td>
+        </tr>
+    </tbody>
+</table>
+
+<p style="font-size:7.5pt;color:#555;margin-top:6px">* Mandatory test — must pass for overall PASS verdict.</p>
+
+<!-- ══════════════ REMARKS / NOTES ══════════════ -->
+<div th:if="${!#lists.isEmpty(resultsWithRemarks)}">
+    <div class="section-title">REMARKS</div>
+    <table class="dt">
+        <thead>
+            <tr>
+                <th style="width:4%">#</th>
+                <th style="width:30%">Test Name</th>
+                <th>Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="t, iter : ${resultsWithRemarks}">
+                <td th:text="${t.sequence != null ? t.sequence : iter.index + 1}"></td>
+                <td th:text="${t.testName}"></td>
+                <td th:text="${t.remarks}"></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- ══════════════ APPROVAL SIGNATURES ══════════════ -->
+<div class="section-title">AUTHORISATION</div>
+<table class="approval">
+    <tr>
+        <td>
+            <span class="albl">QC Inspector</span><br/><br/>
+            <span style="font-size:8pt;color:#888">Name / Signature / Date</span>
+        </td>
+        <td>
+            <span class="albl">QC Manager</span><br/><br/>
+            <span style="font-size:8pt;color:#888">Name / Signature / Date</span>
+        </td>
+        <td>
+            <span class="albl">Customer / Client</span><br/><br/>
+            <span style="font-size:8pt;color:#888">Name / Signature / Date</span>
+        </td>
+    </tr>
+</table>
+
+<p class="footnote">
+    Generated by NextGen Manager · <span th:text="${#dates.format(report.reportDate, 'dd-MMM-yyyy HH:mm')}"></span>
+    · Work Order <span th:text="${report.workOrderNumber}"></span>
+</p>
+
+</body>
+</html>

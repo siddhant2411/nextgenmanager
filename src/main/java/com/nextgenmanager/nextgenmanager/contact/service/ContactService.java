@@ -24,4 +24,6 @@ public interface ContactService {
     List<ContactSummaryDTO> searchForDropdown(String query, ContactType type);
 
     Contact getEntityById(int id);
+
+    com.nextgenmanager.nextgenmanager.contact.dto.ContactDashboardDTO getDashboardStats();
 }

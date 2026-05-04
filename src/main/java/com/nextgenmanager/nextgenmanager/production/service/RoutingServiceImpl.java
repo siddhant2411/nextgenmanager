@@ -21,6 +21,8 @@ import com.nextgenmanager.nextgenmanager.production.repository.RoutingRepository
 import com.nextgenmanager.nextgenmanager.production.service.audit.EventPublisher;
 import com.nextgenmanager.nextgenmanager.production.service.audit.RoutingAuditService;
 import io.minio.GetObjectResponse;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.xml.bind.ValidationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -56,6 +58,9 @@ public class RoutingServiceImpl implements RoutingService{
 
     @Autowired
     private RoutingAuditService auditService;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Autowired
     private RoutingMapper routingMapper;
@@ -427,6 +432,15 @@ public class RoutingServiceImpl implements RoutingService{
                 .collect(Collectors.toMap(RoutingOperation::getSequenceNumber, op -> op,
                         (a, b) -> a)); // keep first on duplicate sequence (shouldn't happen)
 
+        // Clear all existing dependencies first, then flush so orphan DELETEs hit the DB
+        // before we INSERT new ones — prevents uq_rod_pair duplicate key violation.
+        for (RoutingOperationDto opDto : opDtos) {
+            RoutingOperation op = opDto.getId() != null ? byId.get(opDto.getId()) : null;
+            if (op == null && opDto.getSequenceNumber() != null) op = bySeq.get(opDto.getSequenceNumber());
+            if (op != null) op.getDependencies().clear();
+        }
+        entityManager.flush();
+
         for (RoutingOperationDto opDto : opDtos) {
             // Find the matching saved operation for this DTO
             RoutingOperation op = null;
@@ -438,8 +452,7 @@ public class RoutingServiceImpl implements RoutingService{
             }
             if (op == null) continue;
 
-            // Clear existing dependencies (orphanRemoval will delete old rows)
-            op.getDependencies().clear();
+            // Dependencies already cleared above
 
             if (opDto.getDependencies() == null || opDto.getDependencies().isEmpty()) continue;
 
