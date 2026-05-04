@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
 
 @Data
@@ -28,6 +29,12 @@ public class JobWorkChallanRequestDTO {
     private String dispatchDetails;
 
     private String remarks;
+
+    /**
+     * Optional user-defined expected return date (due date).
+     * If provided, this overrides the auto-calculated 180-day date on dispatch.
+     */
+    private Date expectedReturnDate;
 
     @NotEmpty(message = "At least one material line is required")
     @Valid

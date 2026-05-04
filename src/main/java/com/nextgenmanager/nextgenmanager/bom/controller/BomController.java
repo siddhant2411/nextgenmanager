@@ -3,7 +3,10 @@ package com.nextgenmanager.nextgenmanager.bom.controller;
 import com.nextgenmanager.nextgenmanager.bom.dto.*;
 import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.bom.dto.BomQaParameterDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.BomQaParameterRequestDTO;
 import com.nextgenmanager.nextgenmanager.bom.service.BomExportService;
+import com.nextgenmanager.nextgenmanager.bom.service.BomQaParameterService;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.bom.service.BomWorkflowService;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
@@ -53,6 +56,9 @@ public class BomController {
 
     @Autowired
     private BomExportService bomExportService;
+
+    @Autowired
+    private BomQaParameterService bomQaParameterService;
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getBom(@PathVariable Integer id) {
@@ -472,6 +478,34 @@ public class BomController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to calculate cost breakdown: " + e.getMessage()));
         }
+    }
+
+    // ─── QA Plan endpoints ────────────────────────────────────────────────────
+
+    @GetMapping("/routing-operation/{operationId}/qa-parameters")
+    public ResponseEntity<List<BomQaParameterDTO>> getQaParameters(@PathVariable Long operationId) {
+        return ResponseEntity.ok(bomQaParameterService.getParametersForOperation(operationId));
+    }
+
+    @PostMapping("/routing-operation/{operationId}/qa-parameters")
+    public ResponseEntity<BomQaParameterDTO> addQaParameter(
+            @PathVariable Long operationId,
+            @RequestBody BomQaParameterRequestDTO request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(bomQaParameterService.addParameter(operationId, request));
+    }
+
+    @PutMapping("/qa-parameters/{parameterId}")
+    public ResponseEntity<BomQaParameterDTO> updateQaParameter(
+            @PathVariable Long parameterId,
+            @RequestBody BomQaParameterRequestDTO request) {
+        return ResponseEntity.ok(bomQaParameterService.updateParameter(parameterId, request));
+    }
+
+    @DeleteMapping("/qa-parameters/{parameterId}")
+    public ResponseEntity<Void> deleteQaParameter(@PathVariable Long parameterId) {
+        bomQaParameterService.deleteParameter(parameterId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/where-used/{itemId}")

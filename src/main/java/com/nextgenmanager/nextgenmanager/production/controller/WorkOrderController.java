@@ -1735,6 +1735,23 @@ public class WorkOrderController {
         }
     }
 
+    @GetMapping("/{id}/export/qc-test-report")
+    public ResponseEntity<byte[]> exportQcTestReport(@PathVariable Integer id) {
+        try {
+            byte[] pdf = workOrderExportService.generateQcTestReport(id);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"QC_Test_Report_WO_" + id + ".pdf\"")
+                    .body(pdf);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Work order not found for QC test report, id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (Exception e) {
+            logger.error("Error generating QC test report for id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
     // ============================================================================
     // COST OF PRODUCTION REPORT
     // ============================================================================
@@ -1800,6 +1817,28 @@ public class WorkOrderController {
         } catch (EntityNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
+    }
+
+    // ─── QA Entries ──────────────────────────────────────────────────────────
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.production.service.WorkOrderQaService workOrderQaService;
+
+    @GetMapping("/operation/{operationId}/qa")
+    public ResponseEntity<?> getQaEntriesForOperation(@PathVariable Long operationId) {
+        return ResponseEntity.ok(workOrderQaService.getEntriesForOperation(operationId));
+    }
+
+    @GetMapping("/{workOrderId}/qa")
+    public ResponseEntity<?> getQaEntriesForWorkOrder(@PathVariable int workOrderId) {
+        return ResponseEntity.ok(workOrderQaService.getEntriesForWorkOrder(workOrderId));
+    }
+
+    @PostMapping("/operation/{operationId}/qa/batch")
+    public ResponseEntity<?> submitQaBatch(
+            @PathVariable Long operationId,
+            @RequestBody com.nextgenmanager.nextgenmanager.production.dto.WorkOrderQaBatchRequestDTO request) {
+        return ResponseEntity.ok(workOrderQaService.submitBatch(operationId, request));
     }
 
     @ExceptionHandler(EntityNotFoundException.class)

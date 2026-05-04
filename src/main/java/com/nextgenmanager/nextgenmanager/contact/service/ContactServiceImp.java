@@ -78,6 +78,30 @@ public class ContactServiceImp implements ContactService {
         return getActiveEntity(id);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public ContactDashboardDTO getDashboardStats() {
+        long total = contactRepository.countByDeletedDateIsNull();
+        long customers = contactRepository.countByContactTypeAndDeletedDateIsNull(ContactType.CUSTOMER);
+        long vendors = contactRepository.countByContactTypeAndDeletedDateIsNull(ContactType.VENDOR);
+        long both = contactRepository.countByContactTypeAndDeletedDateIsNull(ContactType.BOTH);
+        long msme = contactRepository.countByMsmeRegisteredTrueAndDeletedDateIsNull();
+        long gst = contactRepository.countGstRegistered();
+        
+        Date thirtyDaysAgo = new Date(System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000);
+        long recent = contactRepository.countRecentlyAdded(thirtyDaysAgo);
+
+        return ContactDashboardDTO.builder()
+                .totalContacts(total)
+                .customers(customers)
+                .vendors(vendors)
+                .bothType(both)
+                .msmeRegistered(msme)
+                .gstRegistered(gst)
+                .recentlyAdded(recent)
+                .build();
+    }
+
     // ──────────────────────────── helpers ────────────────────────────
 
     private Contact getActiveEntity(int id) {

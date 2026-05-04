@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Job Work Challan</title>
+    <style>
+        @page { size: A4; margin: 10mm 12mm 12mm 12mm; }
+
+        body {
+            font-family: DejaVu Sans, Arial, sans-serif;
+            font-size: 10px;
+            margin: 0;
+            padding: 0;
+            color: #1a1a2e;
+        }
+
+        /* ── UTILITIES ── */
+        .w100  { width: 100%; }
+        .vtop  { vertical-align: top; }
+        .vmid  { vertical-align: middle; }
+        .vbot  { vertical-align: bottom; }
+        .right { text-align: right; }
+        .center{ text-align: center; }
+        .bold  { font-weight: bold; }
+        .nopad { padding: 0; }
+        .noborder { border: none; }
+
+        /* ── HEADER ── */
+        .header-wrap {
+            border: 1.5px solid #1a1a2e;
+            margin-bottom: 5px;
+        }
+        .header-top {
+            width: 100%;
+            background: #1a1a2e;
+            color: #ffffff;
+            border-collapse: collapse;
+        }
+        .header-top td { padding: 8px 11px; vertical-align: middle; }
+        .company-name  { font-size: 15px; font-weight: bold; letter-spacing: 0.4px; }
+        .company-sub   { font-size: 8.5px; color: #b0b8c8; margin-top: 2px; line-height: 1.6; }
+        .doc-title     { font-size: 13px; font-weight: bold; letter-spacing: 1px; text-align: right; }
+        .doc-subtitle  { font-size: 7.5px; color: #b0b8c8; text-align: right; margin-top: 3px; }
+
+        .header-addr {
+            width: 100%;
+            border-collapse: collapse;
+            border-top: 1px solid #d1d5db;
+        }
+        .header-addr td { padding: 6px 11px; vertical-align: middle; }
+        .addr-text { font-size: 9px; color: #555; line-height: 1.7; }
+
+        /* ── PARTY SECTION ── */
+        .party-wrap {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #cbd5e1;
+            margin-bottom: 5px;
+        }
+        .party-wrap td { padding: 7px 10px; vertical-align: top; }
+        .party-divider { border-left: 1px solid #cbd5e1; }
+        .party-label {
+            font-size: 7.5px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #64748b;
+            letter-spacing: 0.8px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 3px;
+            margin-bottom: 4px;
+        }
+        .party-name   { font-size: 12px; font-weight: bold; color: #1a1a2e; margin: 4px 0 3px 0; }
+        .party-detail { font-size: 9px; color: #475569; line-height: 1.75; }
+
+        /* ── META GRID ── */
+        .meta-wrap {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #cbd5e1;
+            margin-bottom: 5px;
+        }
+        .meta-wrap td {
+            padding: 5px 9px;
+            vertical-align: top;
+            border-right: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
+            width: 20%;
+        }
+        .meta-wrap td:last-child { border-right: none; }
+        .meta-key {
+            font-size: 7.5px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #94a3b8;
+            letter-spacing: 0.4px;
+        }
+        .meta-val {
+            font-size: 11px;
+            font-weight: bold;
+            color: #1a1a2e;
+            margin-top: 2px;
+        }
+        .meta-val-sm { font-size: 9.5px; font-weight: bold; color: #1a1a2e; margin-top: 2px; }
+
+        /* ── BADGE ── */
+        .badge {
+            display: inline;
+            padding: 2px 7px;
+            font-size: 8.5px;
+            font-weight: bold;
+            border: 1px solid;
+        }
+        .badge-DRAFT              { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+        .badge-DISPATCHED         { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+        .badge-PARTIALLY_RECEIVED { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+        .badge-COMPLETED          { background: #dcfce7; color: #166534; border-color: #86efac; }
+        .badge-CANCELLED          { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+
+        /* ── NOTICE BOXES ── */
+        .statutory-box {
+            border: 1px solid #fbbf24;
+            background: #fffbeb;
+            padding: 5px 10px;
+            margin-bottom: 5px;
+            font-size: 8.5px;
+            color: #78350f;
+            line-height: 1.55;
+        }
+        .deadline-box {
+            border: 1px solid #93c5fd;
+            background: #eff6ff;
+            padding: 4px 10px;
+            margin-bottom: 5px;
+            font-size: 9px;
+            color: #1e40af;
+        }
+        .deadline-overdue {
+            border-color: #fca5a5;
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        /* ── ITEMS TABLE ── */
+        table.items {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 5px;
+            table-layout: fixed;
+        }
+        table.items th {
+            background: #1a1a2e;
+            color: #ffffff;
+            font-size: 8px;
+            padding: 5px 4px;
+            text-align: center;
+            border: 1px solid #1a1a2e;
+            font-weight: bold;
+            letter-spacing: 0.3px;
+        }
+        table.items td {
+            font-size: 9.5px;
+            padding: 5px 4px;
+            border: 1px solid #d1d5db;
+            vertical-align: middle;
+        }
+        table.items tr.even-row td { background: #f8fafc; }
+        table.items td.num         { text-align: center; }
+        table.items td.right       { text-align: right; }
+        table.items td.pad         { color: #e5e7eb; }
+
+        /* ── TOTALS ── */
+        .totals-wrap {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 5px;
+        }
+        .totals-inner {
+            border-collapse: collapse;
+        }
+        .totals-inner td {
+            padding: 4px 10px;
+            font-size: 9.5px;
+            border: 1px solid #d1d5db;
+            white-space: nowrap;
+        }
+        .totals-inner .lbl { color: #374151; }
+        .totals-inner .val { text-align: right; font-weight: bold; color: #1a1a2e; }
+        .totals-inner tr.total-row td {
+            background: #1a1a2e;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 10px;
+        }
+
+        /* ── DECLARATION ── */
+        .decl-box {
+            border: 1px solid #d1d5db;
+            padding: 6px 10px;
+            margin-bottom: 8px;
+            font-size: 8.5px;
+            color: #374151;
+            line-height: 1.65;
+        }
+        .decl-title {
+            font-weight: bold;
+            font-size: 9px;
+            margin-bottom: 3px;
+            color: #1a1a2e;
+        }
+
+        /* ── SIGNATURES ── */
+        .sig-wrap {
+            width: 100%;
+            border-collapse: collapse;
+            border-top: 1px solid #d1d5db;
+            margin-top: 10px;
+        }
+        .sig-wrap td {
+            text-align: center;
+            padding: 0 8px;
+            vertical-align: bottom;
+            border-right: 1px solid #e5e7eb;
+            width: 25%;
+        }
+        .sig-wrap td:last-child { border-right: none; }
+        .sig-line  { border-top: 1px solid #374151; margin: 30px 10px 4px 10px; }
+        .sig-label { font-size: 8.5px; font-weight: bold; color: #374151; }
+        .sig-sub   { font-size: 7.5px; color: #9ca3af; margin-top: 2px; }
+
+        /* ── QR ── */
+        .qr-wrap  { text-align: right; vertical-align: middle; }
+        .qr-wrap img   { width: 60px; height: 60px; }
+        .qr-label { font-size: 7px; color: #94a3b8; margin-top: 2px; text-align: right; }
+
+        /* ── FOOTER ── */
+        .doc-footer {
+            border-top: 1px solid #e5e7eb;
+            margin-top: 10px;
+            padding-top: 5px;
+            font-size: 7.5px;
+            color: #94a3b8;
+            text-align: center;
+        }
+
+        /* ── WATERMARK ── */
+        .watermark-cancelled {
+            position: fixed;
+            top: 35%; left: 8%;
+            font-size: 80px;
+            font-weight: bold;
+            color: rgba(220,38,38,0.10);
+            transform: rotate(-35deg);
+            pointer-events: none;
+            letter-spacing: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="watermark-cancelled" th:if="${challan.status.name() == 'CANCELLED'}">CANCELLED</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     DOCUMENT HEADER
+═══════════════════════════════════════════════════════ -->
+<div class="header-wrap">
+
+    <!-- Top band: company identity + document title -->
+    <table class="header-top">
+        <tr>
+            <td style="width:60%;">
+                <div class="company-name" th:text="${company.companyName}">Your Company Pvt. Ltd.</div>
+                <div class="company-sub"
+                     th:if="${company.legalName != null and !#strings.isEmpty(company.legalName)}"
+                     th:text="${company.legalName}"></div>
+                <div class="company-sub">
+                    <span th:if="${company.gstNumber != null and !#strings.isEmpty(company.gstNumber)}">GSTIN:&#160;<span th:text="${company.gstNumber}"></span></span>
+                    <span th:if="${company.panNumber != null and !#strings.isEmpty(company.panNumber)}">&#160;&#160;PAN:&#160;<span th:text="${company.panNumber}"></span></span>
+                </div>
+            </td>
+            <td style="width:40%;">
+                <div class="doc-title">DELIVERY CHALLAN</div>
+                <div class="doc-title" style="font-size:10px; letter-spacing:0.5px;">FOR JOB WORK</div>
+                <div class="doc-subtitle">Under CGST Act, 2017 — Sec. 143 / Rule 45</div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Address band -->
+    <table class="header-addr">
+        <tr>
+            <td style="width:72%;">
+                <div class="addr-text">
+                    <span th:if="${!#strings.isEmpty(companyAddress)}" th:text="${companyAddress}"></span>
+                    <span th:if="${#strings.isEmpty(companyAddress)}" style="color:#aaa; font-style:italic;">Address not configured</span>
+                </div>
+                <div class="addr-text">
+                    <span th:if="${company.phone != null and !#strings.isEmpty(company.phone)}">Ph:&#160;<span th:text="${company.phone}"></span></span>
+                    <span th:if="${company.phone != null and !#strings.isEmpty(company.phone) and company.email != null and !#strings.isEmpty(company.email)}">&#160;&#160;|&#160;&#160;</span>
+                    <span th:if="${company.email != null and !#strings.isEmpty(company.email)}">Email:&#160;<span th:text="${company.email}"></span></span>
+                    <span th:if="${company.website != null and !#strings.isEmpty(company.website)}">&#160;&#160;|&#160;&#160;<span th:text="${company.website}"></span></span>
+                </div>
+            </td>
+            <td class="qr-wrap" style="width:28%;">
+                <img th:src="'data:image/png;base64,' + ${qrCode}" alt="QR Code"/>
+                <div class="qr-label" th:text="${challan.challanNumber}">JWC/2025-26/0001</div>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FROM / TO
+═══════════════════════════════════════════════════════ -->
+<table class="party-wrap">
+    <tr>
+        <!-- FROM -->
+        <td style="width:50%;">
+            <div class="party-label">From (Consignor / Principal)</div>
+            <div class="party-name" th:text="${company.companyName}">Your Company Pvt. Ltd.</div>
+            <div class="party-detail">
+                <span th:if="${!#strings.isEmpty(companyAddress)}" th:text="${companyAddress}"></span><br/>
+                <span th:if="${company.gstNumber != null and !#strings.isEmpty(company.gstNumber)}">GSTIN:&#160;<strong th:text="${company.gstNumber}"></strong><br/></span>
+                <span th:if="${company.phone != null and !#strings.isEmpty(company.phone)}">Ph:&#160;<span th:text="${company.phone}"></span><br/></span>
+                <span th:if="${company.email != null and !#strings.isEmpty(company.email)}">Email:&#160;<span th:text="${company.email}"></span></span>
+            </div>
+        </td>
+        <!-- TO -->
+        <td class="party-divider" style="width:50%;">
+            <div class="party-label">To (Job Worker / Consignee)</div>
+            <div class="party-name" th:text="${challan.vendorName}">Vendor Name</div>
+            <div class="party-detail">
+                <span th:if="${!#strings.isEmpty(vendorAddress)}" th:text="${vendorAddress}"></span>
+                <span th:if="${#strings.isEmpty(vendorAddress)}" style="color:#aaa; font-style:italic;">Address not on file</span><br/>
+                GSTIN:&#160;<strong th:text="${challan.vendorGstNumber != null ? challan.vendorGstNumber : '—'}"></strong><br/>
+                <span th:if="${!#strings.isEmpty(vendorPhone)}">Ph:&#160;<span th:text="${vendorPhone}"></span><br/></span>
+                <span th:if="${!#strings.isEmpty(vendorEmail)}">Email:&#160;<span th:text="${vendorEmail}"></span></span>
+            </div>
+        </td>
+    </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════
+     CHALLAN META — ROW 1
+═══════════════════════════════════════════════════════ -->
+<table class="meta-wrap">
+    <tr>
+        <td>
+            <div class="meta-key">Challan Number</div>
+            <div class="meta-val" th:text="${challan.challanNumber}">JWC/2025-26/0001</div>
+        </td>
+        <td>
+            <div class="meta-key">Date of Issue</div>
+            <div class="meta-val" th:text="${issueDate}">01 Jan 2026</div>
+        </td>
+        <td>
+            <div class="meta-key">Work Order No.</div>
+            <div class="meta-val" th:text="${challan.workOrderNumber != null ? challan.workOrderNumber : '—'}">WO-001</div>
+        </td>
+        <td>
+            <div class="meta-key">Operation</div>
+            <div class="meta-val-sm" th:text="${challan.workOrderOperationName != null ? challan.workOrderOperationName : '—'}">Grinding</div>
+        </td>
+        <td>
+            <div class="meta-key">Status</div>
+            <div class="meta-val" style="margin-top:3px;">
+                <span class="badge"
+                      th:classappend="'badge-' + ${challan.status.name()}"
+                      th:text="${challan.status.name().replace('_',' ')}">DISPATCHED</span>
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <div class="meta-key">Agreed Rate / Unit</div>
+            <div class="meta-val" th:text="${challan.agreedRatePerUnit != null ? '&#8377; ' + challan.agreedRatePerUnit : '—'}">&#8377; 500.00</div>
+        </td>
+        <td>
+            <div class="meta-key">Dispatch Date</div>
+            <div class="meta-val" th:text="${dispatchDate}">01 Jan 2026</div>
+        </td>
+        <td>
+            <div class="meta-key">Return Deadline</div>
+            <div class="meta-val" th:text="${returnByDate}">30 Jun 2026</div>
+        </td>
+        <td th:if="${challan.dispatchDetails != null and !#strings.isEmpty(challan.dispatchDetails)}">
+            <div class="meta-key">Dispatch Details</div>
+            <div class="meta-val-sm" th:text="${challan.dispatchDetails}"></div>
+        </td>
+        <td th:if="${challan.dispatchDetails == null or #strings.isEmpty(challan.dispatchDetails)}">
+            <div class="meta-key">Vehicle / Transport</div>
+            <div class="meta-val-sm">—</div>
+        </td>
+        <td>
+            <div class="meta-key">Remarks</div>
+            <div class="meta-val-sm" th:text="${challan.remarks != null and !#strings.isEmpty(challan.remarks) ? challan.remarks : '—'}"></div>
+        </td>
+    </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════
+     STATUTORY NOTICE
+═══════════════════════════════════════════════════════ -->
+<div class="statutory-box">
+    <strong>Statutory Notice:</strong>
+    This challan is issued under <strong>Section 143 of the CGST Act, 2017</strong> read with <strong>Rule 45 of the CGST Rules</strong>.
+    The goods described herein are sent to the job worker for processing only and shall be returned within
+    <strong>1 year (inputs)</strong> or <strong>3 years (capital goods)</strong> from the dispatch date.
+    Failure to return within the stipulated period renders the transaction liable to GST as a deemed supply.
+    The principal shall maintain ITC-04 records as prescribed.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     RETURN DEADLINE ALERT
+═══════════════════════════════════════════════════════ -->
+<div th:if="${challan.daysRemainingForReturn != null}">
+    <div th:if="${challan.daysRemainingForReturn >= 0}" class="deadline-box">
+        &#9201;&#160;Return deadline:&#160;<strong th:text="${returnByDate}"></strong>
+        &#8212;&#160;<strong th:text="${challan.daysRemainingForReturn}"></strong> days remaining.
+    </div>
+    <div th:if="${challan.daysRemainingForReturn < 0}" class="deadline-box deadline-overdue">
+        &#9888;&#160;OVERDUE — Goods were due by&#160;<strong th:text="${returnByDate}"></strong>.
+        &#160;<strong th:text="${-challan.daysRemainingForReturn}"></strong> days overdue. Immediate action required.
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MATERIALS TABLE
+═══════════════════════════════════════════════════════ -->
+<table class="items">
+    <thead>
+        <tr>
+            <th style="width:4%;">Sr.</th>
+            <th style="width:26%;">Description of Goods</th>
+            <th style="width:10%;">Item Code</th>
+            <th style="width:8%;">HSN/SAC</th>
+            <th style="width:6%;">UOM</th>
+            <th style="width:9%;">Qty Sent</th>
+            <th style="width:9%;">Qty Recd.</th>
+            <th style="width:9%;">Qty Pending</th>
+            <th style="width:9%;">Rate (&#8377;)</th>
+            <th style="width:10%;">Value (&#8377;)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr th:each="line, iter : ${challan.lines}"
+            th:class="${iter.index % 2 == 1 ? 'even-row' : ''}">
+            <td class="num" th:text="${iter.index + 1}">1</td>
+            <td th:text="${line.description != null ? line.description : (line.itemName != null ? line.itemName : '—')}">Item Name</td>
+            <td class="num" style="font-size:8.5px;" th:text="${line.itemCode != null ? line.itemCode : '—'}">CODE</td>
+            <td class="num" th:text="${line.hsnCode != null ? line.hsnCode : '—'}">8431</td>
+            <td class="num" th:text="${line.uom != null ? line.uom : '—'}">KG</td>
+            <td class="right" th:text="${line.quantityDispatched}">10.00</td>
+            <td class="right" th:text="${line.quantityReceived != null ? line.quantityReceived : '0.00'}">0.00</td>
+            <td class="right" th:text="${line.quantityPending != null ? line.quantityPending : line.quantityDispatched}">10.00</td>
+            <td class="right" th:text="${line.valuePerUnit != null ? line.valuePerUnit : '—'}">500.00</td>
+            <td class="right" th:text="${lineValues[iter.index]}">5000.00</td>
+        </tr>
+        <!-- Padding rows -->
+        <tr th:each="i : ${paddingRows}">
+            <td class="num pad">&#160;</td>
+            <td></td><td></td><td></td><td></td>
+            <td></td><td></td><td></td><td></td><td></td>
+        </tr>
+    </tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════
+     TOTALS (right-aligned)
+═══════════════════════════════════════════════════════ -->
+<table class="totals-wrap">
+    <tr>
+        <td style="width:55%;"></td>
+        <td style="width:45%;" class="right">
+            <table class="totals-inner" style="float:right;">
+                <tr>
+                    <td class="lbl">Total Line Items</td>
+                    <td class="val" th:text="${challan.lines.size()}">3</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Total Qty Dispatched</td>
+                    <td class="val" th:text="${totalQtyDispatched}">30.00</td>
+                </tr>
+                <tr>
+                    <td class="lbl">Total Qty Pending Return</td>
+                    <td class="val" th:text="${totalQtyPending}">30.00</td>
+                </tr>
+                <tr class="total-row">
+                    <td>Total Declared Value (&#8377;)</td>
+                    <td th:text="${totalValue}">15000.00</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════
+     DECLARATION
+═══════════════════════════════════════════════════════ -->
+<div class="decl-box">
+    <div class="decl-title">Declaration by the Principal (Sender)</div>
+    We hereby declare that the goods described above are sent for job work purposes only and are not intended for sale.
+    The goods will be used for the manufacturing / processing of our finished product.
+    We undertake to comply with all provisions of the CGST Act, 2017 and the rules made thereunder,
+    including maintaining proper records of goods sent, received, and any goods lost or destroyed during the job work process.
+    This challan is prepared in duplicate — original for the job worker, duplicate for our records.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SIGNATURES
+═══════════════════════════════════════════════════════ -->
+<table class="sig-wrap">
+    <tr>
+        <td>
+            <div class="sig-line"></div>
+            <div class="sig-label">Prepared By</div>
+            <div class="sig-sub">Name &amp; Designation</div>
+        </td>
+        <td>
+            <div class="sig-line"></div>
+            <div class="sig-label">Dispatched By</div>
+            <div class="sig-sub">Name, Date &amp; Signature</div>
+        </td>
+        <td>
+            <div class="sig-line"></div>
+            <div class="sig-label">Received By (Job Worker)</div>
+            <div class="sig-sub">Name, Stamp &amp; Date</div>
+        </td>
+        <td>
+            <div class="sig-line"></div>
+            <div class="sig-label">For <span th:text="${company.companyName}">Your Company Pvt. Ltd.</span></div>
+            <div class="sig-sub">Authorised Signatory</div>
+        </td>
+    </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════════════════ -->
+<div class="doc-footer">
+    This is a computer-generated document.&#160;&#160;|&#160;&#160;
+    <span th:text="${company.companyName}">Your Company Pvt. Ltd.</span>&#160;&#160;|&#160;&#160;
+    Challan No:&#160;<span th:text="${challan.challanNumber}">JWC/2025-26/0001</span>&#160;&#160;|&#160;&#160;
+    Generated:&#160;<span th:text="${generatedDate}">01 Jan 2026</span>
+</div>
+
+</body>
+</html>

@@ -13,4 +13,5 @@ public interface MachineDetailsRepository  extends JpaRepository<MachineDetails,
     Optional<MachineDetails> findByIdAndDeletedDateIsNull(Long id);
     List<MachineDetails> findByDeletedDateIsNull();
     Optional<MachineDetails> findByMachineCodeAndDeletedDateIsNull(String machineCode);
+    List<MachineDetails> findByWorkCenterId(Integer workCenterId);
 }

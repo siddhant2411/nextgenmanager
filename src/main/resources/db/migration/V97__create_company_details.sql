@@ -1,0 +1,23 @@
+CREATE TABLE company_details (
+    id               BIGSERIAL PRIMARY KEY,
+    companyName      VARCHAR(200) NOT NULL,
+    legalName        VARCHAR(200),
+    tradeName        VARCHAR(200),
+    gstNumber        VARCHAR(15),
+    panNumber        VARCHAR(10),
+    cinNumber        VARCHAR(21),
+    phone            VARCHAR(20),
+    email            VARCHAR(150),
+    website          VARCHAR(200),
+    street1          VARCHAR(200),
+    street2          VARCHAR(200),
+    city             VARCHAR(100),
+    state            VARCHAR(100),
+    pinCode          VARCHAR(10),
+    country          VARCHAR(100) DEFAULT 'India',
+    currency         VARCHAR(3)  DEFAULT 'INR',
+    financialYearStartMonth INTEGER DEFAULT 4,
+    notes            TEXT,
+    creationDate     TIMESTAMP NOT NULL DEFAULT NOW(),
+    updatedDate      TIMESTAMP NOT NULL DEFAULT NOW()
+);

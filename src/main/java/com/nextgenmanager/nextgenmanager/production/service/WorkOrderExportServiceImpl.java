@@ -30,6 +30,9 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
     @Autowired
     private WorkOrderRepository workOrderRepository;
 
+    @Autowired
+    private TestTemplateService testTemplateService;
+
     private final TemplateEngine templateEngine;
 
     public WorkOrderExportServiceImpl() {
@@ -320,6 +323,28 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
                     });
         }
         return operations;
+    }
+
+    // ====================================================================
+    // 5. QC Test Report PDF
+    // ====================================================================
+    @Override
+    public byte[] generateQcTestReport(Integer workOrderId) throws Exception {
+        com.nextgenmanager.nextgenmanager.production.dto.TestReportDTO report =
+                testTemplateService.generateTestReport(workOrderId);
+
+        List<com.nextgenmanager.nextgenmanager.production.dto.WorkOrderTestResultDTO> withRemarks =
+                report.getTestResults() == null ? Collections.emptyList() :
+                report.getTestResults().stream()
+                        .filter(t -> t.getRemarks() != null && !t.getRemarks().isBlank())
+                        .collect(Collectors.toList());
+
+        Context context = new Context();
+        context.setVariable("report", report);
+        context.setVariable("resultsWithRemarks", withRemarks);
+
+        String html = templateEngine.process("qc_test_report", context);
+        return renderPdf(html);
     }
 
     private byte[] renderPdf(String html) throws Exception {

@@ -41,4 +41,7 @@ public interface WorkOrderMaterialRepository extends JpaRepository<WorkOrderMate
     List<WorkOrderMaterial> findByWorkOrderAndWorkOrderOperation(WorkOrder workOrder, WorkOrderOperation operation);
 
     Optional<WorkOrderMaterial> findByInventoryRequestId(Long inventoryRequestId);
+
+    @Query("SELECT m FROM WorkOrderMaterial m WHERE m.workOrder = :wo AND m.component.inventoryItemId = :itemId AND m.deletedDate IS NULL")
+    List<WorkOrderMaterial> findByWorkOrderAndItemId(@Param("wo") WorkOrder workOrder, @Param("itemId") Long itemId);
 }

@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.service;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomCostBreakdownDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.OperationCostLineDTO;
+import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemVendorPrice;
@@ -20,6 +21,8 @@ import com.nextgenmanager.nextgenmanager.production.enums.MakeBuyDecision;
 import com.nextgenmanager.nextgenmanager.production.model.Routing;
 import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
 import jakarta.persistence.EntityNotFoundException;
+import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.RoutingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +58,12 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
     @Autowired
     private ItemVendorPriceService itemVendorPriceService;
 
+    @Autowired
+    private BomRepository bomRepository;
+
+    @Autowired
+    private RoutingRepository routingRepository;
+
     @Override
     public MakeBuyAnalysisDTO analyze(MakeBuyAnalysisRequestDTO request) {
 
@@ -86,15 +95,19 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
 
         // Resolve BOM
         BomDTO bomDto = null;
-        try {
-            bomDto = bomIdOverride != null
-                    ? bomService.getBomDTO(bomIdOverride)
-                    : bomService.getActiveBomByParentInventoryItem(item.getInventoryItemId());
-        } catch (Exception e) {
-            logger.debug("No active BOM found for item {}: {}", item.getItemCode(), e.getMessage());
+        if (bomIdOverride != null) {
+            bomDto = bomRepository.findById(bomIdOverride)
+                    .filter(b -> b.getDeletedDate() == null)
+                    .map(BomMapper::toDto)
+                    .orElse(null);
+        } else {
+            bomDto = bomRepository.findActiveBomWithPositionsByParentItemId(item.getInventoryItemId())
+                    .map(BomMapper::toDto)
+                    .orElse(null);
         }
 
         if (bomDto == null) {
+            logger.debug("No active BOM found for item {}", item.getItemCode());
             return MakeAnalysis.builder().available(false).build();
         }
 
@@ -112,19 +125,15 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
         Long routingId = null;
         List<OperationCostLineDTO> opLines = new ArrayList<>();
 
-        try {
-            Routing routing = routingService.getRoutingEntityByBom(bomId);
-            if (routing != null && routing.getOperations() != null) {
-                routingId = routing.getId();
-                for (RoutingOperation op : routing.getOperations()) {
-                    BigDecimal[] costs = quantityAwareOpCost(op, quantity);
-                    unitSetupCost = unitSetupCost.add(costs[0]);
-                    unitRunCost = unitRunCost.add(costs[1]);
-                    opLines.add(buildOpLine(op, costs));
-                }
+        Routing routing = routingRepository.findByBomId(bomId).orElse(null);
+        if (routing != null && routing.getOperations() != null) {
+            routingId = routing.getId();
+            for (RoutingOperation op : routing.getOperations()) {
+                BigDecimal[] costs = quantityAwareOpCost(op, quantity);
+                unitSetupCost = unitSetupCost.add(costs[0]);
+                unitRunCost = unitRunCost.add(costs[1]);
+                opLines.add(buildOpLine(op, costs));
             }
-        } catch (Exception e) {
-            logger.debug("No routing found for BOM {}: {}", bomId, e.getMessage());
         }
 
         BigDecimal unitOperationCost = unitSetupCost.add(unitRunCost).setScale(4, RoundingMode.HALF_UP);

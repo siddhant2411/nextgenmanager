@@ -110,6 +110,9 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     @Autowired
     private WorkOrderListMapper workOrderListMapper;
 
+    @Autowired
+    private WorkOrderQaService workOrderQaService;
+
 
 
     @Override
@@ -148,7 +151,23 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 }
             }
         }
-        
+
+        // Enrich operations with pending rejection quantity (one query for the whole WO)
+        if (dto.getOperations() != null && !dto.getOperations().isEmpty()) {
+            List<RejectionEntry> pending = rejectionEntryRepository
+                    .findByWorkOrderIdAndDispositionStatus(id, DispositionStatus.PENDING);
+            Map<Long, BigDecimal> pendingByOpId = pending.stream()
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            r -> r.getOperation().getId(),
+                            java.util.stream.Collectors.reducing(
+                                    BigDecimal.ZERO, RejectionEntry::getRejectedQuantity, BigDecimal::add)
+                    ));
+            for (WorkOrderOperationDTO opDto : dto.getOperations()) {
+                opDto.setPendingRejectionQuantity(
+                        pendingByOpId.getOrDefault(opDto.getId(), BigDecimal.ZERO));
+            }
+        }
+
         return dto;
     }
 
@@ -285,6 +304,11 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         }
 
         workOrderOperationRepository.saveAll(operations);
+
+        // Create QA snapshots for operations that require inspection
+        for (WorkOrderOperation op : operations) {
+            workOrderQaService.createSnapshotsForOperation(op);
+        }
 
         // Set estimated production time
         workOrder.setEstimatedProductionMinutes(totalProductionMinutes.setScale(2, RoundingMode.HALF_UP));

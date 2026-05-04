@@ -22,6 +22,8 @@ public interface JobWorkChallanRepository extends JpaRepository<JobWorkChallan, 
 
     List<JobWorkChallan> findByWorkOrder_IdAndDeletedDateIsNull(int workOrderId);
 
+    List<JobWorkChallan> findByWorkOrderOperation_IdAndDeletedDateIsNull(Long operationId);
+
     List<JobWorkChallan> findByStatusAndDeletedDateIsNull(ChallanStatus status);
 
     /** Challans dispatched but not yet returned, past the expected return date (overdue). */

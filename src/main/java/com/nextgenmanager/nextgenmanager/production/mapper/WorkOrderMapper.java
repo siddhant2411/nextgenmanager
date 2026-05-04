@@ -7,7 +7,7 @@ import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
-@Mapper(componentModel = "spring", uses = {RoutingMapper.class, WorkOrderLabourEntryMapper.class})
+@Mapper(componentModel = "spring", uses = {RoutingMapper.class, WorkOrderLabourEntryMapper.class, WorkOrderQaEntryMapper.class})
 public interface WorkOrderMapper {
 
     @Mapping(target = "workCenter", source = "workCenter.centerCode")
@@ -24,5 +24,6 @@ public interface WorkOrderMapper {
      */
     @Mapping(target = "workOrderOperationId", source = "workOrderOperation.id")
     @Mapping(target = "operationName", source = "workOrderOperation.operationName")
+    @Mapping(target = "component.standardCost", source = "component.productFinanceSettings.standardCost")
     WorkOrderMaterialDTO toMaterialDTO(WorkOrderMaterial material);
 }
