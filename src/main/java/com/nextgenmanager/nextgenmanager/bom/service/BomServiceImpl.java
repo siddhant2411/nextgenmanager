@@ -15,8 +15,10 @@ import com.nextgenmanager.nextgenmanager.bom.repository.BomAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomPositionRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomQaParameterRepository;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
-import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
-import com.nextgenmanager.nextgenmanager.production.repository.RoutingOperationRepository;
+import com.nextgenmanager.nextgenmanager.bom.repository.routing.RoutingRepository;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.bom.repository.routing.RoutingOperationRepository;
+import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.bom.spec.BomSpecifications;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
@@ -28,9 +30,9 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.enums.CostType;
-import com.nextgenmanager.nextgenmanager.production.model.Routing;
-import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.Routing;
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingDto;
+import com.nextgenmanager.nextgenmanager.bom.service.routing.RoutingService;
 import io.minio.GetObjectResponse;
 import jakarta.transaction.Transactional;
 import org.apache.commons.lang3.tuple.Pair;
@@ -98,7 +100,10 @@ public class BomServiceImpl implements BomService {
     private com.nextgenmanager.nextgenmanager.bom.repository.BomAuditRepository bomAuditRepository;
 
     @Autowired
-    private com.nextgenmanager.nextgenmanager.production.repository.RoutingRepository routingRepository;
+    private RoutingRepository routingRepository;
+
+    @Autowired
+    private FileAttachmentRepository fileAttachmentRepository;
 
     private final  DomainEventPublisher domainEventPublisher;
 
@@ -325,7 +330,9 @@ public class BomServiceImpl implements BomService {
             domainEventPublisher.publish(new BomStatusChangedEvent(saved.getId(),currentStatus,newBomStatus));
 
             Map<Integer, Integer> activeBomMap = buildActiveBomMap(saved.getPositions());
-            return BomMapper.toDto(bom, activeBomMap);
+            BomDTO response = BomMapper.toDto(bom, activeBomMap);
+            populateDrawingFileId(response);
+            return response;
 
         }
 
@@ -431,6 +438,7 @@ public class BomServiceImpl implements BomService {
         BomDTO response = BomMapper.toDto(bom, activeBomMap);
 
         logger.info("Successfully mapped BOM with ID {} to DTO", id);
+        populateDrawingFileId(response);
         return response;
     }
 
@@ -901,7 +909,9 @@ public class BomServiceImpl implements BomService {
         Specification<Bom> spec = GenericSpecification.buildSpecification(filters, JOIN_FIELD_MAP);
         Page<Bom> boms = bomRepository.findAll(spec, pageable);
 
-        return boms.map(bomListMapper::toDTO);
+        Page<BomListDTO> dtos = boms.map(bomListMapper::toDTO);
+        populateDrawingFileIds(dtos);
+        return dtos;
 
     }
 
@@ -937,7 +947,9 @@ public class BomServiceImpl implements BomService {
         spec = spec.and(BomSpecifications.hasIsActive(true));
 
         Page<Bom> boms = bomRepository.findAll(spec, pageable);
-        return boms.map(bomListMapper::toDTO);
+        Page<BomListDTO> dtos = boms.map(bomListMapper::toDTO);
+        populateDrawingFileIds(dtos);
+        return dtos;
     }
 
 
@@ -993,7 +1005,9 @@ public class BomServiceImpl implements BomService {
 
         Page<Bom> boms = bomRepository.findAll(spec, pageable);
         logger.info("Bom found = [{}]", boms.getTotalElements());
-        return boms.map(bomListMapper::toDTO);
+        Page<BomListDTO> dtos = boms.map(bomListMapper::toDTO);
+        populateDrawingFileIds(dtos);
+        return dtos;
     }
 
 
@@ -1283,6 +1297,58 @@ public class BomServiceImpl implements BomService {
 
         builder.totalCost(totalCost);
         return builder.build();
+    }
+
+    private void populateDrawingFileIds(Page<BomListDTO> dtos) {
+        if (dtos.isEmpty()) return;
+
+        List<Long> parentItemIds = dtos.stream()
+                .map(d -> (long) d.getParentItemId())
+                .distinct()
+                .toList();
+
+        List<FileAttachment> allAttachments = fileAttachmentRepository.findByReferenceTypeAndReferenceIdIn("inventoryItem", parentItemIds);
+
+        Map<Long, List<FileAttachment>> attachmentMap = new HashMap<>();
+        for (FileAttachment fa : allAttachments) {
+            attachmentMap.computeIfAbsent(fa.getReferenceId(), k -> new ArrayList<>()).add(fa);
+        }
+
+        for (BomListDTO dto : dtos) {
+            List<FileAttachment> attachments = attachmentMap.get((long) dto.getParentItemId());
+            if (attachments != null && !attachments.isEmpty()) {
+                FileAttachment drawing = attachments.stream()
+                        .filter(a -> dto.getParentDrawingNumber() != null && !dto.getParentDrawingNumber().isBlank() &&
+                                a.getOriginalName().toLowerCase().contains(dto.getParentDrawingNumber().toLowerCase()))
+                        .findFirst()
+                        .orElse(attachments.get(0));
+                dto.setDrawingFileId(drawing.getId());
+            }
+        }
+    }
+
+    private void populateDrawingFileId(BomDTO dto) {
+        if (dto == null || dto.getParentInventoryItem() == null) return;
+
+        int itemId = dto.getParentInventoryItem().getInventoryItemId();
+        List<FileAttachment> attachments = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem", (long) itemId);
+
+        if (!attachments.isEmpty()) {
+            String drawingNumber = null;
+            InventoryItem item = inventoryItemRepository.findById(itemId).orElse(null);
+            if (item != null && item.getProductSpecification() != null) {
+                drawingNumber = item.getProductSpecification().getDrawingNumber();
+            }
+
+            final String finalDrawingNumber = drawingNumber;
+            FileAttachment drawing = attachments.stream()
+                    .filter(a -> finalDrawingNumber != null && !finalDrawingNumber.isBlank() &&
+                            a.getOriginalName().toLowerCase().contains(finalDrawingNumber.toLowerCase()))
+                    .findFirst()
+                    .orElse(attachments.get(0));
+            dto.setDrawingFileId(drawing.getId());
+            dto.getParentInventoryItem().setDrawingFileId(drawing.getId());
+        }
     }
 
 }

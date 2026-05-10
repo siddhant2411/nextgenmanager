@@ -33,6 +33,10 @@ public class Quotation {
     @Column(unique = true)
     private String qtnNo;
 
+    private Integer revisionNumber = 0;
+    
+    private Long parentQuotationId;
+
     private LocalDate qtnDate;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -75,6 +79,8 @@ public class Quotation {
 
     @Enumerated(EnumType.STRING)
     private QuotationStatus quotationStatus = QuotationStatus.DRAFT;
+
+    private String currency = "INR";
 
     private String validTill;
     private String paymentTerms;

@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingOperationDto;
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
-import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderLabourEntryDTO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

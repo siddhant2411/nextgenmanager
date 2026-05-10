@@ -1,10 +1,10 @@
 package com.nextgenmanager.nextgenmanager.production.controller;
 
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
-import com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto;
-import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.model.Routing;
-import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingOperationDto;
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingDto;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.Routing;
+import com.nextgenmanager.nextgenmanager.bom.service.routing.RoutingService;
 import io.minio.GetObjectResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

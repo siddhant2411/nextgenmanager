@@ -8,9 +8,9 @@ import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRe
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
-import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderMaterialRepository;
-import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderMaterialReorderRepository;
-import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderMaterialRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderMaterialReorderRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

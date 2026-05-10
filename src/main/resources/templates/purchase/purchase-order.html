@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Purchase Order</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; background: #fff; }
+        .container { width: 100%; max-width: 794px; margin: auto; border: 1px solid #000; box-sizing: border-box; }
+        .header { text-align: center; padding: 10px; border-bottom: 1px solid #000; }
+        .header h1 { margin: 0; font-size: 16px; }
+        .header p  { margin: 2px 0; font-size: 10px; }
+        .doc-title  { text-align: center; font-size: 14px; font-weight: bold; padding: 6px; border-bottom: 1px solid #000; letter-spacing: 1px; }
+        .meta-grid  { display: table; width: 100%; border-bottom: 1px solid #000; }
+        .meta-col   { display: table-cell; width: 50%; padding: 8px; vertical-align: top; }
+        .meta-col + .meta-col { border-left: 1px solid #000; }
+        .meta-col p { margin: 2px 0; }
+        .label      { font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; word-break: break-word; }
+        table th, table td { border: 1px solid #000; padding: 4px 5px; font-size: 10px; vertical-align: top; }
+        table th { background: #f0f0f0; text-align: center; }
+        .right { text-align: right; }
+        .center { text-align: center; }
+        .totals-table { width: 50%; margin-left: auto; border-collapse: collapse; border: none; }
+        .totals-table td { border: none; padding: 2px 5px; font-size: 10px; }
+        .totals-table .grand td { font-weight: bold; font-size: 11px; border-top: 1px solid #000; }
+        .words-row { padding: 6px 8px; border-top: 1px solid #000; font-style: italic; font-size: 10px; }
+        .footer { padding: 10px 8px; border-top: 1px solid #000; display: table; width: 100%; box-sizing: border-box; }
+        .footer-left, .footer-right { display: table-cell; width: 50%; vertical-align: bottom; font-size: 10px; }
+        .footer-right { text-align: right; }
+        .tc-section { padding: 6px 8px; border-top: 1px solid #000; font-size: 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Company header -->
+    <div class="header">
+        <h1 th:text="${company != null ? company.companyName : ''}"></h1>
+        <p th:if="${company != null}"
+           th:text="${company.street1 + (company.street2 != null ? ', ' + company.street2 : '') + ', ' + company.city + ' - ' + company.pinCode + ', ' + company.state}"></p>
+        <p th:if="${company != null}">
+            GSTIN: <span th:text="${company.gstNumber}"></span>
+            &#160;|&#160; PAN: <span th:text="${company.panNumber}"></span>
+            <span th:if="${company.phone != null}"> &#160;|&#160; Ph: <span th:text="${company.phone}"></span></span>
+        </p>
+    </div>
+
+    <div class="doc-title">PURCHASE ORDER</div>
+
+    <!-- PO meta + Vendor block -->
+    <div class="meta-grid">
+        <!-- Left: PO details -->
+        <div class="meta-col">
+            <p><span class="label">PO Number :</span> <span th:text="${po.purchaseOrderNumber}"></span></p>
+            <p><span class="label">PO Date :</span>
+               <span th:text="${#dates.format(po.orderDate, 'dd-MM-yyyy')}"></span></p>
+            <p th:if="${po.expectedDeliveryDate != null}">
+               <span class="label">Delivery By :</span>
+               <span th:text="${#dates.format(po.expectedDeliveryDate, 'dd-MM-yyyy')}"></span></p>
+            <p><span class="label">PO Type :</span> <span th:text="${po.poType}"></span></p>
+            <p th:if="${po.paymentTerms != null}">
+               <span class="label">Payment Terms :</span> <span th:text="${po.paymentTerms}"></span></p>
+            <p th:if="${po.placeOfSupply != null}">
+               <span class="label">Place of Supply :</span> <span th:text="${po.placeOfSupply}"></span></p>
+            <p><span class="label">GST Treatment :</span> <span th:text="${po.gstTreatment}"></span></p>
+        </div>
+        <!-- Right: Vendor -->
+        <div class="meta-col">
+            <p class="label">Vendor:</p>
+            <p th:if="${po.vendor != null}" style="font-weight:bold;" th:text="${po.vendor.companyName}"></p>
+            <p th:if="${po.vendor != null and po.vendor.tradeName != null}" th:text="${'(' + po.vendor.tradeName + ')'}"></p>
+            <div th:if="${po.vendorBillingAddress != null}">
+                <p th:text="${po.vendorBillingAddress.street1}"></p>
+                <p th:if="${po.vendorBillingAddress.street2 != null}" th:text="${po.vendorBillingAddress.street2}"></p>
+                <p th:text="${po.vendorBillingAddress.city + ' - ' + po.vendorBillingAddress.pinCode}"></p>
+                <p th:text="${po.vendorBillingAddress.state}"></p>
+            </div>
+            <p th:if="${po.vendor != null and po.vendor.gstNumber != null}">
+               <span class="label">GSTIN:</span> <span th:text="${po.vendor.gstNumber}"></span></p>
+        </div>
+    </div>
+
+    <!-- Line items table -->
+    <table>
+        <thead>
+        <tr>
+            <th style="width:4%">#</th>
+            <th style="width:22%">Description</th>
+            <th style="width:8%">HSN</th>
+            <th style="width:5%">UOM</th>
+            <th style="width:7%">Qty</th>
+            <th style="width:9%">Rate</th>
+            <th style="width:6%">Disc%</th>
+            <th style="width:9%">Taxable</th>
+            <th style="width:5%">GST%</th>
+            <th style="width:8%" th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTRA_STATE'}">CGST</th>
+            <th style="width:8%" th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTRA_STATE'}">SGST</th>
+            <th style="width:8%" th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTER_STATE'}">IGST</th>
+            <th style="width:9%">Total</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="line, stat : ${po.items}">
+            <td class="center" th:text="${stat.count}"></td>
+            <td th:text="${line.description}"></td>
+            <td class="center" th:text="${line.hsnCode}"></td>
+            <td class="center" th:text="${line.uom}"></td>
+            <td class="right" th:text="${#numbers.formatDecimal(line.quantityOrdered, 1, 3)}"></td>
+            <td class="right" th:text="${#numbers.formatDecimal(line.unitPrice, 1, 2)}"></td>
+            <td class="right" th:text="${#numbers.formatDecimal(line.discountPct, 1, 2)}"></td>
+            <td class="right" th:text="${#numbers.formatDecimal(line.taxableValue, 1, 2)}"></td>
+            <td class="right" th:text="${#numbers.formatDecimal(line.gstRatePct, 1, 2)}"></td>
+            <td class="right" th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTRA_STATE'}"
+                th:text="${#numbers.formatDecimal(line.cgstAmount, 1, 2)}"></td>
+            <td class="right" th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTRA_STATE'}"
+                th:text="${#numbers.formatDecimal(line.sgstAmount, 1, 2)}"></td>
+            <td class="right" th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTER_STATE'}"
+                th:text="${#numbers.formatDecimal(line.igstAmount, 1, 2)}"></td>
+            <td class="right" th:text="${#numbers.formatDecimal(line.lineTotal, 1, 2)}"></td>
+        </tr>
+        </tbody>
+    </table>
+
+    <!-- Totals -->
+    <table class="totals-table" style="margin-top:4px; margin-right:0;">
+        <tr><td>Subtotal</td>               <td class="right" th:text="${#numbers.formatDecimal(po.subtotal, 1, 2)}"></td></tr>
+        <tr th:if="${po.totalDiscount != null and po.totalDiscount.signum() > 0}">
+            <td>Discount</td>               <td class="right" th:text="${'(-) ' + #numbers.formatDecimal(po.totalDiscount, 1, 2)}"></td></tr>
+        <tr><td>Taxable Value</td>          <td class="right" th:text="${#numbers.formatDecimal(po.taxableValue, 1, 2)}"></td></tr>
+        <tr th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTRA_STATE'}">
+            <td>CGST</td>                   <td class="right" th:text="${#numbers.formatDecimal(po.cgstAmount, 1, 2)}"></td></tr>
+        <tr th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTRA_STATE'}">
+            <td>SGST</td>                   <td class="right" th:text="${#numbers.formatDecimal(po.sgstAmount, 1, 2)}"></td></tr>
+        <tr th:if="${po.gstTreatment != null and po.gstTreatment.name() == 'INTER_STATE'}">
+            <td>IGST</td>                   <td class="right" th:text="${#numbers.formatDecimal(po.igstAmount, 1, 2)}"></td></tr>
+        <tr th:if="${po.cessAmount != null and po.cessAmount.signum() > 0}">
+            <td>Cess</td>                   <td class="right" th:text="${#numbers.formatDecimal(po.cessAmount, 1, 2)}"></td></tr>
+        <tr th:if="${po.roundOff != null}">
+            <td>Round Off</td>              <td class="right" th:text="${#numbers.formatDecimal(po.roundOff, 1, 2)}"></td></tr>
+        <tr class="grand">
+            <td>Grand Total (&#8377;)</td>  <td class="right" th:text="${#numbers.formatDecimal(po.grandTotal, 1, 2)}"></td></tr>
+    </table>
+
+    <!-- Amount in words -->
+    <div class="words-row">
+        <span class="label">Amount in Words: </span><span th:text="${amountInWords}"></span>
+    </div>
+
+    <!-- Terms & Conditions -->
+    <div class="tc-section" th:if="${po.termsAndConditions != null and !po.termsAndConditions.isEmpty()}">
+        <p class="label">Terms &amp; Conditions:</p>
+        <p th:text="${po.termsAndConditions}" style="white-space:pre-wrap;"></p>
+    </div>
+
+    <!-- Signature footer -->
+    <div class="footer">
+        <div class="footer-left">
+            <p>This is a computer-generated document.</p>
+            <p th:if="${po.revisionNo > 0}">Revision No: <span th:text="${po.revisionNo}"></span></p>
+        </div>
+        <div class="footer-right">
+            <p>For <span th:text="${company != null ? company.companyName : ''}"></span></p>
+            <br/><br/>
+            <p>Authorised Signatory</p>
+        </div>
+    </div>
+
+</div>
+</body>
+</html>

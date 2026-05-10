@@ -197,6 +197,7 @@ public class ContactServiceImp implements ContactService {
                 .gstNumber(c.getGstNumber())
                 .gstType(c.getGstType())
                 .panNumber(c.getPanNumber())
+                .stateCode(c.getStateCode())
                 .msmeRegistered(c.isMsmeRegistered())
                 .msmeNumber(c.getMsmeNumber())
                 .defaultPaymentTerms(c.getDefaultPaymentTerms())

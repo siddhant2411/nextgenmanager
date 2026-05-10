@@ -12,6 +12,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.math.BigDecimal;
+import com.nextgenmanager.nextgenmanager.common.model.AppUser;
 
 @Entity
 @Getter
@@ -67,6 +68,22 @@ public class Enquiry {
 
     private LocalDate closedDate;
     private String closeReason;
+    
+    @Enumerated(EnumType.STRING)
+    private EnquiryPriority priority = EnquiryPriority.WARM;
+
+    @Enumerated(EnumType.STRING)
+    private EnquiryType type = EnquiryType.PRODUCT;
+
+    private String city;
+    private String state;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_to_id")
+    private AppUser assignedTo;
+
+    private String leadQuality; // QUALIFIED, UNQUALIFIED, UNKNOWN
+
     private Date deletedDate;
 
     private String createdBy;
@@ -79,14 +96,4 @@ public class Enquiry {
     @UpdateTimestamp
     private Date updatedDate;
 
-    @PrePersist
-    public void prePersist() {
-        if (this.enqNo == null || this.enqNo.isBlank()) {
-            this.enqNo = generateShortUUID();
-        }
-    }
-
-    private static String generateShortUUID() {
-        return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-    }
 }

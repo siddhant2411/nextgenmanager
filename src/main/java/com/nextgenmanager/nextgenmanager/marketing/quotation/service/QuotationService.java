@@ -31,5 +31,9 @@ public interface QuotationService {
     public ResponseEntity<byte[]> downloadQuotationPdf(Long qtnId);
 
     public List<Quotation> getQuotationsByEnquiryId(Long enquiryId);
+    
+    public Quotation reviseQuotation(Long id) throws Exception;
+    
+    public Quotation updateQuotationStatus(Long id, String status) throws Exception;
 
 }

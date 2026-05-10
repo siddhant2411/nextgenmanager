@@ -11,7 +11,7 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings;
 import com.nextgenmanager.nextgenmanager.items.model.ProductSpecification;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
-import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -23,7 +23,6 @@ import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
 

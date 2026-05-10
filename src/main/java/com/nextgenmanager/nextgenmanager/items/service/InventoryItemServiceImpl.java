@@ -3,7 +3,6 @@
 package com.nextgenmanager.nextgenmanager.items.service;
 
 import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
-import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
@@ -69,15 +68,14 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             "size", "productSpecification.size",
             "weight", "productSpecification.weight",
             "basicMaterial", "productSpecification.basicMaterial",
-            "drawingNumber", "productSpecification.drawingNumber",
-            "availableQuantity", "productInventorySettings.availableQuantity"
+            "drawingNumber", "productSpecification.drawingNumber"
     );
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItem.class);
 
     @Override
     @Transactional
-    public InventoryItem addInventoryItem(InventoryItem inventoryItem) {
+    public com.nextgenmanager.nextgenmanager.items.model.InventoryItem addInventoryItem(com.nextgenmanager.nextgenmanager.items.model.InventoryItem inventoryItem) {
         logger.debug("Adding inventory item: {}", inventoryItem);
         try {
             // Generate item code if not provided
@@ -125,7 +123,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRED)
-    public InventoryItem getInventoryItem(int itemId) {
+    public com.nextgenmanager.nextgenmanager.items.model.InventoryItem getInventoryItem(int itemId) {
         logger.debug("Fetching data for id: {}", itemId);
         try {
             InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(itemId);
@@ -189,7 +187,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
 
     @Override
-    public List<InventoryItem> getAllInventoryItemsWithDeleted() {
+    public java.util.List<com.nextgenmanager.nextgenmanager.items.model.InventoryItem> getAllInventoryItemsWithDeleted() {
         logger.debug("Fetching all inventory items including deleted");
         try {
             List<InventoryItem> allItems = inventoryItemRepository.findAll();
@@ -249,7 +247,7 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     }
 
     @Override
-    public InventoryItem editInventoryItem(int itemId, InventoryItem updatedItem) {
+    public com.nextgenmanager.nextgenmanager.items.model.InventoryItem editInventoryItem(int itemId, com.nextgenmanager.nextgenmanager.items.model.InventoryItem updatedItem) {
         logger.debug("Editing inventory item with id: {}", itemId);
         try {
             InventoryItem existingItem = inventoryItemRepository.findById(itemId)
@@ -305,14 +303,14 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     }
 
     @Override
-    public Page<InventoryItem> searchInventoryItems(String query, int page, int size) {
+    public Page<com.nextgenmanager.nextgenmanager.items.model.InventoryItem> searchInventoryItems(String query, int page, int size) {
 
         Pageable pageable = PageRequest.of(page, size);
         return inventoryItemRepository.searchActiveInventoryItems(query, pageable);
     }
 
     @Override
-    public Page<InventoryItemDTO> filterInventoryItems(FilterRequest request) {
+    public Page<InventoryItemDTO> filterInventoryItems(com.nextgenmanager.nextgenmanager.common.dto.FilterRequest request) {
         Sort.Direction direction = Sort.Direction.fromString(request.getSortDir()); // safer
         String sortBy = request.getSortBy();
         if (JOIN_FIELD_MAP.containsKey(sortBy)) {
@@ -324,8 +322,8 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         FilterCriteria filterDeleteDateIsNull = new FilterCriteria("deletedDate", "=", null);
         filters.add(filterDeleteDateIsNull);
         Pageable pageable = PageRequest.of(request.getPage(), request.getSize(), sort);
-        Specification<InventoryItem> spec = InventoryItemSpecification.buildSpecification(filters,JOIN_FIELD_MAP);
-        Page<InventoryItem> inventoryItems =inventoryItemRepository.findAll(spec, pageable);
+        Specification<com.nextgenmanager.nextgenmanager.items.model.InventoryItem> spec = InventoryItemSpecification.buildSpecification(filters,JOIN_FIELD_MAP);
+        Page<com.nextgenmanager.nextgenmanager.items.model.InventoryItem> inventoryItems =inventoryItemRepository.findAll(spec, pageable);
 
         Page<InventoryItemDTO> dtos = inventoryItems.map(inventoryItemMapper::toDTO);
         populateDrawingFileIds(dtos);

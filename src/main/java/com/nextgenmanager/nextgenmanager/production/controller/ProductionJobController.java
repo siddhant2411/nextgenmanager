@@ -3,8 +3,8 @@ package com.nextgenmanager.nextgenmanager.production.controller;
 
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.production.dto.ProductionJobResponseDTO;
-import com.nextgenmanager.nextgenmanager.production.model.ProductionJob;
-import com.nextgenmanager.nextgenmanager.production.service.ProductionJobService;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.ProductionJob;
+import com.nextgenmanager.nextgenmanager.production.service.workcenter.ProductionJobService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,8 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/production/production-job")

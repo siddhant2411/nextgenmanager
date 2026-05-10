@@ -16,7 +16,7 @@ import com.nextgenmanager.nextgenmanager.mcp.dto.McpJsonRpcResponse;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderListDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderSummaryDTO;
-import com.nextgenmanager.nextgenmanager.production.service.WorkOrderService;
+import com.nextgenmanager.nextgenmanager.production.service.workorder.WorkOrderService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.beans.factory.annotation.Value;

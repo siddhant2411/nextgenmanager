@@ -4,7 +4,7 @@ import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
 import com.nextgenmanager.nextgenmanager.assets.repository.MachineDetailsRepository;
 import com.nextgenmanager.nextgenmanager.production.dto.MachineScheduleDTO;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
-import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderOperationRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderOperationRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

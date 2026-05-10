@@ -3,7 +3,7 @@ package com.nextgenmanager.nextgenmanager.bom.dto;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
-import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

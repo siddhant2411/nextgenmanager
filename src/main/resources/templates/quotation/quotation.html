@@ -8,21 +8,14 @@
         /* Ensure the entire page takes up full space */
         @page {
             size: A4;
-            margin: 0;
+            margin: 10mm;
         }
 
         html,
         body {
-
             margin: 0;
             padding: 0;
-            width: 210mm;
-            height: 297mm;
-            padding: 0;
-            border: none;
-            overflow: hidden;
             font-family: 'Times New Roman', Times, serif;
-
         }
 
         /* Ensure the border covers the entire body */
@@ -33,80 +26,31 @@
             position: relative;
         }
 
-        /* Header styling */
-
-
-        /* Logo on the left */
-        .logo {
-            position: absolute;
-            width: 150px;
-            /* Adjust as needed */
-            height: auto;
-            top: 5mm;
-            left: 5mm;
-        }
-
-        /* Header image on the right */
-        .header-right {
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 175px;
-            /* Adjust as needed */
-            height: auto;
-        }
-
-        .content {
-            margin-top: 0;
-            padding: 10mm;
-            padding-top: 0;
+        .header {
+            padding-bottom: 2mm;
+            margin-bottom: 2mm;
+            border-bottom: 2px solid #0097d9;
         }
 
         .header-container {
             display: flex;
             justify-content: space-between;
-            /* Ensures items go to extreme ends */
             align-items: center;
             width: 100%;
-            /* Ensure full width */
         }
 
         .gstNumber {
             flex: 1;
-            /* Pushes "Quotation" to the right */
             text-align: left;
         }
 
         .fileheader {
             flex: 1;
-            /* Ensures it aligns to the right */
             text-align: right;
         }
 
-        .header-text {
-            margin-top: 15mm;
-            /* Adjust based on image height */
-            padding: 12mm;
-            padding-bottom: 0px;
-            width: 600px;
-            color: #0097d9;
-            font-size: 14px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .footer-image {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
-
-        .footer {
-            position: absolute;
-            bottom: -5px;
-            left: 0;
-            width: 100%;
-            height: 10mm;
+        .content {
+            padding: 0;
         }
 
         .footer-text {
@@ -193,29 +137,22 @@
 <body>
 
     <div class="header">
-        <img th:src="@{classpath:/static/images/logo.png}" alt="Logo" class="logo">
-
-        <img th:src="@{classpath:/static/images/header_right.png}" alt="Header Right" class="header-right">
-
-        <div class="header-text">
-            <div style="width: 270px;">
-                B-22 Maruti Ind. Estate – GIDC Phase 1, Vatva, Ahmedabad - 380008
+        <div style="text-align: center;">
+            <h1 th:text="${appCompany.companyName}" style="color: #0097d9; margin: 0; font-size: 28px; text-transform: uppercase;">Company Name</h1>
+            <div style="font-size: 12px; color: #666; margin-top: 2mm;">
+                <span th:text="${appCompany.street1} + ', ' + ${appCompany.street2} + ', ' + ${appCompany.city} + ' - ' + ${appCompany.pinCode} + ', ' + ${appCompany.state} + ', ' + ${appCompany.country}"></span>
             </div>
-            <div style="width: 160px;">
-                Mo: +91-9427068316
-                <a href="mailto:info@procequip.com" style="text-decoration: none; color: inherit;">
-                    Email: info@procequip.com
-                </a>
-
+            <div style="font-size: 12px; color: #666; margin-top: 1mm;">
+                <span th:if="${appCompany.phone}" th:text="'Phone: ' + ${appCompany.phone}"></span>
+                <span th:if="${appCompany.email}" th:text="' | Email: ' + ${appCompany.email}"></span>
+                <span th:if="${appCompany.website}" th:text="' | Website: ' + ${appCompany.website}"></span>
             </div>
-
         </div>
-
     </div>
     <div class="content">
         <div class="header-container">
             <div class="gstNumber">
-                <h3>GST No: ARJPM1513G1ZT</h3>
+                <h3 th:if="${appCompany.gstNumber}" th:text="'GST No: ' + ${appCompany.gstNumber}">GST No: </h3>
             </div>
             <div class="fileheader">
                 <u>
@@ -268,7 +205,7 @@
             </div>
 
             <div class="product-table" >
-                <table style="border-collapse: collapse; width: 100%; border: 1px solid black; min-height:120mm;">
+                <table style="border-collapse: collapse; width: 100%; border: 1px solid black; min-height:80mm;">
                     <!-- Table Header -->
                     <thead>
                         <tr style="background-color: #5fcfff; text-align: center; border-bottom: 2px solid black;">
@@ -289,7 +226,7 @@
                             <td style="text-align: center; border-top: none; border-bottom: none;  padding-top: 5mm;"
                                 th:text="${iterStat.index + 1}"></td>
                             <td style="text-align: left; border-top: none; border-bottom: none; padding-top: 5mm; padding-left: 3mm;"
-                                th:utext="${product.specialInstruction != null ? product.productNameRequired + '<br>' + product.specialInstruction : product.productNameRequired}">
+                                th:utext="${product.specialInstruction != null ? '<b>' + product.productNameRequired + '</b><br/><small>' + product.specialInstruction + '</small>' : '<b>' + product.productNameRequired + '</b>'}">
                             </td>
 
                             <td style="text-align: center; border-top: none; border-bottom: none; padding-top: 5mm;"
@@ -349,9 +286,9 @@
                             <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
                                 P & F charges %
                             </td>
-                            <td style="width: 7.9%; text-align: right;"  th:text="${quotationInfo.pandfchargesPercentage}+'%'">
+                            <td style="width: 7.9%; text-align: right;"  th:text="${quotationInfo.packagingAndForwardingChargesPercentage}+'%'">
                             </td>
-                            <td style="text-align: right;" th:text="${quotationInfo.pandfcharges}">
+                            <td style="text-align: right;" th:text="${quotationInfo.packagingAndForwardingCharges}">
                             </td>
 
                         <tr>
@@ -367,7 +304,7 @@
                             <td style="width: 7.9%; text-align: right;">
                             </td>
                             <td style="text-align: right;"
-                                th:text="${#numbers.formatDecimal(quotationInfo.netAmount - quotationInfo.discountAmount + quotationInfo.pandfcharges, 1, 2)}">
+                                th:text="${#numbers.formatDecimal(quotationInfo.netAmount - quotationInfo.discountAmount + quotationInfo.packagingAndForwardingCharges, 1, 2)}">
                             </td>
 
                         </tr>
@@ -425,24 +362,23 @@
                     </tbody>
                 </table>
 
-                <table style="margin-top: 10mm;">
+                <table style="margin-top: 5mm;">
                     <tbody>
                         <tr>
-                            <td style="width: 50%; border-bottom:none ;">BANK DETAIL -CANARA BANK</td>
-                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none">Process Equipment Corporation
-                            </td>
+                            <td style="width: 50%; border-bottom:none ;">BANK DETAIL</td>
+                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none" th:text="${appCompany.companyName}">Company Name</td>
                         </tr>
                         <tr>
-                            <td style="width: 50%;border-bottom:none; border-top: none;">Maninagar Branch, Ahmedabad-380 008, India</td>
+                            <td style="width: 50%;border-bottom:none; border-top: none;"></td>
                             <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none"></td>
                         </tr>
                         <tr>
-                            <td style="width: 50%; border-bottom:none; border-top: none">A/c. No-0282261051265</td>
-                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none">Prafull Mavani</td>
+                            <td style="width: 50%; border-bottom:none; border-top: none"></td>
+                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none">Authorized Signatory</td>
                         </tr>
                         <tr>
-                            <td style="width: 50%; border-bottom:none; border-top: none">IFSC Code-CNRB0000282</td>
-                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none">+919427068316</td>
+                            <td style="width: 50%; border-bottom:none; border-top: none"></td>
+                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none"></td>
                         </tr>
                     </tbody>
                 </table>
@@ -457,9 +393,11 @@
 
 
 
-    <div class="footer">
-        <img th:src="@{classpath:/static/images/footer.png}" alt="Logo" class="footer-image">
-        <a href="https://procequip.com/" class="footer-text">www.procequip.com</a>
+    <div class="footer" style="border-top: 1px solid #eee; padding: 3mm; text-align: center;">
+        <div style="font-size: 10px; color: #999;">
+            Generated by NextGenManager | 
+            <span th:if="${appCompany.website}" th:text="${appCompany.website}"></span>
+        </div>
     </div>
 
 </body>

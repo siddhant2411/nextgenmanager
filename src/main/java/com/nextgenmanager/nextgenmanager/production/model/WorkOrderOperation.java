@@ -2,7 +2,7 @@ package com.nextgenmanager.nextgenmanager.production.model;
 
 
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
-import com.nextgenmanager.nextgenmanager.production.model.WorkOrderQaEntry;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;

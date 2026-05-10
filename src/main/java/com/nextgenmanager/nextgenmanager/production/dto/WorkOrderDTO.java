@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.dto;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingDto;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderPriority;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderSourceType;

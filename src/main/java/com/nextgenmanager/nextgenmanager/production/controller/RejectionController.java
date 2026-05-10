@@ -4,7 +4,7 @@ import com.nextgenmanager.nextgenmanager.production.dto.DispositionRequestDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.ReasonCodeCategory;
 import com.nextgenmanager.nextgenmanager.production.model.RejectionReasonCode;
 import com.nextgenmanager.nextgenmanager.production.repository.RejectionReasonCodeRepository;
-import com.nextgenmanager.nextgenmanager.production.service.RejectionService;
+import com.nextgenmanager.nextgenmanager.production.service.workorder.RejectionService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;

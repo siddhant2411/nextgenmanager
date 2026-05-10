@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.service.audit;
 
 import com.nextgenmanager.nextgenmanager.production.model.audit.RoutingAudit;
-import com.nextgenmanager.nextgenmanager.production.repository.audit.RoutingAuditRepository;
+import com.nextgenmanager.nextgenmanager.bom.repository.routing.RoutingAuditRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

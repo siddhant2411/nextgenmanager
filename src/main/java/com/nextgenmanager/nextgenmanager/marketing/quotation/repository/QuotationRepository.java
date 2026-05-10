@@ -28,12 +28,16 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
         e.enqDate AS enqDate,
         c.companyName AS companyName, 
         q.netAmount AS netAmount, 
-        q.totalAmount AS totalAmount 
+        q.totalAmount AS totalAmount,
+        q.quotationStatus AS quotationStatus,
+        q.currency AS currency,
+        c.phone AS phone,
+        c.email AS email
     FROM 
         quotation q
-    INNER JOIN 
+    LEFT JOIN 
         enquiry e ON q.enquiry_id = e.id
-    INNER JOIN 
+    LEFT JOIN 
         contact c ON e.contact_id = c.id
     WHERE 
         (:companyName IS NULL OR c.companyName = :companyName)

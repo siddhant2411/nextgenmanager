@@ -52,6 +52,10 @@ public class Contact {
     @Column(length = 15)
     private String gstNumber;
 
+    /** 2-digit GST state code (e.g. "27" Maharashtra). Stored for GST treatment derivation; not shown on UI. */
+    @Column(length = 2)
+    private String stateCode;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     private GstType gstType = GstType.REGULAR;

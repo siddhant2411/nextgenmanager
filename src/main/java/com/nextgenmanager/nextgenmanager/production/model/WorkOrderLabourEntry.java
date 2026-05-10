@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.model;
 
 import com.nextgenmanager.nextgenmanager.production.enums.LabourType;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.LaborRole;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;

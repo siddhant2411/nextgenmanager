@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.controller;
 
 import com.nextgenmanager.nextgenmanager.production.dto.OEEMetricsDTO;
-import com.nextgenmanager.nextgenmanager.production.service.OEEService;
+import com.nextgenmanager.nextgenmanager.production.service.utils.OEEService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;

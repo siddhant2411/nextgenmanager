@@ -9,6 +9,7 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface BomListMapper {
 
+    @Mapping(target = "parentItemId", source = "parentInventoryItem.inventoryItemId")
     @Mapping(target = "parentItemCode", source = "parentInventoryItem.itemCode")
     @Mapping(target = "parentItemName", source = "parentInventoryItem.name")
     @Mapping(target = "parentDrawingNumber", source = "parentInventoryItem.productSpecification.drawingNumber")

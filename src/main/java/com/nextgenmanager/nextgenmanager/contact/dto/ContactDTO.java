@@ -27,6 +27,7 @@ public class ContactDTO {
     private String gstNumber;
     private GstType gstType;
     private String panNumber;
+    private String stateCode;
 
     // MSME
     private boolean msmeRegistered;

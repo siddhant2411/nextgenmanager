@@ -6,9 +6,12 @@ import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactPersonDetail;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.dto.QuotationDisplayDTO;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProducts;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationStatus;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.QuotationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +36,8 @@ public class QuotationServiceImp implements QuotationService {
 
     @Autowired private QuotationRepository quotationRepository;
     @Autowired private InventoryInstanceRepository inventoryInstanceRepository;
+    @Autowired private EnquiryRepository enquiryRepository;
+    @Autowired private com.nextgenmanager.nextgenmanager.company.service.CompanyDetailsService companyService;
 
     Logger logger = LoggerFactory.getLogger(QuotationServiceImp.class);
 
@@ -75,13 +80,17 @@ public class QuotationServiceImp implements QuotationService {
 
         return activeQuotations.map(record -> new QuotationDisplayDTO(
                 ((Number) record[0]).longValue(),
-                record[1].toString(),
-                ((java.sql.Date) record[2]).toLocalDate(),
-                record[3].toString(),
-                ((java.sql.Date) record[4]).toLocalDate(),
-                record[5].toString(),
+                record[1] != null ? record[1].toString() : null,
+                record[2] != null ? ((java.sql.Date) record[2]).toLocalDate() : null,
+                record[3] != null ? record[3].toString() : null,
+                record[4] != null ? ((java.sql.Date) record[4]).toLocalDate() : null,
+                record[5] != null ? record[5].toString() : null,
                 (BigDecimal) record[6],
-                (BigDecimal) record[7]
+                (BigDecimal) record[7],
+                record[8] != null ? record[8].toString() : "DRAFT",
+                record[9] != null ? record[9].toString() : "INR",
+                record[10] != null ? record[10].toString() : null,
+                record[11] != null ? record[11].toString() : null
         ));
     }
 
@@ -145,6 +154,9 @@ public class QuotationServiceImp implements QuotationService {
             List<QuotationProducts> quotationProducts = (quotation.getQuotationProducts() != null) ?
                     quotation.getQuotationProducts() : Collections.emptyList();
 
+            // Fetch company details
+            com.nextgenmanager.nextgenmanager.company.dto.CompanyDetailsDTO appCompany = companyService.get();
+
             // Set context variables
             Context context = new Context();
             Map<String, Object> templateVariables = new HashMap<>();
@@ -154,6 +166,7 @@ public class QuotationServiceImp implements QuotationService {
             templateVariables.put("quotationInfo", quotation);
             templateVariables.put("enquiryInfo", enquiryInfo);
             templateVariables.put("quotationProducts", quotationProducts);
+            templateVariables.put("appCompany", appCompany);
             context.setVariables(templateVariables);
 
             // Initialize template engine
@@ -312,5 +325,108 @@ public class QuotationServiceImp implements QuotationService {
     @Override
     public List<Quotation> getQuotationsByEnquiryId(Long enquiryId) {
         return quotationRepository.findByEnquiryId(enquiryId);
+    }
+
+    @Transactional
+    @Override
+    public Quotation reviseQuotation(Long id) throws Exception {
+        Quotation existing = getQuotationById(id);
+        
+        Quotation revised = new Quotation();
+        // Copy fields
+        revised.setQtnDate(LocalDate.now());
+        revised.setEnquiry(existing.getEnquiry());
+        revised.setNetAmount(existing.getNetAmount());
+        revised.setPackagingAndForwardingCharges(existing.getPackagingAndForwardingCharges());
+        revised.setPackagingAndForwardingChargesPercentage(existing.getPackagingAndForwardingChargesPercentage());
+        revised.setGstPercentage(existing.getGstPercentage());
+        revised.setDiscountPercentage(existing.getDiscountPercentage());
+        revised.setGstAmount(existing.getGstAmount());
+        revised.setDiscountAmount(existing.getDiscountAmount());
+        revised.setRoundOff(existing.getRoundOff());
+        revised.setTotalAmount(existing.getTotalAmount());
+        revised.setQuotationStatus(QuotationStatus.DRAFT);
+        revised.setValidTill(existing.getValidTill());
+        revised.setPaymentTerms(existing.getPaymentTerms());
+        revised.setDeliveryTerms(existing.getDeliveryTerms());
+        revised.setInspectionTerms(existing.getInspectionTerms());
+        revised.setPricesTerms(existing.getPricesTerms());
+        revised.setNotes(existing.getNotes());
+        
+        // Revision logic
+        int newRevision = existing.getRevisionNumber() + 1;
+        revised.setRevisionNumber(newRevision);
+        revised.setParentQuotationId(existing.getId());
+        
+        // Base qtnNo logic
+        String baseQtnNo = existing.getQtnNo();
+        if (baseQtnNo.contains("-R")) {
+            baseQtnNo = baseQtnNo.substring(0, baseQtnNo.lastIndexOf("-R"));
+        }
+        revised.setQtnNo(baseQtnNo + "-R" + newRevision);
+        
+        // Products
+        List<QuotationProducts> newProducts = new ArrayList<>();
+        if (existing.getQuotationProducts() != null) {
+            for (QuotationProducts ep : existing.getQuotationProducts()) {
+                QuotationProducts np = new QuotationProducts();
+                np.setQuotation(revised);
+                np.setInventoryItem(ep.getInventoryItem());
+                np.setQty(ep.getQty());
+                np.setPricePerUnit(ep.getPricePerUnit());
+                np.setDiscountPercentage(ep.getDiscountPercentage());
+                np.setUnitPriceAfterDiscount(ep.getUnitPriceAfterDiscount());
+                np.setTotalAmountOfProduct(ep.getTotalAmountOfProduct());
+                np.setSpecialInstruction(ep.getSpecialInstruction());
+                np.setProductNameRequired(ep.getProductNameRequired());
+                newProducts.add(np);
+            }
+        }
+        revised.setQuotationProducts(newProducts);
+        
+        // Mark old as REVISED
+        existing.setQuotationStatus(QuotationStatus.REVISED);
+        quotationRepository.save(existing);
+        syncEnquiryStatus(existing);
+        
+        return quotationRepository.save(revised);
+    }
+
+    @Transactional
+    @Override
+    public Quotation updateQuotationStatus(Long id, String statusStr) throws Exception {
+        Quotation quotation = getQuotationById(id);
+        QuotationStatus status = QuotationStatus.valueOf(statusStr.toUpperCase());
+        quotation.setQuotationStatus(status);
+        quotation = quotationRepository.save(quotation);
+        
+        syncEnquiryStatus(quotation);
+        
+        return quotation;
+    }
+    
+    private void syncEnquiryStatus(Quotation quotation) {
+        if (quotation.getEnquiry() == null) return;
+        Enquiry enquiry = quotation.getEnquiry();
+        
+        QuotationStatus qStatus = quotation.getQuotationStatus();
+        boolean statusChanged = false;
+        
+        if (qStatus == QuotationStatus.SENT && enquiry.getStatus() != EnquiryStatus.QUOTED && enquiry.getStatus() != EnquiryStatus.CONVERTED) {
+            enquiry.setStatus(EnquiryStatus.QUOTED);
+            statusChanged = true;
+        } else if (qStatus == QuotationStatus.ACCEPTED && enquiry.getStatus() != EnquiryStatus.CONVERTED) {
+            enquiry.setStatus(EnquiryStatus.CONVERTED);
+            statusChanged = true;
+        } else if (qStatus == QuotationStatus.REVISED && enquiry.getStatus() != EnquiryStatus.NEGOTIATION && enquiry.getStatus() != EnquiryStatus.CONVERTED) {
+            enquiry.setStatus(EnquiryStatus.NEGOTIATION);
+            statusChanged = true;
+        } else if (qStatus == QuotationStatus.REJECTED) {
+            // Usually we do not mark enquiry as LOST just because one quotation is rejected, but could map it if needed.
+        }
+        
+        if (statusChanged) {
+            enquiryRepository.save(enquiry);
+        }
     }
 }

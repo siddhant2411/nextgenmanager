@@ -1,7 +1,10 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.controller;
 
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkAssignRequest;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkDeleteRequest;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.service.EnquiryExportService;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.service.EnquiryService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -9,13 +12,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 
 @RestController
 @RequestMapping("/api/enquiry")
@@ -25,6 +32,9 @@ public class EnquiryController {
 
     @Autowired
     private EnquiryService enquiryService;
+
+    @Autowired
+    private EnquiryExportService enquiryExportService;
 
     private static final Logger logger = LoggerFactory.getLogger(EnquiryController.class);
 
@@ -149,4 +159,82 @@ public class EnquiryController {
         }
     }
 
+    @PostMapping("/convert-to-quotation/{id}")
+    public ResponseEntity<?> convertToQuotation(@PathVariable Long id) {
+        try {
+            if (id <= 0) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid ID: ID must be greater than zero.");
+            }
+            Long quotationId = enquiryService.convertToQuotation(id);
+            return ResponseEntity.status(HttpStatus.OK).body(quotationId);
+        } catch (Exception e) {
+            logger.error("Error while converting enquiry to quotation", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", "Failed to convert enquiry: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/bulk-delete")
+    public ResponseEntity<?> bulkDelete(@RequestBody BulkDeleteRequest request) {
+        try {
+            if (request.getIds() == null || request.getIds().isEmpty()) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("error", "No IDs provided"));
+            }
+            enquiryService.bulkDelete(request);
+            return ResponseEntity.ok(java.util.Map.of("message", request.getIds().size() + " enquiries deleted"));
+        } catch (Exception e) {
+            logger.error("Error during bulk delete", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", "Bulk delete failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/bulk-assign")
+    public ResponseEntity<?> bulkAssign(@RequestBody BulkAssignRequest request) {
+        try {
+            if (request.getIds() == null || request.getIds().isEmpty()) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("error", "No IDs provided"));
+            }
+            if (request.getAssignedToId() == null) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("error", "No user ID provided"));
+            }
+            enquiryService.bulkAssign(request);
+            return ResponseEntity.ok(java.util.Map.of("message", request.getIds().size() + " enquiries assigned"));
+        } catch (Exception e) {
+            logger.error("Error during bulk assign", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", "Bulk assign failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping(value = "/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public ResponseEntity<byte[]> exportEnquiries(
+            @RequestParam(required = false) String enqNo,
+            @RequestParam(required = false) String companyName,
+            @RequestParam(required = false) LocalDate lastContactedDate,
+            @RequestParam(required = false) LocalDate enqDate,
+            @RequestParam(required = false) LocalDate closedDate,
+            @RequestParam(required = false) Integer daysForNextFollowup,
+            @RequestParam(required = false) String lastContactedDateComp,
+            @RequestParam(required = false) String enqDateComp,
+            @RequestParam(required = false) String closedDateComp
+    ) {
+        try {
+            byte[] bytes = enquiryExportService.exportToExcel(
+                    enqNo, companyName, lastContactedDate, enqDate, closedDate,
+                    daysForNextFollowup, lastContactedDateComp, enqDateComp, closedDateComp);
+            logger.debug("Received {} bytes from ExportService. Sending to client.", bytes != null ? bytes.length : 0);
+            String filename = "Enquiry_Register_" + LocalDate.now().format(DateTimeFormatter.ofPattern("ddMMMyyyy")) + ".xlsx";
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+            headers.setContentDisposition(ContentDisposition.attachment().filename(filename).build());
+            return new ResponseEntity<>(bytes, headers, HttpStatus.OK);
+        } catch (Exception e) {
+            logger.error("Error generating enquiry Excel export", e);
+            String errorJson = "{\"error\": \"Export failed: " + e.getMessage().replace("\"", "\\\"") + "\"}";
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .header("Content-Type", "application/json")
+                    .body(errorJson.getBytes());
+        }
+    }
 }

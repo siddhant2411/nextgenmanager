@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import jakarta.persistence.*;
+import com.nextgenmanager.nextgenmanager.Inventory.model.BatchNumber;
+import com.nextgenmanager.nextgenmanager.Inventory.model.SerialNumber;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -88,6 +90,14 @@ public class InventoryInstance {
     private InventoryInstanceStatus inventoryInstanceStatus = InventoryInstanceStatus.PENDING;
 
     private String consumptionReferenceNo; // Tracks the document (e.g., Work Order) that consumed this instance
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batchId")
+    private BatchNumber batchNumber;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "serialId", unique = true)
+    private SerialNumber serialNumber;
 
 
     private static String generateShortUUID() {

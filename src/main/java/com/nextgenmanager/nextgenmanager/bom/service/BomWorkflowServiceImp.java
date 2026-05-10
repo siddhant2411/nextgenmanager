@@ -2,11 +2,12 @@ package com.nextgenmanager.nextgenmanager.bom.service;
 
 import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingRequestMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingOperationDto;
 import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
-import com.nextgenmanager.nextgenmanager.production.dto.RoutingDto;
-import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
-import com.nextgenmanager.nextgenmanager.production.service.RoutingService;
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingDto;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.bom.service.routing.RoutingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,11 +37,11 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
             return;
         }
 
-        java.util.Map<Integer, com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto> opBySeq =
+        java.util.Map<Integer, RoutingOperationDto> opBySeq =
                 savedRouting.getOperations().stream()
                         .filter(op -> op.getSequenceNumber() != null)
                         .collect(java.util.stream.Collectors.toMap(
-                                com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto::getSequenceNumber,
+                                RoutingOperationDto::getSequenceNumber,
                                 op -> op, (a, b) -> a));
 
         boolean anyUpdated = false;
@@ -52,7 +53,7 @@ public class BomWorkflowServiceImp implements BomWorkflowService {
                     (reqPos.getPosition() == null || reqPos.getPosition().equals(pos.getPosition()))) {
                     
                     if (reqPos.getRoutingOperationSequenceNumber() != null) {
-                        com.nextgenmanager.nextgenmanager.production.dto.RoutingOperationDto matchingOp =
+                        RoutingOperationDto matchingOp =
                                 opBySeq.get(reqPos.getRoutingOperationSequenceNumber());
                         if (matchingOp != null && matchingOp.getId() != null) {
                             RoutingOperation opEntity = new RoutingOperation();
