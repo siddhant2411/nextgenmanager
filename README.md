@@ -130,24 +130,76 @@ India has over **6.3 crore MSMEs** that form the backbone of the manufacturing s
 
 ## Installation
 
-### 🚀 Fast Start: Docker Compose
+### Option 1: Docker Compose — Local Machine
 
-The easiest way to get NextGenManager up and running.
+The easiest way to get NextGenManager up and running on your laptop.
 
 ```bash
-# 1. Clone the repo
+# 1. Clone both repositories into the same parent folder
 git clone https://github.com/siddhant2411/nextgenmanager.git
-cd nextgenmanager
+git clone https://github.com/siddhant2411/nextgenmanagerui.git
 
-# 2. Fire up the platform
+# 2. Fire up the full platform (backend + frontend + postgres + minio)
+cd nextgenmanager
 docker-compose up --build
 ```
 
-The UI will be available at `http://localhost:3000`.
+| Service | URL |
+|---------|-----|
+| UI | `http://localhost:3000` |
+| Backend API | `http://localhost:8080` |
+| MinIO Console | `http://localhost:9001` (minioadmin / minioadmin) |
+
+After MinIO is up, open `http://localhost:9001` and create a bucket named **`nextgenmanager`**.
 
 ---
 
-### Manual Setup (Development)
+### Option 2: Docker Compose — Remote Server / VPS
+
+Use this when deploying to a cloud VM or any server with a public IP or domain.
+
+The React frontend bakes the API URL at **build time**, so you must pass your server's address before building.
+
+#### Step 1: On your server, clone both repos side by side
+
+```bash
+git clone https://github.com/siddhant2411/nextgenmanager.git
+git clone https://github.com/siddhant2411/nextgenmanagerui.git
+```
+
+#### Step 2: Set your server's API URL and start
+
+Replace `YOUR_SERVER_IP` with your actual IP address or domain name:
+
+```bash
+cd nextgenmanager
+API_URL=http://YOUR_SERVER_IP:8080/api docker-compose up --build -d
+```
+
+Or create a `.env` file next to `docker-compose.yml` so you don't have to repeat it:
+
+```bash
+# nextgenmanager/.env
+API_URL=http://YOUR_SERVER_IP:8080/api
+```
+
+Then just run:
+
+```bash
+docker-compose up --build -d
+```
+
+| Service | URL |
+|---------|-----|
+| UI | `http://YOUR_SERVER_IP:3000` |
+| Backend API | `http://YOUR_SERVER_IP:8080` |
+| MinIO Console | `http://YOUR_SERVER_IP:9001` |
+
+> **Before going live** — change the default `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, and `SECURITY_JWT_SECRET` values in `docker-compose.yml` to strong secrets.
+
+---
+
+### Option 3: Manual Setup (Development)
 
 Complete guide to set up **both the backend and the frontend** on your machine.
 
