@@ -29,7 +29,8 @@ import java.util.List;
 @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
         "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
         "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-        "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+        "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
+        "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
 @Tag(name = "Inventory Items", description = "Product master data — items, specifications, attachments, vendor prices")
 public class InventoryItemController {
 

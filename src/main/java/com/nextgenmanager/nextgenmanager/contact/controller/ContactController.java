@@ -20,7 +20,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/contact")
 @Tag(name = "Contacts", description = "Vendors, Customers and combined contacts with GST and MSME details")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER')")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER','ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
 public class ContactController {
 
     @Autowired

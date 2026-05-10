@@ -3,7 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.controller;
 import com.nextgenmanager.nextgenmanager.production.dto.DowntimeEventRequestDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.DowntimeEventResponseDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.DowntimeReasonCodeDTO;
-import com.nextgenmanager.nextgenmanager.production.service.DowntimeService;
+import com.nextgenmanager.nextgenmanager.production.service.workcenter.DowntimeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

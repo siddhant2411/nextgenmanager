@@ -5,7 +5,7 @@ import com.nextgenmanager.nextgenmanager.production.dto.ProductionScheduleDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
-import com.nextgenmanager.nextgenmanager.production.repository.WorkOrderOperationRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderOperationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +15,6 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)

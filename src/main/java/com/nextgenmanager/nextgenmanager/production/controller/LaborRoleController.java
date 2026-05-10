@@ -1,8 +1,8 @@
 package com.nextgenmanager.nextgenmanager.production.controller;
 
 import com.nextgenmanager.nextgenmanager.production.dto.LaborRoleResponseDTO;
-import com.nextgenmanager.nextgenmanager.production.model.LaborRole;
-import com.nextgenmanager.nextgenmanager.production.service.LaborRoleService;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.LaborRole;
+import com.nextgenmanager.nextgenmanager.production.service.workcenter.LaborRoleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;

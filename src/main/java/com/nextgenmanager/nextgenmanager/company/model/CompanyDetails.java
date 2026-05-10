@@ -64,6 +64,10 @@ public class CompanyDetails {
     @Column(length = 10)
     private String pinCode;
 
+    /** 2-digit GST state code (e.g. "27" for Maharashtra). Stored for GST treatment derivation; not shown on UI. */
+    @Column(length = 2)
+    private String stateCode;
+
     @Column(length = 100)
     private String country = "India";
 

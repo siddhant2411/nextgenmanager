@@ -1,9 +1,7 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstanceStatus;
-import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryLedger;
+import com.nextgenmanager.nextgenmanager.Inventory.model.*;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryLedgerRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -31,6 +29,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
     @Autowired private InventoryItemRepository inventoryItemRepository;
     @Autowired private InventoryLedgerRepository inventoryLedgerRepository;
     @Autowired private InventoryInstanceRepository inventoryInstanceRepository;
+    @Autowired private BatchSerialService batchSerialService;
 
     // ─── RESERVE ─────────────────────────────────────────────────────────────
 
@@ -155,19 +154,53 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         InventoryItem item = loadItem(req.getInventoryItemId());
         ProductInventorySettings settings = item.getProductInventorySettings();
         double qty = req.getQuantity();
+        boolean isBatch  = settings.isBatchTracked();
+        boolean isSerial = settings.isSerialTracked();
 
-        if (settings.isBatchTracked() || settings.isSerialTracked()) {
-            int instanceCount = settings.isSerialTracked() ? (int) qty : 1;
-            double qtyPerInstance = settings.isSerialTracked() ? 1.0 : qty;
+        if (isBatch || isSerial) {
+            // ── Create batch record (one per produce call) ─────────────────
+            BatchNumber batch = null;
+            if (isBatch) {
+                batch = batchSerialService.createBatch(
+                        item, qty,
+                        req.getTransactionType(),   // "GRN" or "PRODUCE" (WO)
+                        req.getReferenceDocNo(),
+                        req.getWarehouse(),
+                        req.getManufacturingDate(),
+                        req.getExpiryDate(),
+                        req.getSupplierBatchNo(),
+                        req.getCreatedBy()
+                );
+            }
+
+            // ── Create serial records (one per unit) ───────────────────────
+            List<SerialNumber> serials = null;
+            int instanceCount   = isSerial ? (int) qty : 1;
+            double qtyPerInst   = isSerial ? 1.0 : qty;
+
+            if (isSerial) {
+                serials = batchSerialService.createSerials(
+                        item, instanceCount, batch,
+                        req.getTransactionType(),
+                        req.getReferenceDocNo(),
+                        req.getWarehouse(),
+                        req.getManualSerialNumbers(),
+                        req.getCreatedBy()
+                );
+            }
+
+            // ── Create InventoryInstance records ───────────────────────────
             BigDecimal cost = BigDecimal.valueOf(req.getCostPerUnit());
             for (int i = 0; i < instanceCount; i++) {
                 InventoryInstance inst = new InventoryInstance();
                 inst.setInventoryItem(item);
                 inst.setEntryDate(new Date());
-                inst.setQuantity(BigDecimal.valueOf(qtyPerInstance));
+                inst.setQuantity(BigDecimal.valueOf(qtyPerInst));
                 inst.setCostPerUnit(cost);
                 inst.setSellPricePerUnit(cost);
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                inst.setBatchNumber(batch);
+                if (serials != null) inst.setSerialNumber(serials.get(i));
                 inventoryInstanceRepository.save(inst);
             }
         }
@@ -175,7 +208,8 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         settings.setAvailableQuantity(settings.getAvailableQuantity() + qty);
         writeLedger(req, item, qty, settings.getAvailableQuantity());
         inventoryItemRepository.save(item);
-        logger.info("PRODUCE {} of {} | available={}", qty, item.getItemCode(), settings.getAvailableQuantity());
+        logger.info("PRODUCE {} of {} | available={} | batch={} serial={}",
+                qty, item.getItemCode(), settings.getAvailableQuantity(), isBatch, isSerial);
     }
 
     // ─── RETURN ───────────────────────────────────────────────────────────────

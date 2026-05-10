@@ -20,5 +20,8 @@ public class QuotationDisplayDTO {
     private String companyName;
     private BigDecimal netAmount;
     private BigDecimal totalAmount;
-
+    private String quotationStatus;
+    private String currency;
+    private String phone;
+    private String email;
 }

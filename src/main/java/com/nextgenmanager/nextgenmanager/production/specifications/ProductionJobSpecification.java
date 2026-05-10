@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.specifications;
 
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
-import com.nextgenmanager.nextgenmanager.production.model.ProductionJob;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.ProductionJob;
 import org.springframework.data.jpa.domain.Specification;
 
 public class ProductionJobSpecification {

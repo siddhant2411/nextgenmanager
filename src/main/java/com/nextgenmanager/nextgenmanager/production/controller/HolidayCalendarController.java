@@ -4,7 +4,7 @@ import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.production.dto.CalendarOverrideDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.HolidayCalendarDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.HolidayDTO;
-import com.nextgenmanager.nextgenmanager.production.service.HolidayCalendarService;
+import com.nextgenmanager.nextgenmanager.production.service.workcenter.HolidayCalendarService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

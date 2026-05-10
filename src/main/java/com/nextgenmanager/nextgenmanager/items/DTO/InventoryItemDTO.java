@@ -22,17 +22,13 @@ public class InventoryItemDTO {
     private int inventoryItemId;
     private String itemCode;
     private String name;
-    private String hsnCode;
     private UOM uom;
     private ItemType itemType;
     private String dimension;
     private String size;
     private String weight;
     private String basicMaterial;
-    private double availableQuantity;
-    private byte revision;
     private String drawingNumber;
-    private double sellingPrice;
     private boolean manufactured;
     private boolean purchased;
     private double leadTime;

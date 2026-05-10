@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.controller;
 
 import com.nextgenmanager.nextgenmanager.production.dto.TestTemplateDTO;
-import com.nextgenmanager.nextgenmanager.production.service.TestTemplateService;
+import com.nextgenmanager.nextgenmanager.production.service.workorder.TestTemplateService;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

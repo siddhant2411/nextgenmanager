@@ -2,7 +2,7 @@ package com.nextgenmanager.nextgenmanager.bom.model;
 
 import com.fasterxml.jackson.annotation.*;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
-import com.nextgenmanager.nextgenmanager.production.model.Routing;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.Routing;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;

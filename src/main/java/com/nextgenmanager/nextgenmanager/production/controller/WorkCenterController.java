@@ -3,7 +3,7 @@ package com.nextgenmanager.nextgenmanager.production.controller;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkCenterResponseDTO;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
-import com.nextgenmanager.nextgenmanager.production.service.WorkCenterService;
+import com.nextgenmanager.nextgenmanager.production.service.workcenter.WorkCenterService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

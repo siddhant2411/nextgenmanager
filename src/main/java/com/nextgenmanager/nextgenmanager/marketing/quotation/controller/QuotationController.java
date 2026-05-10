@@ -114,5 +114,31 @@ public class QuotationController {
     public ResponseEntity<byte[]> downloadQuotationPdf(@PathVariable Long id) {
         return quotationService.downloadQuotationPdf(id);
     }
+    
+    @PostMapping("/{id}/revise")
+    public ResponseEntity<?> reviseQuotation(@PathVariable Long id) {
+        try {
+            Quotation revised = quotationService.reviseQuotation(id);
+            return ResponseEntity.status(HttpStatus.CREATED).body(revised);
+        } catch (Exception e) {
+            logger.error("Error revising quotation: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
+    
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<?> updateQuotationStatus(@PathVariable Long id, @RequestBody java.util.Map<String, String> payload) {
+        try {
+            String status = payload.get("status");
+            if (status == null) {
+                return ResponseEntity.badRequest().body("Status is required");
+            }
+            Quotation updated = quotationService.updateQuotationStatus(id, status);
+            return ResponseEntity.ok(updated);
+        } catch (Exception e) {
+            logger.error("Error updating quotation status: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
 }
 

@@ -19,6 +19,13 @@ public class EnquiryConversationRecord {
     private Long id;
 
     private String conversation;
+    
+    @Enumerated(EnumType.STRING)
+    private ConversationType conversationType = ConversationType.NOTE;
+
+    public enum ConversationType {
+        CALL, EMAIL, MEETING, NOTE
+    }
 
     @ManyToOne
     @JoinColumn(name = "enquiry_conversation_id", referencedColumnName = "id")

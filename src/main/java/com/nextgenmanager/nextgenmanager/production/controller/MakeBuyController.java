@@ -2,7 +2,7 @@ package com.nextgenmanager.nextgenmanager.production.controller;
 
 import com.nextgenmanager.nextgenmanager.production.dto.MakeBuyAnalysisDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.MakeBuyAnalysisRequestDTO;
-import com.nextgenmanager.nextgenmanager.production.service.MakeBuyAnalysisService;
+import com.nextgenmanager.nextgenmanager.bom.service.routing.MakeBuyAnalysisService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;

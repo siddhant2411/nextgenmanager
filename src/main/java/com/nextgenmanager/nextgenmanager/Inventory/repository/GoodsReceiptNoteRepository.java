@@ -23,7 +23,7 @@ public interface GoodsReceiptNoteRepository extends JpaRepository<GoodsReceiptNo
            "(:poId IS NULL OR g.purchaseOrder.id = :poId) AND " +
            "(:status IS NULL OR g.status = :status) AND " +
            "(:vendorId IS NULL OR g.vendor.id = :vendorId) AND " +
-           "(:grnNumber IS NULL OR LOWER(g.grnNumber) LIKE LOWER(CONCAT('%', :grnNumber, '%')))" +
+           "(:grnNumber IS NULL OR LOWER(g.grnNumber) LIKE LOWER(CONCAT('%', CAST(:grnNumber AS String), '%')))" +
            " ORDER BY g.grnDate DESC, g.id DESC")
     Page<GoodsReceiptNote> search(@Param("poId") Long poId,
                                    @Param("status") GRNStatus status,

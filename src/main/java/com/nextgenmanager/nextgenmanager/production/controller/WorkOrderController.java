@@ -2,12 +2,11 @@ package com.nextgenmanager.nextgenmanager.production.controller;
 
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.production.dto.*;
-import com.nextgenmanager.nextgenmanager.production.service.TestTemplateService;
+import com.nextgenmanager.nextgenmanager.production.service.workorder.*;
 import com.nextgenmanager.nextgenmanager.production.dto.RejectionEntryDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.YieldMetricsDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.DispositionStatus;
-import com.nextgenmanager.nextgenmanager.production.service.RejectionService;
-import com.nextgenmanager.nextgenmanager.production.service.WorkOrderService;
+import com.nextgenmanager.nextgenmanager.production.service.workorder.RejectionService;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.MachineScheduleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,7 +19,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.nextgenmanager.nextgenmanager.production.service.WorkOrderExportService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
@@ -57,10 +55,10 @@ public class WorkOrderController {
     private TestTemplateService testTemplateService;
 
     @Autowired
-    private com.nextgenmanager.nextgenmanager.production.service.WorkOrderLabourService workOrderLabourService;
+    private WorkOrderLabourService workOrderLabourService;
 
     @Autowired
-    private com.nextgenmanager.nextgenmanager.production.service.CostOfProductionService costOfProductionService;
+    private CostOfProductionService costOfProductionService;
 
     private static final Logger logger = LoggerFactory.getLogger(WorkOrderController.class);
 
@@ -1822,7 +1820,7 @@ public class WorkOrderController {
     // ─── QA Entries ──────────────────────────────────────────────────────────
 
     @Autowired
-    private com.nextgenmanager.nextgenmanager.production.service.WorkOrderQaService workOrderQaService;
+    private WorkOrderQaService workOrderQaService;
 
     @GetMapping("/operation/{operationId}/qa")
     public ResponseEntity<?> getQaEntriesForOperation(@PathVariable Long operationId) {

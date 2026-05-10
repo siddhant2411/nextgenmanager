@@ -1,13 +1,9 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
-import com.nextgenmanager.nextgenmanager.Inventory.dto.CreateGRNRequest;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.GRNLineItemDTO;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.GRNResponseDTO;
-import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
-import com.nextgenmanager.nextgenmanager.Inventory.model.GRNStatus;
-import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptItem;
-import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptNote;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.*;
+import com.nextgenmanager.nextgenmanager.Inventory.model.*;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.GoodsReceiptNoteRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.SerialNumberRepository;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -36,6 +32,7 @@ public class GRNServiceImpl implements GRNService {
     @Autowired private ContactRepository contactRepository;
     @Autowired private InventoryItemRepository inventoryItemRepository;
     @Autowired private InventoryTransactionService inventoryTransactionService;
+    @Autowired private SerialNumberRepository serialNumberRepository;
 
     @Override
     @Transactional
@@ -79,7 +76,7 @@ public class GRNServiceImpl implements GRNService {
             line.setRejectedQty(lineDto.getRejectedQty());
             line.setRate(lineDto.getRate());
             line.setAmount(lineDto.getAcceptedQty() * lineDto.getRate());
-            line.setBatchNo(lineDto.getBatchNo());
+            line.setBatchNo(lineDto.getSupplierBatchNo()); // store supplier batch on GRN line for reference
             line.setExpiryDate(lineDto.getExpiryDate());
             line.setRejectionReason(lineDto.getRejectionReason());
             lineItems.add(line);
@@ -95,6 +92,11 @@ public class GRNServiceImpl implements GRNService {
                 txn.setWarehouse(request.getWarehouse());
                 txn.setCostPerUnit(lineDto.getRate());
                 txn.setCreatedBy(request.getCreatedBy());
+                // Batch / serial fields from request line
+                txn.setSupplierBatchNo(lineDto.getSupplierBatchNo());
+                txn.setManufacturingDate(lineDto.getManufacturingDate());
+                txn.setExpiryDate(lineDto.getExpiryDate());
+                txn.setManualSerialNumbers(lineDto.getManualSerialNumbers());
                 inventoryTransactionService.produceStock(txn);
             }
         }
@@ -136,16 +138,19 @@ public class GRNServiceImpl implements GRNService {
         PurchaseOrder po = grn.getPurchaseOrder();
 
         List<GoodsReceiptNote> allGrns = grnRepository.findByPurchaseOrder_Id(po.getId());
-        boolean allFulfilled = po.getItems().stream().allMatch(poItem -> {
+
+        boolean allFulfilled = true;
+        for (PurchaseOrderItem poItem : po.getItems()) {
             double totalReceived = allGrns.stream()
                     .flatMap(g -> g.getItems().stream())
                     .filter(gi -> gi.getItem().getInventoryItemId() == poItem.getItem().getInventoryItemId())
                     .mapToDouble(GoodsReceiptItem::getAcceptedQty)
                     .sum();
-            return totalReceived >= poItem.getQuantityOrdered();
-        });
+            poItem.setQuantityReceived(totalReceived);
+            if (totalReceived < poItem.getQuantityOrdered()) allFulfilled = false;
+        }
 
-        po.setStatus(allFulfilled ? PurchaseOrderStatus.COMPLETED : PurchaseOrderStatus.PARTIALLY_RECEIVED);
+        po.setStatus(allFulfilled ? PurchaseOrderStatus.RECEIVED : PurchaseOrderStatus.PARTIALLY_RECEIVED);
         purchaseOrderRepository.save(po);
     }
 
@@ -191,14 +196,39 @@ public class GRNServiceImpl implements GRNService {
         dto.setRejectedQty(item.getRejectedQty());
         dto.setRate(item.getRate());
         dto.setAmount(item.getAmount());
-        dto.setBatchNo(item.getBatchNo());
         dto.setExpiryDate(item.getExpiryDate());
+        dto.setSupplierBatchNo(item.getBatchNo()); // batchNo column stores supplier batch reference
         dto.setRejectionReason(item.getRejectionReason());
         if (item.getItem() != null) {
             dto.setInventoryItemId(item.getItem().getInventoryItemId());
             dto.setItemCode(item.getItem().getItemCode());
             dto.setItemName(item.getItem().getName());
             dto.setUom(item.getItem().getUom() != null ? item.getItem().getUom().name() : null);
+
+            // Populate generated batch/serial numbers from inventory instances
+            if (item.getItem().getProductInventorySettings() != null) {
+                boolean isBatch  = item.getItem().getProductInventorySettings().isBatchTracked();
+                boolean isSerial = item.getItem().getProductInventorySettings().isSerialTracked();
+
+                if (isBatch) {
+                    serialNumberRepository.findBySourceDocNo(item.getGoodsReceiptNote().getGrnNumber())
+                            .stream()
+                            .filter(s -> s.getInventoryItem().getInventoryItemId() == item.getItem().getInventoryItemId())
+                            .findFirst()
+                            .ifPresent(s -> {
+                                if (s.getBatch() != null) dto.setGeneratedBatchNumber(s.getBatch().getBatchNumber());
+                            });
+                }
+                if (isSerial) {
+                    List<String> serials = serialNumberRepository
+                            .findBySourceDocNo(item.getGoodsReceiptNote().getGrnNumber())
+                            .stream()
+                            .filter(s -> s.getInventoryItem().getInventoryItemId() == item.getItem().getInventoryItemId())
+                            .map(SerialNumber::getSerialNumber)
+                            .collect(Collectors.toList());
+                    dto.setGeneratedSerialNumbers(serials);
+                }
+            }
         }
         return dto;
     }

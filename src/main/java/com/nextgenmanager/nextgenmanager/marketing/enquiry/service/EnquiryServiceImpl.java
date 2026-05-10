@@ -1,13 +1,24 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
+import com.nextgenmanager.nextgenmanager.common.model.AppUser;
+import com.nextgenmanager.nextgenmanager.common.repository.AppUserRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkAssignRequest;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkDeleteRequest;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiredProducts;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryConversationRecord;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryPriority;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryType;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProducts;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationStatus;
+import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.QuotationRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +28,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -32,6 +45,15 @@ public class EnquiryServiceImpl implements EnquiryService {
 
     @Autowired
     InventoryItemRepository inventoryItemRepository;
+
+    @Autowired
+    EnquiryNumberGenerator enquiryNumberGenerator;
+
+    @Autowired
+    QuotationRepository quotationRepository;
+
+    @Autowired
+    AppUserRepository appUserRepository;
 
     @Override
     public Enquiry getEnquiry(Long id) {
@@ -64,10 +86,10 @@ public class EnquiryServiceImpl implements EnquiryService {
             try {
                 Long enquiryId = ((Number) record[0]).longValue();
                 String fetchedEnqNo = record[1].toString();
-                LocalDate fetchedEnqDate = ((java.sql.Date) record[2]).toLocalDate();
-                String fetchedCompanyName = record[3].toString();
-                LocalDate fetchedLastContactedDate = ((java.sql.Date) record[4]).toLocalDate();
-                int fetchedDaysNextToContact = (int) record[5];
+                LocalDate fetchedEnqDate = record[2] != null ? ((java.sql.Date) record[2]).toLocalDate() : null;
+                String fetchedCompanyName = record[3] != null ? record[3].toString() : "N/A";
+                LocalDate fetchedLastContactedDate = record[4] != null ? ((java.sql.Date) record[4]).toLocalDate() : null;
+                int fetchedDaysNextToContact = record[5] != null ? (int) record[5] : 0;
                 LocalDate fetchedClosedDate = null;
                 if (record[6] != null) {
                     fetchedClosedDate = ((java.sql.Date) record[6]).toLocalDate();
@@ -75,18 +97,29 @@ public class EnquiryServiceImpl implements EnquiryService {
 
                 com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus fetchedStatus = null;
                 if (record[7] != null) {
-                    fetchedStatus = com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.valueOf(record[7].toString());
+                    try {
+                        fetchedStatus = com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.valueOf(record[7].toString());
+                    } catch (IllegalArgumentException e) {
+                        logger.warn("Invalid status found: {}", record[7]);
+                    }
                 }
                 java.math.BigDecimal fetchedExpectedRevenue = java.math.BigDecimal.ZERO;
                 if (record[8] != null) {
                     fetchedExpectedRevenue = new java.math.BigDecimal(record[8].toString());
                 }
-                String fetchedOpportunityName = null;
-                if (record[9] != null) {
-                    fetchedOpportunityName = record[9].toString();
-                }
+                String fetchedOpportunityName = record[9] != null ? record[9].toString() : null;
                 String fetchedPhone = record[10] != null ? record[10].toString() : null;
                 String fetchedEmail = record[11] != null ? record[11].toString() : null;
+                
+                // Dynamic follow-up calculation
+                LocalDate nextFollowupDate = record[16] != null ? ((java.sql.Date) record[16]).toLocalDate() : null;
+                int daysRemaining = 0;
+                if (nextFollowupDate != null) {
+                    daysRemaining = (int) java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), nextFollowupDate);
+                } else if (record[5] != null) {
+                    // Fallback to stored days if nextFollowupDate is missing
+                    daysRemaining = (int) record[5];
+                }
 
                 return new EnquiryTableDTO(
                         enquiryId,
@@ -94,13 +127,18 @@ public class EnquiryServiceImpl implements EnquiryService {
                         fetchedEnqDate,
                         fetchedCompanyName,
                         fetchedLastContactedDate,
-                        fetchedDaysNextToContact,
+                        daysRemaining,
+                        nextFollowupDate,
                         fetchedClosedDate,
                         fetchedStatus,
                         fetchedExpectedRevenue,
                         fetchedOpportunityName,
                         fetchedPhone,
-                        fetchedEmail
+                        fetchedEmail,
+                        record[12] != null ? EnquiryPriority.valueOf(record[12].toString()) : EnquiryPriority.WARM,
+                        record[15] != null ? record[15].toString() : null,
+                        record[13] != null ? record[13].toString() : null,
+                        record[14] != null ? record[14].toString() : null
                 );
             } catch (Exception e) {
                 logger.error("Error mapping enquiry data: {}", e.getMessage());
@@ -144,6 +182,7 @@ public class EnquiryServiceImpl implements EnquiryService {
         existingEnquiry.setContactPersonEmail(updatedEnquiry.getContactPersonEmail());
         existingEnquiry.setLastContactedDate(updatedEnquiry.getLastContactedDate());
         existingEnquiry.setDaysForNextFollowup(updatedEnquiry.getDaysForNextFollowup());
+        existingEnquiry.setNextFollowupDate(updatedEnquiry.getNextFollowupDate());
         existingEnquiry.setEnquirySource(updatedEnquiry.getEnquirySource());
         existingEnquiry.setStatus(updatedEnquiry.getStatus());
         existingEnquiry.setOpportunityName(updatedEnquiry.getOpportunityName());
@@ -152,6 +191,12 @@ public class EnquiryServiceImpl implements EnquiryService {
         existingEnquiry.setExpectedRevenue(updatedEnquiry.getExpectedRevenue());
         existingEnquiry.setProbability(updatedEnquiry.getProbability());
         existingEnquiry.setTargetCloseDate(updatedEnquiry.getTargetCloseDate());
+        existingEnquiry.setPriority(updatedEnquiry.getPriority());
+        existingEnquiry.setType(updatedEnquiry.getType());
+        existingEnquiry.setCity(updatedEnquiry.getCity());
+        existingEnquiry.setState(updatedEnquiry.getState());
+        existingEnquiry.setAssignedTo(updatedEnquiry.getAssignedTo());
+        existingEnquiry.setLeadQuality(updatedEnquiry.getLeadQuality());
     }
 
     private void updateConversationRecords(Enquiry existingEnquiry, List<EnquiryConversationRecord> updatedRecords) {
@@ -208,6 +253,21 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Override
     public Enquiry createEnquiry(Enquiry newEnquiry) {
         try {
+            if (newEnquiry.getEnqNo() == null || newEnquiry.getEnqNo().isBlank()) {
+                newEnquiry.setEnqNo(enquiryNumberGenerator.next());
+            }
+
+            if (newEnquiry.getEnqDate() == null) {
+                newEnquiry.setEnqDate(LocalDate.now());
+            }
+
+            // Set initial nextFollowupDate if not provided
+            if (newEnquiry.getNextFollowupDate() == null) {
+                int days = newEnquiry.getDaysForNextFollowup() > 0 ? newEnquiry.getDaysForNextFollowup() : 7;
+                newEnquiry.setNextFollowupDate(newEnquiry.getEnqDate().plusDays(days));
+                newEnquiry.setDaysForNextFollowup(days);
+            }
+
             for (EnquiredProducts enquiredProduct : newEnquiry.getEnquiredProducts()) {
                 if (enquiredProduct.getInventoryItem() != null && enquiredProduct.getInventoryItem().getInventoryItemId() <= 0) {
                     enquiredProduct.setInventoryItem(null);
@@ -324,5 +384,79 @@ public class EnquiryServiceImpl implements EnquiryService {
             throw new RuntimeException("Failed to calculate Enquiry summary", e);
         }
     }
-}
 
+    @Override
+    @Transactional
+    public Long convertToQuotation(Long id) {
+        logger.info("Converting Enquiry with ID: {} to Quotation", id);
+        Enquiry enquiry = getEnquiry(id);
+        if (enquiry == null) throw new ResourceNotFoundException("Enquiry not found");
+
+        Quotation quotation = new Quotation();
+        quotation.setEnquiry(enquiry);
+        quotation.setQtnDate(LocalDate.now());
+        quotation.setQuotationStatus(QuotationStatus.DRAFT);
+        
+        // Copy products
+        List<QuotationProducts> qProducts = new ArrayList<>();
+        if (enquiry.getEnquiredProducts() != null) {
+            for (EnquiredProducts ep : enquiry.getEnquiredProducts()) {
+                QuotationProducts qp = new QuotationProducts();
+                qp.setInventoryItem(ep.getInventoryItem());
+                qp.setProductNameRequired(ep.getProductNameRequired());
+                qp.setQty(ep.getQty());
+                qp.setSpecialInstruction(ep.getSpecialInstruction());
+                qp.setPricePerUnit(ep.getPricePerUnit() != null ? ep.getPricePerUnit() : BigDecimal.ZERO);
+                qp.setDiscountPercentage(BigDecimal.ZERO);
+                qp.setQuotation(quotation);
+                qProducts.add(qp);
+            }
+        }
+        quotation.setQuotationProducts(qProducts);
+        
+        // Default terms and financial basics
+        quotation.setGstPercentage(BigDecimal.valueOf(18)); 
+        quotation.setDiscountPercentage(BigDecimal.ZERO);
+        quotation.setPackagingAndForwardingChargesPercentage(BigDecimal.ZERO);
+        quotation.setNetAmount(BigDecimal.ZERO);
+        quotation.setTotalAmount(BigDecimal.ZERO);
+        
+        Quotation saved = quotationRepository.save(quotation);
+        
+        // Update Enquiry Status to indicate it's been quoted
+        enquiry.setStatus(EnquiryStatus.QUOTED);
+        enquiryRepository.save(enquiry);
+        
+        logger.info("Enquiry converted successfully. New Quotation ID: {}", saved.getId());
+        return saved.getId();
+    }
+
+    @Override
+    @Transactional
+    public void bulkDelete(BulkDeleteRequest request) {
+        logger.info("Bulk deleting {} enquiries", request.getIds().size());
+        List<Enquiry> enquiries = enquiryRepository.findAllById(request.getIds());
+        Date now = new Date();
+        for (Enquiry e : enquiries) {
+            if (e.getDeletedDate() == null) {
+                e.setDeletedDate(now);
+            }
+        }
+        enquiryRepository.saveAll(enquiries);
+    }
+
+    @Override
+    @Transactional
+    public void bulkAssign(BulkAssignRequest request) {
+        logger.info("Bulk assigning {} enquiries to user ID {}", request.getIds().size(), request.getAssignedToId());
+        AppUser user = appUserRepository.findById(request.getAssignedToId())
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + request.getAssignedToId()));
+        List<Enquiry> enquiries = enquiryRepository.findAllById(request.getIds());
+        for (Enquiry e : enquiries) {
+            if (e.getDeletedDate() == null) {
+                e.setAssignedTo(user);
+            }
+        }
+        enquiryRepository.saveAll(enquiries);
+    }
+}

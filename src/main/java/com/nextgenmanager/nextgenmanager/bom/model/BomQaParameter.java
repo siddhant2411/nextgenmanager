@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.bom.model;
 
 import com.nextgenmanager.nextgenmanager.bom.enums.QaParameterType;
-import com.nextgenmanager.nextgenmanager.production.model.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;

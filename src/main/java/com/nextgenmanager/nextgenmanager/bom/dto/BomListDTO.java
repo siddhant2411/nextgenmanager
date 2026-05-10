@@ -21,6 +21,7 @@ import java.util.Date;
 public class BomListDTO {
 
     private int id;
+    private int parentItemId;
     private String bomName;
     private String parentItemCode;
     private String parentItemName;
@@ -30,5 +31,6 @@ public class BomListDTO {
     private String parentDrawingNumber;
     private Date effectiveFrom;
     private Date effectiveTo;
+    private Long drawingFileId;
 
 }

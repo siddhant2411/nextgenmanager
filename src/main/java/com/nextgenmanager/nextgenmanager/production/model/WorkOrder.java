@@ -19,7 +19,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Date;
 import java.util.List;
-import com.nextgenmanager.nextgenmanager.production.model.Routing;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.Routing;
 
 @Entity
 @Getter

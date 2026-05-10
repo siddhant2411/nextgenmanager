@@ -32,6 +32,7 @@ public class BomDTO {
     private Boolean isDefault;
     private Date creationDate;
     private Date updatedDate;
+    private Long drawingFileId;
     private Date deletedDate;
 
 }
