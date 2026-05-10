@@ -11,13 +11,45 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
   app:
     build: .
     depends_on:
       - postgres
+      - minio
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nextgenmanager
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: siddhant
+      DATASOURCE_URL: jdbc:postgresql://postgres:5432/nextgenmanager
+      DATASOURCE_USERNAME: postgres
+      DATASOURCE_PASSWORD: siddhant
+      JWT_SECRET: change-this-to-a-random-64-character-string-for-production!!
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_NAME: nextgenmanager
+      FRONTEND_URL: http://localhost:3000
+
+  frontend:
+    build:
+      context: ../nextgenmanagerui
+      args:
+        REACT_APP_API_URL: ${API_URL:-http://localhost:8080/api}
+    depends_on:
+      - app
+    ports:
+      - "3000:80"
+
+volumes:
+  minio_data:
