@@ -72,14 +72,6 @@ build_errors.txt
 ### Local config ###
 application-local.properties
 application-docker.properties
-/docs/
-/docs/
-/docs/assets/
-/docs/production_scheduling/
-/docs/work_center/
-/docs/work_order/
-/docs/ASSETS_PUBLIC_BACKEND_SEO_AI_DOCUMENTATION.md
-/docs/AUTH_AUTHZ_TECHNICAL_SPEC.md
 
 /bulk_import/
 /scratch/
