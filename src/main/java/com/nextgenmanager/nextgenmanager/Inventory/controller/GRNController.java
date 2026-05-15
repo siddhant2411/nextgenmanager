@@ -26,6 +26,7 @@ public class GRNController {
     @Autowired private InventoryTransactionService inventoryTransactionService;
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
     public ResponseEntity<GRNResponseDTO> createGRN(@RequestBody CreateGRNRequest request) {
         return ResponseEntity.ok(grnService.createGRN(request));
     }

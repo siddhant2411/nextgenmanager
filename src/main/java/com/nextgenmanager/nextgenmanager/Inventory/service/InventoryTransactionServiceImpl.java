@@ -191,6 +191,10 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
 
             // ── Create InventoryInstance records ───────────────────────────
             BigDecimal cost = BigDecimal.valueOf(req.getCostPerUnit());
+            if (cost.compareTo(BigDecimal.ZERO) <= 0 && item.getProductFinanceSettings() != null && item.getProductFinanceSettings().getStandardCost() != null) {
+                cost = BigDecimal.valueOf(item.getProductFinanceSettings().getStandardCost());
+            }
+
             for (int i = 0; i < instanceCount; i++) {
                 InventoryInstance inst = new InventoryInstance();
                 inst.setInventoryItem(item);

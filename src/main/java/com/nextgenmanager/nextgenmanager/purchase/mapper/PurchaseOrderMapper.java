@@ -20,8 +20,9 @@ public interface PurchaseOrderMapper {
     @Mapping(target = "grandTotalInWords",     ignore = true)   // populated by service
     PurchaseOrderDto toDto(PurchaseOrder entity);
 
-    @Mapping(target = "vendorId",   source = "vendor.id")
-    @Mapping(target = "vendorName", source = "vendor.companyName")
-    @Mapping(target = "itemCount",  expression = "java(entity.getItems() == null ? 0 : entity.getItems().size())")
+    @Mapping(target = "vendorId",    source = "vendor.id")
+    @Mapping(target = "vendorName",  source = "vendor.companyName")
+    @Mapping(target = "itemCount",   expression = "java(entity.getItems() == null ? 0 : entity.getItems().size())")
+    @Mapping(target = "daysOverdue", ignore = true)
     PurchaseOrderListDto toListDto(PurchaseOrder entity);
 }

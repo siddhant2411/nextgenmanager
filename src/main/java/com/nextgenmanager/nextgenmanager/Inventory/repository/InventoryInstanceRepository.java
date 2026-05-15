@@ -90,7 +90,7 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             "       item.itemType AS itemType, " +
             "       item.uom AS uom, " +
             "       SUM(i.quantity) AS totalQuantity, " +
-            "       SUM(i.costPerUnit) AS totalCost " +
+            "       SUM(i.costPerUnit * i.quantity) AS totalCost " +
             "   FROM inventoryInstance i " +
             "   INNER JOIN inventoryItem item ON i.inventoryItemRef = item.inventoryItemId " +
             "   WHERE i.deletedDate IS NULL AND i.quantity > 0 " +

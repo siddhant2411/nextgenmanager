@@ -4,8 +4,9 @@ public enum SalesOrderStatus {
     DRAFT,
     APPROVED,
     IN_PROGRESS,
-    DISPATCHED,
+    PARTIALLY_DISPATCHED,
+    FULLY_DISPATCHED,
+    INVOICED,
     COMPLETED,
     CANCELLED
-
 }

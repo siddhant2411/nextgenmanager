@@ -45,6 +45,12 @@ public class SalesOrderItem {
     @Column(precision = 12, scale = 2) private BigDecimal pricePerUnit;
     @Column(precision = 5,  scale = 2) private BigDecimal discountPercentage;
     @Column(precision = 12,  scale = 2) private BigDecimal unitPriceAfterDiscount;
+    @Column(precision = 5,  scale = 2) private BigDecimal cgstRate;           // maps to cgstrate
+    @Column(precision = 5,  scale = 2) private BigDecimal sgstRate;           // maps to sgstrate
+    @Column(precision = 5,  scale = 2) private BigDecimal igstRate;           // maps to igstrate
+    @Column(precision = 12, scale = 2) private BigDecimal cgstAmount;         // maps to cgstamount
+    @Column(precision = 12, scale = 2) private BigDecimal sgstAmount;
+    @Column(precision = 12, scale = 2) private BigDecimal igstAmount;
     @Column(precision = 12, scale = 2) private BigDecimal totalAmountOfProduct;
 
 //    It will be mapped to InventoryRequestId Directly on run time to check status

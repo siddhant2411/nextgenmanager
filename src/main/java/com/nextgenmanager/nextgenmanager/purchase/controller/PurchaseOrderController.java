@@ -4,6 +4,8 @@ import com.nextgenmanager.nextgenmanager.purchase.dto.*;
 import com.nextgenmanager.nextgenmanager.purchase.service.PurchaseOrderService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+
+import java.util.List;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -94,6 +96,26 @@ public class PurchaseOrderController {
     @PostMapping("/{id}/recalculate")
     public ResponseEntity<PurchaseOrderDto> recalculate(@PathVariable Long id) {
         return ResponseEntity.ok(service.recalculate(id));
+    }
+
+    // ── Inventory receipt helpers ─────────────────────────────────────────────
+
+    @GetMapping("/pending-receipt")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
+    public ResponseEntity<List<PurchaseOrderListDto>> pendingReceipt() {
+        return ResponseEntity.ok(service.getPendingReceipt());
+    }
+
+    @GetMapping("/overdue")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
+    public ResponseEntity<List<PurchaseOrderListDto>> overduePOs() {
+        return ResponseEntity.ok(service.getOverduePOs());
+    }
+
+    @GetMapping("/analytics")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    public ResponseEntity<PurchaseAnalyticsDto> analytics() {
+        return ResponseEntity.ok(service.getPurchaseAnalytics());
     }
 
     // ── Utilities ─────────────────────────────────────────────────────────────

@@ -23,8 +23,11 @@ public interface InventoryInstanceService {
 
     public List<InventoryInstance> createInstances(InventoryItem item, double qty, InventoryInstance template);
 
+    public List<AvailableInstanceDetailDto> getAvailableInstancesWithDetails(int itemId);
 
     public List<InventoryInstance> consumeInventoryInstance(InventoryItem item, double qty, Long requestId);
+
+    public List<InventoryInstance> consumeSpecificInstances(InventoryItem item, List<Long> instanceIds, double qty);
 
     public List<InventoryInstance> bookInventoryInstance(InventoryItem inventoryItem, double bookedQty);
 
@@ -86,4 +89,6 @@ public interface InventoryInstanceService {
     public List<InventoryInstance> addInventoryToExistingProcurement(AddInventoryRequest request, long procurementOrderId);
 
     public InventoryProcurementOrderDTO completeProcurementOrder(Long orderId, String completedBy);
+
+    public List<InventoryMovementLog> getMovementHistory(Long instanceId);
 }

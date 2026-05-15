@@ -1,8 +1,6 @@
 package com.nextgenmanager.nextgenmanager.sales.controller;
 
-import com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderCreateDto;
-import com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderDto;
-import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
+import com.nextgenmanager.nextgenmanager.sales.dto.*;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderStatus;
 import com.nextgenmanager.nextgenmanager.sales.service.InvoicePdfService;
 import com.nextgenmanager.nextgenmanager.sales.service.SalesOrderService;
@@ -10,7 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,7 +16,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/sales-orders")
@@ -28,95 +29,144 @@ public class SalesOrderController {
 
     private static final Logger logger = LoggerFactory.getLogger(SalesOrderController.class);
 
-    @Autowired
     private final SalesOrderService salesOrderService;
-
-    @Autowired
     private final InvoicePdfService invoicePdfService;
-    /**
-     * Create a new Sales Order in DRAFT status.
-     */
+
+    // ---- CRUD ----
+
     @PostMapping
     public ResponseEntity<SalesOrderDto> createSalesOrder(@Valid @RequestBody SalesOrderCreateDto dto) {
-        logger.info("API Request: Create Sales Order");
-        SalesOrderDto created = salesOrderService.createSalesOrder(dto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED).body(salesOrderService.createSalesOrder(dto));
     }
 
-    /**
-     * Get all sales orders (basic list)
-     */
     @GetMapping
-    public ResponseEntity<List<SalesOrder>> getAllSalesOrders() {
-        logger.info("API Request: Get All Sales Orders");
-        List<SalesOrder> orders = salesOrderService.getAllSalesOrders();
-        return ResponseEntity.ok(orders);
+    public ResponseEntity<Page<SalesOrderDisplayDto>> getAllSalesOrders(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "orderDate") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String orderNumber,
+            @RequestParam(required = false) LocalDate orderDate,
+            @RequestParam(required = false) String customerName,
+            @RequestParam(required = false) String poNumber,
+            @RequestParam(required = false) BigDecimal netAmount,
+            @RequestParam(required = false) SalesOrderStatus status) {
+        return ResponseEntity.ok(salesOrderService.getSalesOrderDisplayList(
+                page, size, sortBy, sortDir, orderNumber, orderDate, customerName, poNumber, netAmount, status));
     }
 
-    /**
-     * Get a single sales order by ID
-     */
     @GetMapping("/{id}")
     public ResponseEntity<SalesOrderDto> getSalesOrder(@PathVariable Long id) {
-        logger.info("API Request: Get Sales Order with id={}", id);
-        SalesOrderDto dto = salesOrderService.getSalesOrderById(id);
-        return ResponseEntity.ok(dto);
+        return ResponseEntity.ok(salesOrderService.getSalesOrderById(id));
     }
 
-
-    @PostMapping("/{id}/change-status/")
-    public ResponseEntity<?> changeStatus(@PathVariable Long id,@RequestBody SalesOrderStatus salesOrderStatus, @RequestParam(defaultValue = "true") String inventoryAction) throws Exception {
-        boolean isInventoryAction = Boolean.parseBoolean(inventoryAction);
-        salesOrderService.salesOrderStatusChange(id,salesOrderStatus,isInventoryAction);
-        return ResponseEntity.ok("Status Changes Successfully");
-    }
-
-    /**
-     * Update an existing sales order (if still editable)
-     */
     @PutMapping("/{id}")
     public ResponseEntity<SalesOrderDto> updateSalesOrder(@PathVariable Long id,
                                                           @Valid @RequestBody SalesOrderCreateDto dto) {
-        logger.info("API Request: Update Sales Order with id={}", id);
-        SalesOrderDto updated = salesOrderService.updateSalesOrder(id, dto);
-        return ResponseEntity.ok(updated);
+        return ResponseEntity.ok(salesOrderService.updateSalesOrder(id, dto));
     }
 
-    /**
-     * Change status of a sales order (e.g., DRAFT -> IN_PROGRESS)
-//     */
-//    @PatchMapping("/{id}/status")
-//    public ResponseEntity<SalesOrderDto> changeStatus(@PathVariable Long id,
-//                                                      @RequestParam("status") SalesOrderStatus status) {
-//        logger.info("API Request: Change Sales Order status, id={}, newStatus={}", id, status);
-//        SalesOrderDto updated = salesOrderService.changeStatus(id, status);
-//        return ResponseEntity.ok(updated);
-//    }
-
-    /**
-     * Soft delete a sales order
-     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteSalesOrder(@PathVariable Long id) {
-        logger.info("API Request: Delete Sales Order with id={}", id);
         salesOrderService.deleteSalesOrder(id);
         return ResponseEntity.noContent().build();
     }
 
+    // ---- Approval workflow ----
 
+    @PostMapping("/{id}/submit")
+    public ResponseEntity<SalesOrderDto> submit(@PathVariable Long id) {
+        return ResponseEntity.ok(salesOrderService.submit(id));
+    }
+
+    @PostMapping("/{id}/approve")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_SALES_ADMIN')")
+    public ResponseEntity<SalesOrderDto> approve(@PathVariable Long id) {
+        return ResponseEntity.ok(salesOrderService.approve(id));
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_SALES_ADMIN')")
+    public ResponseEntity<SalesOrderDto> reject(@PathVariable Long id,
+                                                @RequestBody(required = false) SalesOrderApprovalActionDto dto) {
+        return ResponseEntity.ok(salesOrderService.reject(id, dto));
+    }
+
+    @PostMapping("/{id}/send")
+    public ResponseEntity<SalesOrderDto> send(@PathVariable Long id,
+                                              @RequestParam(required = false) String toEmail) {
+        return ResponseEntity.ok(salesOrderService.send(id, toEmail));
+    }
+
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<SalesOrderDto> cancel(@PathVariable Long id,
+                                                @RequestBody(required = false) SalesOrderApprovalActionDto dto) {
+        return ResponseEntity.ok(salesOrderService.cancel(id, dto));
+    }
+
+    @PostMapping("/{id}/complete")
+    public ResponseEntity<SalesOrderDto> complete(@PathVariable Long id) {
+        return ResponseEntity.ok(salesOrderService.complete(id));
+    }
+
+    @PostMapping("/{id}/recalculate")
+    public ResponseEntity<SalesOrderDto> recalculate(@PathVariable Long id) {
+        return ResponseEntity.ok(salesOrderService.recalculate(id));
+    }
+
+    // ---- Generic status change (kept for backward compat) ----
+
+    @PostMapping("/{id}/change-status")
+    public ResponseEntity<Void> changeStatus(@PathVariable Long id,
+                                             @RequestBody SalesOrderStatus salesOrderStatus,
+                                             @RequestParam(defaultValue = "true") boolean inventoryAction) {
+        salesOrderService.salesOrderStatusChange(id, salesOrderStatus, inventoryAction);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<SalesOrderDto> updateStatus(@PathVariable Long id, @RequestBody StatusUpdateRequest request) {
+        return ResponseEntity.ok(salesOrderService.updateStatus(id, request.getStatus()));
+    }
+
+    // ---- Queries ----
+
+    @GetMapping("/pending-dispatch")
+    public ResponseEntity<List<SalesOrderDisplayDto>> pendingDispatch() {
+        return ResponseEntity.ok(salesOrderService.getPendingDispatch());
+    }
+
+    @GetMapping("/overdue")
+    public ResponseEntity<List<SalesOrderDisplayDto>> overdue() {
+        return ResponseEntity.ok(salesOrderService.getOverdue());
+    }
+
+    @GetMapping("/analytics")
+    public ResponseEntity<Map<String, Object>> analytics() {
+        return ResponseEntity.ok(salesOrderService.getSalesAnalytics());
+    }
+
+    @GetMapping("/{id}/profitability")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_SALES_ADMIN')")
+    public ResponseEntity<SalesOrderProfitabilityDto> getProfitability(@PathVariable Long id) {
+        return ResponseEntity.ok(salesOrderService.getProfitability(id));
+    }
+
+    @GetMapping("/next-number")
+    public ResponseEntity<String> nextNumber() {
+        return ResponseEntity.ok(salesOrderService.nextNumber());
+    }
+
+    // ---- PDF ----
 
     @GetMapping("/{id}/pdf")
-    public ResponseEntity<byte[]> downloadInvoice(@PathVariable Long id) {
+    public ResponseEntity<byte[]> downloadPdf(@PathVariable Long id) {
         SalesOrderDto order = salesOrderService.getSalesOrderById(id);
-
-
         byte[] pdf = invoicePdfService.generateInvoicePdf(id);
-
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=invoice-" + order.getOrderNumber() + ".pdf")
+                        "attachment; filename=sales-order-" + order.getOrderNumber() + ".pdf")
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdf);
     }
 }
-

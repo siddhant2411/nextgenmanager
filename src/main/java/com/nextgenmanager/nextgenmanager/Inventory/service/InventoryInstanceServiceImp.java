@@ -5,6 +5,7 @@ import com.nextgenmanager.nextgenmanager.Inventory.model.*;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryBookingApprovalRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryProcurementOrderRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryMovementLogRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
@@ -39,10 +40,21 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     private InventoryRequestRepository inventoryRequestRepository;
 
     @Autowired
+    private com.nextgenmanager.nextgenmanager.Inventory.repository.BatchNumberRepository batchNumberRepository;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.Inventory.repository.SerialNumberRepository serialNumberRepository;
+
+
+    @Autowired
     private InventoryBookingApprovalRepository inventoryBookingApprovalRepository;
 
     @Autowired
     private InventoryProcurementOrderRepository inventoryProcurementOrderRepository;
+
+    @Autowired
+    private InventoryMovementLogRepository movementLogRepository;
+
     
     @PersistenceContext
     private EntityManager entityManager;
@@ -50,6 +62,20 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     private boolean isUnitByNos(InventoryItem item) {
         return item.getUom() == UOM.NOS;
     }
+
+    private void logMovement(InventoryInstance instance, String from, String to, String type, String ref, String by, String remarks) {
+        InventoryMovementLog log = InventoryMovementLog.builder()
+                .inventoryInstance(instance)
+                .fromLocation(from)
+                .toLocation(to)
+                .transactionType(type)
+                .referenceNumber(ref)
+                .actionBy(by)
+                .remarks(remarks)
+                .build();
+        movementLogRepository.save(log);
+    }
+
 
     @Override
     public void updateItemAvailability(int itemId) {
@@ -228,6 +254,126 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             return consumed;
         } catch (Exception e) {
             logger.error("Error in consumeInventoryInstance for item {} (RequestId: {}): {}", item.getInventoryItemId(), requestId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    @Override
+    public List<AvailableInstanceDetailDto> getAvailableInstancesWithDetails(int itemId) {
+        try {
+            InventoryItem item = inventoryItemRepository.findByActiveId(itemId);
+            if (item == null) throw new ResourceNotFoundException("Item not found");
+
+            List<InventoryInstance> available = inventoryInstanceRepository.inventoryInstanceByStatus(itemId, InventoryInstanceStatus.AVAILABLE.name(), 1000);
+            
+            return available.stream().map(inst -> {
+                AvailableInstanceDetailDto dto = new AvailableInstanceDetailDto();
+                dto.setInstanceId(inst.getId());
+                dto.setInventoryItemId(itemId);
+                dto.setItemCode(item.getItemCode());
+                dto.setItemName(item.getName());
+                dto.setQuantity(inst.getQuantity());
+                dto.setCostPerUnit(inst.getCostPerUnit());
+                dto.setStatus(inst.getInventoryInstanceStatus().name());
+                if (inst.getBatchNumber() != null) {
+                    dto.setBatchNumber(inst.getBatchNumber().getBatchNumber());
+                    dto.setManufacturingDate(inst.getBatchNumber().getManufacturingDate());
+                    dto.setExpiryDate(inst.getBatchNumber().getExpiryDate());
+                    dto.setQualityStatus(inst.getBatchNumber().getQualityStatus());
+                    dto.setQualityRemarks(inst.getBatchNumber().getQualityRemarks());
+                }
+                if (inst.getSerialNumber() != null) {
+                    dto.setSerialNumber(inst.getSerialNumber().getSerialNumber());
+                    dto.setQualityStatus(inst.getSerialNumber().getQualityStatus());
+                    dto.setQualityRemarks(inst.getSerialNumber().getQualityRemarks());
+                }
+                return dto;
+            }).collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Error fetching available instances with details for item {}: {}", itemId, e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    @Transactional
+    public List<InventoryInstance> consumeSpecificInstances(InventoryItem item, List<Long> instanceIds, double qty) {
+        try {
+            InventoryItem dbItem = inventoryItemRepository.findByActiveId(item.getInventoryItemId());
+            if (dbItem == null) throw new ResourceNotFoundException("Inventory item not found");
+
+            List<InventoryInstance> consumed = new ArrayList<>();
+            Date now = new Date();
+            double remainingQty = qty;
+
+            for (Long instanceId : instanceIds) {
+                if (remainingQty <= 0) break;
+                
+                InventoryInstance instance = inventoryInstanceRepository.findById(instanceId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Inventory instance not found: " + instanceId));
+                
+                if (!instance.getInventoryItem().equals(dbItem)) continue;
+
+                if (isUnitByNos(dbItem)) {
+                    instance.setConsumed(true);
+                    instance.setConsumeDate(now);
+                    instance.setQuantity(BigDecimal.ZERO);
+                    instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                    
+                    // Update linked SerialNumber
+                    if (instance.getSerialNumber() != null) {
+                        SerialNumber sn = instance.getSerialNumber();
+                        sn.setStatus(SerialStatus.CONSUMED);
+                        sn.setConsumedDate(now);
+                        serialNumberRepository.save(sn);
+                    }
+                    
+                    consumed.add(instance);
+                    remainingQty--;
+                } else {
+                    BigDecimal availableQty = instance.getQuantity();
+                    BigDecimal toConsume = BigDecimal.valueOf(remainingQty).min(availableQty);
+
+                    instance.setConsumeDate(now);
+                    BigDecimal newQty = availableQty.subtract(toConsume);
+                    instance.setQuantity(newQty);
+                    instance.setConsumed(newQty.compareTo(BigDecimal.ZERO) == 0);
+                    if (newQty.compareTo(BigDecimal.ZERO) == 0) {
+                        instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                    }
+
+                    // Update linked BatchNumber remaining qty
+                    if (instance.getBatchNumber() != null) {
+                        BatchNumber batch = instance.getBatchNumber();
+                        BigDecimal currentRemaining = batch.getRemainingQty() != null ? batch.getRemainingQty() : BigDecimal.ZERO;
+                        batch.setRemainingQty(currentRemaining.subtract(toConsume).max(BigDecimal.ZERO));
+                        if (batch.getRemainingQty().compareTo(BigDecimal.ZERO) <= 0) {
+                            batch.setStatus(BatchStatus.CONSUMED);
+                        }
+                        batchNumberRepository.save(batch);
+                    }
+
+                    consumed.add(instance);
+                    remainingQty -= toConsume.doubleValue();
+                }
+            }
+
+            inventoryInstanceRepository.saveAll(consumed);
+            updateItemAvailability(dbItem.getInventoryItemId());
+
+            for (InventoryInstance inst : consumed) {
+                logMovement(inst, 
+                    "Main Inventory", 
+                    "Packaging / Customer", 
+                    "DISPATCH", 
+                    "DN-AUTO", // We can enhance this later to pass actual DN number
+                    "SYSTEM", 
+                    "Inventory consumed / dispatched via Delivery Note");
+            }
+
+            return consumed;
+        } catch (Exception e) {
+            logger.error("Error in consumeSpecificInstances for item {}: {}", item.getInventoryItemId(), e.getMessage(), e);
             throw e;
         }
     }
@@ -435,6 +581,14 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 double totalQuantity = ((Number) record[6]).doubleValue();
                 double totalCost = ((Number) record[7]).doubleValue();
                 InventoryItem inventoryItem = inventoryItemRepository.findByActiveId(inventoryItemRef);
+
+                // Fallback to standard cost for valuation if physical cost is 0
+                if (totalCost <= 0 && inventoryItem.getProductFinanceSettings() != null && inventoryItem.getProductFinanceSettings().getStandardCost() != null) {
+                    totalCost = totalQuantity * inventoryItem.getProductFinanceSettings().getStandardCost();
+                }
+
+                boolean batchTracked  = inventoryItem.getProductInventorySettings() != null && inventoryItem.getProductInventorySettings().isBatchTracked();
+                boolean serialTracked = inventoryItem.getProductInventorySettings() != null && inventoryItem.getProductInventorySettings().isSerialTracked();
                 return new InventoryPresentDTO(
                         inventoryItem.getInventoryItemId(),
                         inventoryItem.getItemCode(),
@@ -443,7 +597,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                         inventoryItem.getItemType(),
                         inventoryItem.getUom(),
                         totalQuantity,
-                        totalCost
+                        totalCost,
+                        batchTracked,
+                        serialTracked
                 );
             });
         } catch (Exception e) {
@@ -647,7 +803,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
             List<InventoryInstance> resultInstances = new ArrayList<>();
             Date now = new Date();
-            BigDecimal standardCost = Optional.ofNullable(dbItem.getProductFinanceSettings().getStandardCost()).map(BigDecimal::valueOf).orElse(BigDecimal.ZERO);
+            BigDecimal standardCost = (dbItem.getProductFinanceSettings() != null && dbItem.getProductFinanceSettings().getStandardCost() != null) 
+                ? BigDecimal.valueOf(dbItem.getProductFinanceSettings().getStandardCost()) 
+                : BigDecimal.ZERO;
             BigDecimal finalCost = costPerUnit.compareTo(BigDecimal.ZERO) > 0 ? costPerUnit : standardCost;
 
             List<InventoryInstance> pendingInstances = inventoryInstanceRepository.inventoryInstanceByStatus(inventoryItemId, InventoryInstanceStatus.PENDING.name(), addedQty.doubleValue());
@@ -712,6 +870,16 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             inventoryProcurementOrderRepository.save(procurementOrder);
 
             updateItemAvailability(dbItem.getInventoryItemId());
+            // Log movement for all added/updated instances
+            for (InventoryInstance inst : resultInstances) {
+                logMovement(inst, 
+                    "Vendor / Source", 
+                    "Main Inventory", 
+                    "RECEIVE", 
+                    request.getReferenceId() >-1 ? "REF-" + request.getReferenceId() : "GRN-MANUAL",
+                    request.getCreatedBy(), 
+                    "Inventory received via GRN / Add Stock");
+            }
             return resultInstances;
         } catch (Exception e) {
             logger.error("Error in addInventory for item {}: {}", request.getInventoryItemId(), e.getMessage(), e);
@@ -925,5 +1093,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             logger.error("Error in completeProcurementOrder for order {}: {}", orderId, e.getMessage(), e);
             throw e;
         }
+    }
+    @Override
+    public List<InventoryMovementLog> getMovementHistory(Long instanceId) {
+        return movementLogRepository.findByInventoryInstanceIdOrderByTimestampDesc(instanceId);
     }
 }

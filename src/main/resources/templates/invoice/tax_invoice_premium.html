@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Tax Invoice</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -moz-box-sizing: border-box;
+            -webkit-box-sizing: border-box;
+        }
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+        body {
+            font-family: 'DejaVu Sans', sans-serif;
+            font-size: 11px; /* Increased from 10px */
+            color: #333;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+        }
+        .container {
+            width: 98%;
+            margin: 0 auto;
+            border: 1px solid #000;
+        }
+        table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            word-wrap: break-word;
+        }
+        .header-table td {
+            padding: 10px;
+            vertical-align: top;
+        }
+        .invoice-title {
+            font-size: 20px; /* Increased from 18px */
+            font-weight: bold;
+            text-align: center;
+            border-bottom: 1px solid #000;
+            padding: 10px;
+            background-color: #f8f9fa;
+        }
+        .company-name {
+            font-size: 16px; /* Increased from 14px */
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .label {
+            font-weight: bold;
+            color: #555;
+        }
+        table.content-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table.content-table th, table.content-table td {
+            border: 1px solid #000;
+            padding: 10px; /* Increased padding */
+            text-align: left;
+        }
+        table.content-table th {
+            background-color: #f1f3f5;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 10px; /* Increased from 9px */
+        }
+        .text-right { text-align: right !important; }
+        .text-center { text-align: center !important; }
+        
+        .serial-list {
+            font-size: 10px; /* Increased from 8px */
+            color: #666;
+            margin-top: 6px;
+            font-style: italic;
+        }
+        
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .summary-table td {
+            border: 1px solid #000;
+            padding: 10px;
+        }
+        
+        .hsn-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 10px; /* Increased from 9px */
+        }
+        .hsn-table th, .hsn-table td {
+            border: 1px solid #000;
+            padding: 6px;
+            text-align: center;
+        }
+        
+        .footer-section {
+            width: 100%;
+            border-top: 1px solid #000;
+        }
+        .footer-section td {
+            padding: 10px;
+            vertical-align: top;
+        }
+        .signatory-box {
+            height: 80px;
+            border: 1px solid #000;
+            margin-top: 10px;
+            position: relative;
+        }
+        .signatory-label {
+            position: absolute;
+            bottom: 5px;
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="invoice-title">TAX INVOICE</div>
+        
+        <table class="header-table">
+            <tr>
+                <td style="width: 50%; border-right: 1px solid #000;">
+                    <span class="company-name" th:text="${company.companyName}">Process Equipment Corporation</span>
+                    <span th:text="${company.street1}">123, Industrial Estate</span><br/>
+                    <span th:if="${company.street2}" th:text="${company.street2}">Street 2</span><br/>
+                    <span th:text="${company.city + ', ' + company.state + ' - ' + company.pinCode}">City, State - Pin</span><br/>
+                    <span class="label">GSTIN:</span> <span th:text="${company.gstNumber}">24ARJPM1573G1ZT</span><br/>
+                    <span class="label">PAN:</span> <span th:text="${company.panNumber}">ABCDE1234F</span><br/>
+                    <span class="label">Email:</span> <span th:text="${company.email}">info@company.com</span>
+                </td>
+                <td style="width: 50%;">
+                    <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Invoice No:</span></td>
+                            <td style="padding: 2px;"><b th:text="${invoice.invoiceNumber}">INV/2026/001</b></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Dated:</span></td>
+                            <td style="padding: 2px;" th:text="${#temporals.format(invoice.invoiceDate, 'dd-MMM-yyyy')}">15-May-2026</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Reference SO:</span></td>
+                            <td style="padding: 2px;" th:text="${invoice.salesOrder.orderNumber}">SO-1001</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Due Date:</span></td>
+                            <td style="padding: 2px;" th:text="${invoice.dueDate != null ? #temporals.format(invoice.dueDate, 'dd-MMM-yyyy') : 'Immediate'}">Immediate</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Challan(s):</span></td>
+                            <td style="padding: 2px;">
+                                <span th:each="dn, iter : ${invoice.salesOrder.deliveryNotes}" 
+                                      th:text="${dn.deliveryNoteNo + (iter.last ? '' : ', ')}">DN-001</span>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td style="width: 50%; border-right: 1px solid #000; border-top: 1px solid #000;">
+                    <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Details of Receiver (Billed to)</div>
+                    <b th:text="${invoice.salesOrder.customer.companyName}">Customer Pvt Ltd</b><br/>
+                    <span th:text="${billingAddress}">Customer Address String</span><br/>
+                    <span class="label">GSTIN:</span> <span th:text="${invoice.salesOrder.customer.gstNumber}">24XXXXX0000X1Z5</span><br/>
+                    <span class="label">State Code:</span> <span th:text="${invoice.salesOrder.customer.stateCode}">24</span>
+                </td>
+                <td style="width: 50%; border-top: 1px solid #000;">
+                    <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Details of Consignee (Shipped to)</div>
+                    <b th:text="${invoice.salesOrder.customer.companyName}">Customer Pvt Ltd</b><br/>
+                    <span th:text="${invoice.salesOrder.deliveryAddress}">Delivery Address String</span><br/>
+                    <span class="label">Transport:</span> <span th:text="${invoice.salesOrder.dispatchThrough}">By Road</span>
+                </td>
+            </tr>
+        </table>
+
+        <table class="content-table">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 43%;">Description of Goods</th>
+                    <th style="width: 10%;">HSN/SAC</th>
+                    <th style="width: 8%;">Qty</th>
+                    <th style="width: 12%;">Rate</th>
+                    <th style="width: 10%;">UOM</th>
+                    <th style="width: 12%;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="item, iter : ${invoice.items}">
+                    <td class="text-center" th:text="${iter.index + 1}">1</td>
+                    <td>
+                        <b th:text="${item.inventoryItem.name}">Product Name</b>
+                        <div th:if="${item.serialNumbers}" class="serial-list">
+                            S/N: <span th:text="${item.serialNumbers}">SN1, SN2</span>
+                        </div>
+                    </td>
+                    <td class="text-center" th:text="${item.inventoryItem.hsnCode}">8481</td>
+                    <td class="text-center" th:text="${item.qty}">10</td>
+                    <td class="text-right" th:text="${#numbers.formatDecimal(item.pricePerUnit, 1, 'COMMA', 2, 'POINT')}">1,000.00</td>
+                    <td class="text-center" th:text="${item.inventoryItem.uom}">NOS</td>
+                    <td class="text-right" th:text="${#numbers.formatDecimal(item.totalAmount, 1, 'COMMA', 2, 'POINT')}">10,000.00</td>
+                </tr>
+                <!-- Spacer rows to push totals down if needed -->
+                <tr th:if="${invoice.items.size() < 8}" th:each="i : ${#numbers.sequence(invoice.items.size() + 1, 8)}">
+                    <td style="height: 25px;"></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table class="summary-table">
+            <tr>
+                <td style="width: 70%;" rowspan="6">
+                    <div class="label">Amount Chargeable (in words):</div>
+                    <i th:text="${amountInWords}">Ten Thousand Only</i>
+                    
+                    <div style="margin-top: 20px;">
+                        <span class="label">Bank Details:</span><br/>
+                        Bank: <span th:text="${bankName}">Canara Bank</span> | 
+                        A/c: <span th:text="${bankAccount}">028210102655</span><br/>
+                        IFSC: <span th:text="${bankIfsc}">CNBK02821010</span> | 
+                        Branch: <span th:text="${bankBranch}">Ahmedabad Main</span>
+                    </div>
+                </td>
+                <td style="width: 15%;" class="label">Sub Total</td>
+                <td style="width: 15%;" class="text-right" th:text="${#numbers.formatDecimal(invoice.subTotal, 1, 'COMMA', 2, 'POINT')}">10,000.00</td>
+            </tr>
+            <tr th:if="${invoice.cgstAmount != null && invoice.cgstAmount > 0}">
+                <td class="label">CGST</td>
+                <td class="text-right" th:text="${#numbers.formatDecimal(invoice.cgstAmount, 1, 'COMMA', 2, 'POINT')}">900.00</td>
+            </tr>
+            <tr th:if="${invoice.sgstAmount != null && invoice.sgstAmount > 0}">
+                <td class="label">SGST</td>
+                <td class="text-right" th:text="${#numbers.formatDecimal(invoice.sgstAmount, 1, 'COMMA', 2, 'POINT')}">900.00</td>
+            </tr>
+            <tr th:if="${invoice.igstAmount != null && invoice.igstAmount > 0}">
+                <td class="label">IGST</td>
+                <td class="text-right" th:text="${#numbers.formatDecimal(invoice.igstAmount, 1, 'COMMA', 2, 'POINT')}">1,800.00</td>
+            </tr>
+            <tr>
+                <td class="label" style="font-size: 12px;">Total Payable</td>
+                <td class="text-right"><b style="font-size: 12px;" th:text="${#numbers.formatDecimal(invoice.totalPayableAmount, 1, 'COMMA', 2, 'POINT')}">11,800.00</b></td>
+            </tr>
+        </table>
+
+        <div style="padding: 10px; border-bottom: 1px solid #000; font-weight: bold; background: #f8f9fa;">GST TAX ANALYSIS (HSN WISE)</div>
+        <table class="hsn-table">
+            <thead>
+                <tr>
+                    <th>HSN/SAC</th>
+                    <th>Taxable Value</th>
+                    <th>Central Tax (Amt)</th>
+                    <th>State Tax (Amt)</th>
+                    <th>Integrated Tax (Amt)</th>
+                    <th>Total Tax</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="entry : ${hsnSummary}">
+                    <td th:text="${entry.key}">8481</td>
+                    <td th:text="${#numbers.formatDecimal(entry.value.taxableValue, 1, 'COMMA', 2, 'POINT')}">10,000.00</td>
+                    <td th:text="${#numbers.formatDecimal(entry.value.cgst, 1, 'COMMA', 2, 'POINT')}">900.00</td>
+                    <td th:text="${#numbers.formatDecimal(entry.value.sgst, 1, 'COMMA', 2, 'POINT')}">900.00</td>
+                    <td th:text="${#numbers.formatDecimal(entry.value.igst, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    <td th:text="${#numbers.formatDecimal(entry.value.totalTax, 1, 'COMMA', 2, 'POINT')}">1,800.00</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table class="footer-section">
+            <tr>
+                <td style="width: 60%;">
+                    <div class="label">Terms &amp; Conditions:</div>
+                    1. Goods once sold will not be taken back.<br/>
+                    2. Interest @18% p.a. will be charged if payment is not made within due date.<br/>
+                    3. Subject to Ahmedabad Jurisdiction.
+                </td>
+                <td style="width: 40%;">
+                    <div style="text-align: right;">
+                        For <b th:text="${company.companyName}">Process Equipment Corporation</b>
+                        <div class="signatory-box">
+                            <div class="signatory-label">Authorised Signatory</div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>

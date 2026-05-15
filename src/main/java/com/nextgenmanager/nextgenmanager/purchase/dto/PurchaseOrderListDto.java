@@ -21,5 +21,6 @@ public record PurchaseOrderListDto(
         String currency,
         BigDecimal grandTotal,
         int itemCount,
-        Date createdDate
+        Date createdDate,
+        Integer daysOverdue
 ) {}

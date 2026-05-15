@@ -23,6 +23,7 @@ public class DeliveryNoteItem {
     private Long id;
 
     @ManyToOne
+    @JoinColumn(name = "inventory_item_id")
     private InventoryItem inventoryItem;
 
     private int quantityDelivered;
@@ -31,7 +32,11 @@ public class DeliveryNoteItem {
     @JoinColumn(name = "delivery_note_item_id")
     private List<InventoryInstance> inventoryInstanceList;
 
+    @Column(precision = 15, scale = 5)
+    private java.math.BigDecimal actualCost;
+
 
     @ManyToOne
+    @JoinColumn(name = "delivery_note_id")
     private DeliveryNote deliveryNote;
 }
