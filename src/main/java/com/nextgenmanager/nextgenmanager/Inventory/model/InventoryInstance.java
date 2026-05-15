@@ -99,6 +99,11 @@ public class InventoryInstance {
     @JoinColumn(name = "serialId", unique = true)
     private SerialNumber serialNumber;
 
+    @Column(name = "sales_order_item_id")
+    private Long salesOrderItemId;
+
+    @Column(name = "delivery_note_item_id")
+    private Long deliveryNoteItemId;
 
     private static String generateShortUUID() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);

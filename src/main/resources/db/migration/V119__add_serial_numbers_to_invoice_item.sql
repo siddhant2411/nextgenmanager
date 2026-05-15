@@ -1,0 +1,4 @@
+ALTER TABLE invoiceitem ADD COLUMN IF NOT EXISTS serial_numbers VARCHAR(1000);
+ALTER TABLE salesorder  ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2);
+
+

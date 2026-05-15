@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.*;
 import com.nextgenmanager.nextgenmanager.Inventory.model.*;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.BatchNumberRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.GoodsReceiptNoteRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.SerialNumberRepository;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
@@ -32,6 +33,7 @@ public class GRNServiceImpl implements GRNService {
     @Autowired private ContactRepository contactRepository;
     @Autowired private InventoryItemRepository inventoryItemRepository;
     @Autowired private InventoryTransactionService inventoryTransactionService;
+    @Autowired private BatchNumberRepository batchNumberRepository;
     @Autowired private SerialNumberRepository serialNumberRepository;
 
     @Override
@@ -209,21 +211,21 @@ public class GRNServiceImpl implements GRNService {
             if (item.getItem().getProductInventorySettings() != null) {
                 boolean isBatch  = item.getItem().getProductInventorySettings().isBatchTracked();
                 boolean isSerial = item.getItem().getProductInventorySettings().isSerialTracked();
+                String grnNo = item.getGoodsReceiptNote().getGrnNumber();
+                int itemId   = item.getItem().getInventoryItemId();
 
                 if (isBatch) {
-                    serialNumberRepository.findBySourceDocNo(item.getGoodsReceiptNote().getGrnNumber())
+                    batchNumberRepository.findBySourceDocNo(grnNo)
                             .stream()
-                            .filter(s -> s.getInventoryItem().getInventoryItemId() == item.getItem().getInventoryItemId())
+                            .filter(b -> b.getInventoryItem().getInventoryItemId() == itemId)
                             .findFirst()
-                            .ifPresent(s -> {
-                                if (s.getBatch() != null) dto.setGeneratedBatchNumber(s.getBatch().getBatchNumber());
-                            });
+                            .ifPresent(b -> dto.setGeneratedBatchNumber(b.getBatchNumber()));
                 }
                 if (isSerial) {
                     List<String> serials = serialNumberRepository
-                            .findBySourceDocNo(item.getGoodsReceiptNote().getGrnNumber())
+                            .findBySourceDocNo(grnNo)
                             .stream()
-                            .filter(s -> s.getInventoryItem().getInventoryItemId() == item.getItem().getInventoryItemId())
+                            .filter(s -> s.getInventoryItem().getInventoryItemId() == itemId)
                             .map(SerialNumber::getSerialNumber)
                             .collect(Collectors.toList());
                     dto.setGeneratedSerialNumbers(serials);

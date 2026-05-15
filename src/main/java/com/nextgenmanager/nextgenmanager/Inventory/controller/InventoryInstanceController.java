@@ -26,7 +26,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/inventory")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER')")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER')")
 @Validated
 public class InventoryInstanceController {
 
@@ -243,6 +243,22 @@ public class InventoryInstanceController {
     }
 
 
+    @GetMapping("/instances/available/{itemId}")
+    public ResponseEntity<?> getAvailableInstances(@PathVariable int itemId) {
+        try {
+            logger.info("Fetching available inventory instances with details for item: {}", itemId);
+            List<AvailableInstanceDetailDto> availableInstances = inventoryInstanceService.getAvailableInstancesWithDetails(itemId);
+            return ResponseEntity.ok(availableInstances);
+        } catch (ResourceNotFoundException e) {
+            logger.warn("Item not found: {}", itemId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error fetching available instances: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Error fetching instances: " + e.getMessage()));
+        }
+    }
+
 //    @PostMapping("/arrival")
 //    public ResponseEntity<?> markInventoryAsArrived(@RequestBody List<Long> instanceIds) {
 //        List<InventoryInstance> arrived = inventoryInstanceService.markRequestedInventoryAsArrived(instanceIds);
@@ -403,5 +419,14 @@ public class InventoryInstanceController {
     }
 
 
+    @GetMapping("/instances/{id}/history")
+    public ResponseEntity<?> getInstanceHistory(@PathVariable Long id) {
+        try {
+            List<InventoryMovementLog> history = inventoryInstanceService.getMovementHistory(id);
+            return ResponseEntity.ok(history);
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error fetching history: " + ex.getMessage());
+        }
+    }
 }
 

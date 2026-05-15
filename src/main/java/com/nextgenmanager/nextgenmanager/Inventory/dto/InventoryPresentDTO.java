@@ -28,4 +28,8 @@ public class InventoryPresentDTO {
     private double totalQuantity;
 
     private double totalCost;
+
+    private boolean batchTracked;
+
+    private boolean serialTracked;
 }

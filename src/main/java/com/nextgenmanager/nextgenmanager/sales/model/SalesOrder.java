@@ -97,15 +97,31 @@ public class SalesOrder {
     @Column(length = 50)  private String poNumber;
     private LocalDate poDate;
     @Column(length = 200) private String reference;                      // any other ref
-    @Column(length = 500) private String remarks;
+    @Column(length = 200) private String remarks;
+
+    @Column(length = 100) private String placeOfSupply;                  // e.g. "Maharashtra"
+    @Column(length = 5)   private String placeOfSupplyStateCode;          // e.g. "27"
 
     // — Status & audit —
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private SalesOrderStatus status = SalesOrderStatus.DRAFT;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private SalesOrderApprovalStatus approvalStatus = SalesOrderApprovalStatus.DRAFT;
 
-    @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL )
+    private String approvedBy;
+    private Date approvedDate;
+    @Column(length = 500)
+    private String rejectionReason;
+    private Date sentToCustomerAt;
+    @Column(length = 200)
+    private String sentToCustomerEmail;
+    private Integer revisionNo = 0;
+    private Long parentSoId;
+
+    @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL)
     private List<DeliveryNote> deliveryNotes;
 
 

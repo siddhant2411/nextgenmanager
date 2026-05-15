@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.sales.dto;
 
+import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderApprovalStatus;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderItem;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderStatus;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxType;
@@ -8,9 +9,9 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import lombok.*;
 
-import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Date;
 import java.util.List;
 
 @Data
@@ -38,7 +39,7 @@ public class SalesOrderDto {
     private SalesOrderStatus status;                       // from SalesOrderStatus enum
 
     // Line items
-    private List<SalesOrderItem> items;
+    private List<SalesOrderItemDto> items;
 
     // Commercial summary
     private BigDecimal subTotal;
@@ -75,4 +76,18 @@ public class SalesOrderDto {
     private LocalDate poDate;
     private String reference;
     private String remarks;
+    private String placeOfSupply;
+    private String placeOfSupplyStateCode;
+    private BigDecimal totalPayableAmount;
+
+    // Approval workflow
+    @Enumerated(EnumType.STRING)
+    private SalesOrderApprovalStatus approvalStatus;
+    private String approvedBy;
+    private Date approvedDate;
+    private String rejectionReason;
+    private Date sentToCustomerAt;
+    private String sentToCustomerEmail;
+    private Integer revisionNo;
+    private Long parentSoId;
 }

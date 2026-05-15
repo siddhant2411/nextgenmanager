@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Delivery Challan</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -moz-box-sizing: border-box;
+            -webkit-box-sizing: border-box;
+        }
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+        body {
+            font-family: 'DejaVu Sans', sans-serif;
+            font-size: 12px;
+            color: #333;
+            line-height: 1.5;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+        }
+        .container {
+            width: 98%; /* Forced safety margin */
+            margin: 0 auto;
+            border: 1px solid #000;
+        }
+        table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            word-wrap: break-word;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            border-bottom: 1px solid #000;
+            padding: 15px;
+            background-color: #f8f9fa;
+            text-transform: uppercase;
+        }
+        .header-table { border-bottom: 1px solid #000; }
+        .header-table td { padding: 12px; vertical-align: top; }
+        .company-name { font-size: 18px; font-weight: bold; display: block; margin-bottom: 5px; }
+        .label { font-weight: bold; color: #555; }
+        table.content-table { width: 100%; border-collapse: collapse; }
+        table.content-table th, table.content-table td { border: 1px solid #000; padding: 12px; text-align: left; }
+        table.content-table th { background-color: #f1f3f5; font-weight: bold; text-transform: uppercase; font-size: 11px; }
+        .text-right { text-align: right !important; }
+        .text-center { text-align: center !important; }
+        .serial-list { font-size: 11px; color: #666; margin-top: 8px; font-style: italic; }
+        .footer-section { width: 100%; border-top: 1px solid #000; }
+        .footer-section td { padding: 10px; vertical-align: top; }
+        .signatory-box { height: 70px; border: 1px solid #000; margin-top: 10px; position: relative; }
+        .signatory-label { position: absolute; bottom: 5px; width: 100%; text-align: center; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">Delivery Challan</div>
+        
+        <table class="header-table">
+            <tr>
+                <td style="width: 50%; border-right: 1px solid #000;">
+                    <span class="company-name" th:text="${company.companyName}">Process Equipment Corporation</span>
+                    <span th:text="${company.street1}">123, Industrial Estate</span><br/>
+                    <span th:text="${company.city + ', ' + company.state + ' - ' + company.pinCode}">City, State - Pin</span><br/>
+                    <span class="label">GSTIN:</span> <span th:text="${company.gstNumber}">24ARJPM1573G1ZT</span>
+                </td>
+                <td style="width: 50%;">
+                    <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Challan No:</span></td>
+                            <td style="padding: 2px;"><b th:text="${dn.deliveryNoteNo}">DC/2026/001</b></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Date:</span></td>
+                            <td style="padding: 2px;" th:text="${#dates.format(dn.deliveryDate, 'dd-MMM-yyyy')}">15-May-2026</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">SO Ref:</span></td>
+                            <td style="padding: 2px;" th:text="${dn.salesOrder.orderNumber}">SO-1001</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Vehicle No:</span></td>
+                            <td style="padding: 2px;" th:text="${dn.vehicleNumber}">GJ-01-XX-1234</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td style="width: 50%; border-right: 1px solid #000; border-top: 1px solid #000;">
+                    <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Consignee (Ship to)</div>
+                    <b th:text="${dn.salesOrder.customer.companyName}">Customer Pvt Ltd</b><br/>
+                    <span th:text="${dn.salesOrder.deliveryAddress}">Delivery Address String</span><br/>
+                    <span class="label">GSTIN:</span> <span th:text="${dn.salesOrder.customer.gstNumber}">24XXXXX0000X1Z5</span>
+                </td>
+                <td style="width: 50%; border-top: 1px solid #000;">
+                    <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Dispatch Details</div>
+                    <span class="label">Transport:</span> <span th:text="${dn.dispatchThrough}">By Road</span><br/>
+                    <span class="label">LR No:</span> <span th:text="${dn.lrNumber}">N/A</span><br/>
+                </td>
+            </tr>
+        </table>
+
+        <table class="content-table">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 65%;">Description of Goods</th>
+                    <th style="width: 15%;">HSN Code</th>
+                    <th style="width: 15%;">Quantity</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="item, iter : ${dn.items}">
+                    <td class="text-center" th:text="${iter.index + 1}">1</td>
+                    <td>
+                        <b th:text="${item.inventoryItem.name}">Product Name</b>
+                        <div class="serial-list">
+                            <span th:each="inst : ${item.inventoryInstanceList}">
+                                <span th:if="${inst.batchNumber != null}" th:text="'Batch: ' + ${inst.batchNumber.batchNumber} + ' '"></span>
+                                <span th:if="${inst.serialNumber != null}" th:text="'S/N: ' + ${inst.serialNumber.serialNumber} + ' '"></span>
+                            </span>
+                        </div>
+                    </td>
+                    <td class="text-center" th:text="${item.inventoryItem.hsnCode}">8481</td>
+                    <td class="text-center">
+                        <b th:text="${item.quantityDelivered}">10</b> 
+                        <span th:text="${item.inventoryItem.uom}">NOS</span>
+                    </td>
+                </tr>
+                <tr th:if="${dn.items.size() < 10}" th:each="i : ${#numbers.sequence(dn.items.size() + 1, 10)}">
+                    <td style="height: 35px;"></td><td></td><td></td><td></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table class="footer-section">
+            <tr>
+                <td style="width: 60%;">
+                    <div class="label">Remarks:</div>
+                    <p th:text="${dn.remarks}">Standard dispatch for order fulfillment.</p>
+                    <div style="margin-top: 20px; font-size: 8px;">
+                        * Received the above goods in good condition.
+                    </div>
+                </td>
+                <td style="width: 40%;">
+                    <div style="text-align: right;">
+                        For <b th:text="${company.companyName}">Process Equipment Corporation</b>
+                        <div class="signatory-box">
+                            <div class="signatory-label">Receiver's Signature</div>
+                        </div>
+                        <div class="signatory-box">
+                            <div class="signatory-label">Authorised Signatory</div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>

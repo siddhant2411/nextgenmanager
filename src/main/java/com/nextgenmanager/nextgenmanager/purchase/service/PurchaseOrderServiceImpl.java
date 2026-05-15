@@ -22,10 +22,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import org.springframework.data.domain.PageRequest;
+
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 @Service
 @Transactional
@@ -110,6 +117,27 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                     PurchaseOrderApprovalStatus.valueOf(approvalStatus), pageable).map(mapper::toListDto);
         }
         return poRepo.findByDeletedDateIsNull(pageable).map(mapper::toListDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PurchaseOrderListDto> getPendingReceipt() {
+        return poRepo.findByStatusInAndDeletedDateIsNull(
+                List.of(PurchaseOrderStatus.SENT, PurchaseOrderStatus.PARTIALLY_RECEIVED))
+                .stream()
+                .map(po -> enrichWithDaysOverdue(mapper.toListDto(po), po.getExpectedDeliveryDate()))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PurchaseOrderListDto> getOverduePOs() {
+        Date now = new Date();
+        return poRepo.findByStatusInAndExpectedDeliveryDateBeforeAndDeletedDateIsNull(
+                List.of(PurchaseOrderStatus.SENT, PurchaseOrderStatus.PARTIALLY_RECEIVED), now)
+                .stream()
+                .map(po -> enrichWithDaysOverdue(mapper.toListDto(po), po.getExpectedDeliveryDate()))
+                .toList();
     }
 
     // ── Update ────────────────────────────────────────────────────────────────
@@ -343,6 +371,48 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         po.setSentToVendorAt(new Date());
         po.setSentToVendorEmail(toEmail);
         return toDto(poRepo.save(po));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PurchaseAnalyticsDto getPurchaseAnalytics() {
+        // Spend by vendor — top 10
+        LinkedHashMap<String, BigDecimal> spendByVendor = new LinkedHashMap<>();
+        poRepo.findSpendByVendor(PageRequest.of(0, 10)).forEach(row ->
+                spendByVendor.put((String) row[0], (BigDecimal) row[1]));
+
+        // Status counts
+        Map<String, Long> statusCounts = new LinkedHashMap<>();
+        poRepo.countByStatus().forEach(row ->
+                statusCounts.put(row[0].toString(), (Long) row[1]));
+
+        // Overdue POs
+        List<PurchaseOrderListDto> overduePOs = getOverduePOs();
+
+        // Monthly spend
+        List<PurchaseAnalyticsDto.MonthlySpendDto> monthlySpend = poRepo.findMonthlySpend().stream()
+                .map(row -> {
+                    int year  = ((Number) row[0]).intValue();
+                    int month = ((Number) row[1]).intValue();
+                    BigDecimal total = (BigDecimal) row[2];
+                    return new PurchaseAnalyticsDto.MonthlySpendDto(
+                            String.format("%04d-%02d", year, month), total);
+                })
+                .toList();
+
+        return new PurchaseAnalyticsDto(spendByVendor, statusCounts, overduePOs, monthlySpend);
+    }
+
+    private PurchaseOrderListDto enrichWithDaysOverdue(PurchaseOrderListDto dto, Date expectedDeliveryDate) {
+        if (expectedDeliveryDate == null) return dto;
+        long diffMs = new Date().getTime() - expectedDeliveryDate.getTime();
+        int days = (int) (diffMs / 86_400_000L);
+        if (days <= 0) return dto;
+        return new PurchaseOrderListDto(
+                dto.id(), dto.purchaseOrderNumber(), dto.poType(),
+                dto.vendorId(), dto.vendorName(), dto.orderDate(), dto.expectedDeliveryDate(),
+                dto.status(), dto.approvalStatus(), dto.currency(), dto.grandTotal(),
+                dto.itemCount(), dto.createdDate(), days);
     }
 
     private PurchaseOrderDto toDto(PurchaseOrder po) {

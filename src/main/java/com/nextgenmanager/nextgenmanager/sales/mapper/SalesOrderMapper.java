@@ -23,5 +23,14 @@ public interface SalesOrderMapper {
     @Mapping(target = "deletedDate", ignore = true)
     @Mapping(target = "deliveryNotes", ignore = true)
     @Mapping(target = "taxInvoices", ignore = true)
+    @Mapping(target = "approvalStatus", ignore = true)
+    @Mapping(target = "approvedBy", ignore = true)
+    @Mapping(target = "approvedDate", ignore = true)
+    @Mapping(target = "rejectionReason", ignore = true)
+    @Mapping(target = "sentToCustomerAt", ignore = true)
+    @Mapping(target = "sentToCustomerEmail", ignore = true)
+    @Mapping(target = "revisionNo", ignore = true)
+    @Mapping(target = "parentSoId", ignore = true)
+    @Mapping(target = "taxPercentage", ignore = true)
     SalesOrder toEntity(SalesOrderDto dto);
 }

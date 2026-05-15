@@ -55,6 +55,13 @@ public class BatchNumber {
 
     private String warehouse;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private QualityStatus qualityStatus = QualityStatus.PENDING_QC;
+
+    @Column(length = 500)
+    private String qualityRemarks;
+
     private String createdBy;
 
     @CreationTimestamp

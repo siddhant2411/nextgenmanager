@@ -53,6 +53,13 @@ public class SerialNumber {
     /** WO number or SO number that consumed this serial */
     private String consumedByDocNo;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private QualityStatus qualityStatus = QualityStatus.PENDING_QC;
+
+    @Column(length = 500)
+    private String qualityRemarks;
+
     private String createdBy;
 
     @CreationTimestamp

@@ -34,17 +34,11 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
     @Procedure("check_item_code_exists")
     boolean checkItemCodeExists(@Param("itemCodeParam") String itemCode);
 
-    @Query(value = "SELECT * FROM inventoryItem i WHERE " +
-            "(LOWER(CAST(i.name AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "LOWER(CAST(i.itemCode AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "LOWER(CAST(i.hsnCode AS text)) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
-            "i.deletedDate IS NULL",
-            countQuery = "SELECT COUNT(*) FROM inventoryItem i WHERE " +
-                    "(LOWER(CAST(i.name AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-                    "LOWER(CAST(i.itemCode AS text)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-                    "LOWER(CAST(i.hsnCode AS text)) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
-                    "i.deletedDate IS NULL",
-            nativeQuery = true)
+    @Query("SELECT i FROM InventoryItem i LEFT JOIN FETCH i.productFinanceSettings WHERE " +
+            "(LOWER(i.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(i.itemCode) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(i.hsnCode) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
+            "i.deletedDate IS NULL")
     Page<InventoryItem> searchActiveInventoryItems(@Param("query") String query, Pageable pageable);
 
     @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NOT NULL", nativeQuery = true)
