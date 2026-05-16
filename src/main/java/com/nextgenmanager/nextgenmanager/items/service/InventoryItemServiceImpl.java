@@ -29,6 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -73,11 +75,23 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItem.class);
 
+    private boolean canAccessFinance() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN") ||
+                               a.getAuthority().equals("ROLE_ADMIN") ||
+                               a.getAuthority().equals("ROLE_SALES_ADMIN"));
+    }
+
     @Override
     @Transactional
     public com.nextgenmanager.nextgenmanager.items.model.InventoryItem addInventoryItem(com.nextgenmanager.nextgenmanager.items.model.InventoryItem inventoryItem) {
         logger.debug("Adding inventory item: {}", inventoryItem);
         try {
+            if (!canAccessFinance()) {
+                inventoryItem.setProductFinanceSettings(null);
+            }
             // Generate item code if not provided
             if (inventoryItem.getItemCode() == null || inventoryItem.getItemCode().isBlank()) {
                 if (inventoryItem.getSeriesId() != null) {
@@ -259,6 +273,26 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             updatedItem.setInventoryItemId(itemId);
             updatedItem.setItemCode(existingItem.getItemCode()); // preserve original code
 
+            if (!canAccessFinance()) {
+                com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings existingFinance = existingItem.getProductFinanceSettings();
+                if (existingFinance != null) {
+                    existingFinance.setInventoryItem(updatedItem);
+                    updatedItem.setProductFinanceSettings(existingFinance);
+                } else {
+                    updatedItem.setProductFinanceSettings(null);
+                }
+            } else {
+                if (updatedItem.getProductFinanceSettings() != null) {
+                    updatedItem.getProductFinanceSettings().setInventoryItem(updatedItem);
+                }
+            }
+
+            if (updatedItem.getProductSpecification() != null) {
+                updatedItem.getProductSpecification().setInventoryItem(updatedItem);
+            }
+            if (updatedItem.getProductInventorySettings() != null) {
+                updatedItem.getProductInventorySettings().setInventoryItem(updatedItem);
+            }
 
             InventoryItem newItem = inventoryItemRepository.save(updatedItem);
 

@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @RestController
 @RequestMapping("/api/inventory_item")
@@ -48,6 +50,15 @@ public class InventoryItemController {
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItemController.class);
 
+    private boolean canViewFinance() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN") ||
+                               a.getAuthority().equals("ROLE_ADMIN") ||
+                               a.getAuthority().equals("ROLE_SALES_ADMIN"));
+    }
+
 
     @PostMapping(
             value = "/add",
@@ -63,6 +74,9 @@ public class InventoryItemController {
         try {
             inventoryItem.setAttachments(attachments);
             InventoryItem savedItem = inventoryItemService.addInventoryItem(inventoryItem);
+            if (!canViewFinance() && savedItem != null) {
+                savedItem.setProductFinanceSettings(null);
+            }
             return ResponseEntity.status(HttpStatus.CREATED).body(savedItem);
         } catch (Exception e) {
             logger.error("Error adding inventory item: {}", e.getMessage());
@@ -75,6 +89,9 @@ public class InventoryItemController {
         logger.debug("Received request to fetch inventory item with id: {}", Integer.parseInt(id));
         try {
             InventoryItem inventoryItem = inventoryItemService.getInventoryItem(Integer.parseInt(id));
+            if (!canViewFinance() && inventoryItem != null) {
+                inventoryItem.setProductFinanceSettings(null);
+            }
             return ResponseEntity.ok(inventoryItem);
         } catch (Exception e) {
             logger.error("Error fetching inventory item: {}", e.getMessage());
@@ -92,6 +109,9 @@ public class InventoryItemController {
         logger.debug("Received request to fetch all active inventory items with pagination and sorting");
         try {
             Page<InventoryItemDTO> items = inventoryItemService.getAllInventoryItems(page, size, sortBy, sortDir,search);
+            if (!canViewFinance() && items != null) {
+                items.forEach(dto -> dto.setStandardCost(null));
+            }
             return ResponseEntity.ok(items);
         } catch (Exception e) {
             logger.error("Error fetching all inventory items: {}", e.getMessage());
@@ -105,6 +125,9 @@ public class InventoryItemController {
         logger.debug("Received request to fetch all inventory items including deleted");
         try {
             List<InventoryItem> items = inventoryItemService.getAllInventoryItemsWithDeleted();
+            if (!canViewFinance() && items != null) {
+                items.forEach(item -> item.setProductFinanceSettings(null));
+            }
             return ResponseEntity.ok(items);
         } catch (Exception e) {
             logger.error("Error fetching inventory items with deleted: {}", e.getMessage());
@@ -140,6 +163,9 @@ public class InventoryItemController {
         try {
             updatedItem.setAttachments(attachments);
             InventoryItem savedItem = inventoryItemService.editInventoryItem(id, updatedItem);
+            if (!canViewFinance() && savedItem != null) {
+                savedItem.setProductFinanceSettings(null);
+            }
             return ResponseEntity.ok(savedItem);
         } catch (IllegalArgumentException e) {
             logger.warn("Item not found: {}", e.getMessage());
@@ -156,7 +182,11 @@ public class InventoryItemController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "5"
             ) int size) {
-        return inventoryItemService.searchInventoryItems(query, page, size);
+        Page<InventoryItem> result = inventoryItemService.searchInventoryItems(query, page, size);
+        if (!canViewFinance() && result != null) {
+            result.forEach(item -> item.setProductFinanceSettings(null));
+        }
+        return result;
     }
 
     @PostMapping(value = "/{id}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -223,7 +253,11 @@ public class InventoryItemController {
 
     @PostMapping("/filter")
     public Page<InventoryItemDTO> filterInventoryItems(@RequestBody FilterRequest request) {
-        return inventoryItemService.filterInventoryItems(request);
+        Page<InventoryItemDTO> result = inventoryItemService.filterInventoryItems(request);
+        if (!canViewFinance() && result != null) {
+            result.forEach(dto -> dto.setStandardCost(null));
+        }
+        return result;
     }
 
     @GetMapping("/export/catalog")
