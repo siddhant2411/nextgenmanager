@@ -1,11 +1,14 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.controller;
 
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkImportResultDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkAssignRequest;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkDeleteRequest;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.service.EnquiryExportService;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.service.EnquiryImportService;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.service.EnquiryService;
+import org.springframework.web.multipart.MultipartFile;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.slf4j.Logger;
@@ -35,6 +38,9 @@ public class EnquiryController {
 
     @Autowired
     private EnquiryExportService enquiryExportService;
+
+    @Autowired
+    private EnquiryImportService enquiryImportService;
 
     private static final Logger logger = LoggerFactory.getLogger(EnquiryController.class);
 
@@ -204,6 +210,35 @@ public class EnquiryController {
             logger.error("Error during bulk assign", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(java.util.Map.of("error", "Bulk assign failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/bulk-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> bulkImport(@RequestParam("file") MultipartFile file) {
+        try {
+            if (file.isEmpty()) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("error", "No file provided"));
+            }
+            BulkImportResultDTO result = enquiryImportService.importFromFile(file);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            logger.error("Error during bulk import", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", "Import failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping(value = "/import-template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public ResponseEntity<byte[]> getImportTemplate() {
+        try {
+            byte[] bytes = enquiryImportService.generateTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+            headers.setContentDisposition(ContentDisposition.attachment().filename("Enquiry_Import_Template.xlsx").build());
+            return new ResponseEntity<>(bytes, headers, HttpStatus.OK);
+        } catch (Exception e) {
+            logger.error("Error generating import template", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
 

@@ -21,8 +21,9 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
 
 
     @Query(nativeQuery = true, value = """
-    SELECT 
-        e.id as id, e.enqNo as enqNo, e.enqDate as enqDate, c.companyName as companyName, 
+    SELECT
+        e.id as id, e.enqNo as enqNo, e.enqDate as enqDate,
+        COALESCE(c.companyName, e.manualCompanyName) as companyName,
         e.lastContactedDate as lastContactedDate, e.daysForNextFollowup as daysForNextFollowup,
         e.closedDate as closedDate, e.status as status, e.expectedRevenue as expectedRevenue,
         e.opportunityname as opportunityName, COALESCE(e.contactPersonPhone, c.phone) as phone,
@@ -30,25 +31,26 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
         e.priority as priority, e.city as city, e.state as state, u.username as assignedToName,
         e.nextFollowupDate as nextFollowupDate
     FROM enquiry e
-    INNER JOIN contact c ON e.contact_id = c.id
+    LEFT JOIN contact c ON e.contact_id = c.id
     LEFT JOIN appuser u ON e.assigned_to_id = u.id
     WHERE e.deletedDate IS NULL
     AND (CAST(:enqNo AS TEXT) IS NULL OR e.enqNo ILIKE CONCAT('%', CAST(:enqNo AS TEXT), '%'))
-    AND (CAST(:companyName AS TEXT) IS NULL OR c.companyName ILIKE CONCAT('%', CAST(:companyName AS TEXT), '%'))
-    AND (CAST(:lastContactedDate AS DATE) IS NULL OR 
+    AND (CAST(:companyName AS TEXT) IS NULL OR CAST(:companyName AS TEXT) = '' OR
+        COALESCE(c.companyName, e.manualCompanyName, '') ILIKE CONCAT('%', CAST(:companyName AS TEXT), '%'))
+    AND (CAST(:lastContactedDate AS DATE) IS NULL OR
         CASE CAST(:dateComparisonTypeLastContacted AS TEXT)
             WHEN '=' THEN e.lastContactedDate = CAST(:lastContactedDate AS DATE)
             WHEN '<' THEN e.lastContactedDate < CAST(:lastContactedDate AS DATE)
             WHEN '>' THEN e.lastContactedDate > CAST(:lastContactedDate AS DATE)
         END)
     AND (CAST(:daysForNextFollowup AS INTEGER) IS NULL OR e.daysForNextFollowup = CAST(:daysForNextFollowup AS INTEGER))
-    AND (CAST(:enqDate AS DATE) IS NULL OR 
+    AND (CAST(:enqDate AS DATE) IS NULL OR
         CASE CAST(:dateComparisonTypeEnqDate AS TEXT)
             WHEN '=' THEN e.enqDate = CAST(:enqDate AS DATE)
             WHEN '<' THEN e.enqDate < CAST(:enqDate AS DATE)
             WHEN '>' THEN e.enqDate > CAST(:enqDate AS DATE)
         END)
-    AND (CAST(:closedDate AS DATE) IS NULL OR 
+    AND (CAST(:closedDate AS DATE) IS NULL OR
         CASE CAST(:dateComparisonTypeClosedDate AS TEXT)
             WHEN '=' THEN e.closedDate = CAST(:closedDate AS DATE)
             WHEN '<' THEN e.closedDate < CAST(:closedDate AS DATE)
@@ -57,24 +59,25 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
     """, countQuery = """
     SELECT COUNT(*)
     FROM enquiry e
-    INNER JOIN contact c ON e.contact_id = c.id
+    LEFT JOIN contact c ON e.contact_id = c.id
     WHERE e.deletedDate IS NULL
     AND (CAST(:enqNo AS TEXT) IS NULL OR e.enqNo ILIKE CONCAT('%', CAST(:enqNo AS TEXT), '%'))
-    AND (CAST(:companyName AS TEXT) IS NULL OR c.companyName ILIKE CONCAT('%', CAST(:companyName AS TEXT), '%'))
-    AND (CAST(:lastContactedDate AS DATE) IS NULL OR 
+    AND (CAST(:companyName AS TEXT) IS NULL OR CAST(:companyName AS TEXT) = '' OR
+        COALESCE(c.companyName, e.manualCompanyName, '') ILIKE CONCAT('%', CAST(:companyName AS TEXT), '%'))
+    AND (CAST(:lastContactedDate AS DATE) IS NULL OR
         CASE CAST(:dateComparisonTypeLastContacted AS TEXT)
             WHEN '=' THEN e.lastContactedDate = CAST(:lastContactedDate AS DATE)
             WHEN '<' THEN e.lastContactedDate < CAST(:lastContactedDate AS DATE)
             WHEN '>' THEN e.lastContactedDate > CAST(:lastContactedDate AS DATE)
         END)
     AND (CAST(:daysForNextFollowup AS INTEGER) IS NULL OR e.daysForNextFollowup = CAST(:daysForNextFollowup AS INTEGER))
-    AND (CAST(:enqDate AS DATE) IS NULL OR 
+    AND (CAST(:enqDate AS DATE) IS NULL OR
         CASE CAST(:dateComparisonTypeEnqDate AS TEXT)
             WHEN '=' THEN e.enqDate = CAST(:enqDate AS DATE)
             WHEN '<' THEN e.enqDate < CAST(:enqDate AS DATE)
             WHEN '>' THEN e.enqDate > CAST(:enqDate AS DATE)
         END)
-    AND (CAST(:closedDate AS DATE) IS NULL OR 
+    AND (CAST(:closedDate AS DATE) IS NULL OR
         CASE CAST(:dateComparisonTypeClosedDate AS TEXT)
             WHEN '=' THEN e.closedDate = CAST(:closedDate AS DATE)
             WHEN '<' THEN e.closedDate < CAST(:closedDate AS DATE)
@@ -95,6 +98,20 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, Long> {
     );
 
     public Optional<Enquiry> findByEnqNo(String enqNo);
+
+    @Query(nativeQuery = true, value = """
+        SELECT COUNT(*) > 0 FROM enquiry e
+        LEFT JOIN contact c ON e.contact_id = c.id
+        WHERE e.deletedDate IS NULL
+        AND (CAST(:enqDate AS DATE) IS NULL OR e.enqDate = CAST(:enqDate AS DATE))
+        AND (:opportunityName IS NULL OR LOWER(e.opportunityname) = LOWER(:opportunityName))
+        AND LOWER(COALESCE(c.companyName, e.manualCompanyName, '')) = LOWER(:companyName)
+    """)
+    boolean existsByDeduplicationKey(
+        @Param("opportunityName") String opportunityName,
+        @Param("companyName") String companyName,
+        @Param("enqDate") LocalDate enqDate
+    );
 
     long countByDeletedDateIsNull();
 
