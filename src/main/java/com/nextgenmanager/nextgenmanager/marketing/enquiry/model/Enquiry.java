@@ -37,6 +37,8 @@ public class Enquiry {
     @JoinColumn(name = "contact_id")
     private Contact contact;
 
+    private String manualCompanyName;
+
     private String contactPersonName;
     private String contactPersonPhone;
     private String contactPersonEmail;

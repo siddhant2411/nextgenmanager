@@ -177,6 +177,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     private void updateBasicFields(Enquiry existingEnquiry, Enquiry updatedEnquiry) {
         existingEnquiry.setEnqDate(updatedEnquiry.getEnqDate());
         existingEnquiry.setContact(updatedEnquiry.getContact());
+        existingEnquiry.setManualCompanyName(updatedEnquiry.getManualCompanyName());
         existingEnquiry.setContactPersonName(updatedEnquiry.getContactPersonName());
         existingEnquiry.setContactPersonPhone(updatedEnquiry.getContactPersonPhone());
         existingEnquiry.setContactPersonEmail(updatedEnquiry.getContactPersonEmail());

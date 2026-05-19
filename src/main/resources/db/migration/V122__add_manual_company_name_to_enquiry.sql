@@ -1,0 +1,1 @@
+ALTER TABLE enquiry ADD COLUMN IF NOT EXISTS manualCompanyName VARCHAR(255);

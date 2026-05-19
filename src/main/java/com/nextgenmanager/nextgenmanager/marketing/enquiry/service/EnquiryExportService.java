@@ -152,7 +152,7 @@ public class EnquiryExportService {
             setCell(row, 0, String.valueOf(i + 1), rowStyle);
             setCell(row, 1, e.getEnqNo(), rowStyle);
             setCell(row, 2, fmt(e.getEnqDate()), rowStyle);
-            setCell(row, 3, e.getContact() != null ? e.getContact().getCompanyName() : "", rowStyle);
+            setCell(row, 3, e.getContact() != null ? e.getContact().getCompanyName() : (e.getManualCompanyName() != null ? e.getManualCompanyName() : ""), rowStyle);
             setCell(row, 4, e.getContactPersonName(), rowStyle);
             setCell(row, 5, e.getContactPersonPhone(), rowStyle);
             setCell(row, 6, e.getContactPersonEmail(), rowStyle);
@@ -235,7 +235,7 @@ public class EnquiryExportService {
                 setCell(row, 0, String.valueOf(sno++), rs);
                 setCell(row, 1, e.getEnqNo(), rs);
                 setCell(row, 2, fmt(e.getEnqDate()), rs);
-                setCell(row, 3, e.getContact() != null ? e.getContact().getCompanyName() : "", rs);
+                setCell(row, 3, e.getContact() != null ? e.getContact().getCompanyName() : (e.getManualCompanyName() != null ? e.getManualCompanyName() : ""), rs);
                 setCell(row, 4, e.getOpportunityName(), rs);
 
                 if (hasItems) {
