@@ -409,4 +409,10 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
         return code;
     }
+
+    @Override
+    public boolean checkItemCodeExists(String itemCode) {
+        if (itemCode == null || itemCode.isBlank()) return false;
+        return inventoryItemRepository.existsByItemCodeAndDeletedDateIsNull(itemCode.trim());
+    }
 }

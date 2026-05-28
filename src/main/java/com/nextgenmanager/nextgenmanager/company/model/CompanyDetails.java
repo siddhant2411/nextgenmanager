@@ -79,6 +79,18 @@ public class CompanyDetails {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    @Column(length = 200)
+    private String bankName;
+
+    @Column(length = 30)
+    private String bankAccountNumber;
+
+    @Column(length = 20)
+    private String bankIfscCode;
+
+    @Column(length = 200)
+    private String bankBranch;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Date creationDate;

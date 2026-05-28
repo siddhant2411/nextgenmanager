@@ -18,6 +18,8 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
     // This method finds all items where itemCode starts with the given prefix
     List<InventoryItem> findByItemCodeStartingWith(String prefix);
 
+    boolean existsByItemCodeAndDeletedDateIsNull(String itemCode);
+
     @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NULL AND (LOWER(CAST(i.name AS text)) LIKE %:search% OR LOWER(CAST(i.itemCode AS text)) LIKE %:search% OR LOWER(CAST(i.hsnCode AS text)) LIKE %:search%)", nativeQuery = true)
     Page<InventoryItem> findAllActiveCategory(@Param("search") String search, Pageable pageable);
 

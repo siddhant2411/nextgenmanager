@@ -55,5 +55,17 @@ public record CompanyDetailsRequestDTO(
 
         Integer financialYearStartMonth,
 
-        String notes
+        String notes,
+
+        @Size(max = 200)
+        String bankName,
+
+        @Size(max = 30)
+        String bankAccountNumber,
+
+        @Size(max = 20)
+        String bankIfscCode,
+
+        @Size(max = 200)
+        String bankBranch
 ) {}

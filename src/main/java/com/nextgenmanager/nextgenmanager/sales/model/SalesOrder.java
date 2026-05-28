@@ -128,6 +128,10 @@ public class SalesOrder {
     @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL)
     private List<TaxInvoice> taxInvoices;
 
+    @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
+    private List<SalesPayment> payments = new ArrayList<>();
+
     @CreationTimestamp
     @Column(updatable = false)
     private Date creationDate;

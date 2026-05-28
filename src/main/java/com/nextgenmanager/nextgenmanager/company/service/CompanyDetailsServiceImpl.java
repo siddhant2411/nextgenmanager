@@ -20,7 +20,8 @@ public class CompanyDetailsServiceImpl implements CompanyDetailsService {
         List<CompanyDetails> all = repository.findAll();
         if (all.isEmpty()) {
             return new CompanyDetailsDTO(null, "", null, null, null, null, null,
-                    null, null, null, null, null, null, null, null, "India", "INR", 4, null, null, null);
+                    null, null, null, null, null, null, null, null, "India", "INR", 4, null,
+                    null, null, null, null, null, null);
         }
         return toDTO(all.get(0));
     }
@@ -48,6 +49,10 @@ public class CompanyDetailsServiceImpl implements CompanyDetailsService {
         entity.setCurrency(request.currency() != null ? request.currency() : "INR");
         entity.setFinancialYearStartMonth(request.financialYearStartMonth() != null ? request.financialYearStartMonth() : 4);
         entity.setNotes(request.notes());
+        entity.setBankName(request.bankName());
+        entity.setBankAccountNumber(request.bankAccountNumber());
+        entity.setBankIfscCode(request.bankIfscCode());
+        entity.setBankBranch(request.bankBranch());
 
         return toDTO(repository.save(entity));
     }
@@ -73,6 +78,10 @@ public class CompanyDetailsServiceImpl implements CompanyDetailsService {
                 e.getCurrency(),
                 e.getFinancialYearStartMonth(),
                 e.getNotes(),
+                e.getBankName(),
+                e.getBankAccountNumber(),
+                e.getBankIfscCode(),
+                e.getBankBranch(),
                 e.getCreationDate(),
                 e.getUpdatedDate()
         );

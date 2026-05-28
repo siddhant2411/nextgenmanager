@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.*;
 import com.nextgenmanager.nextgenmanager.Inventory.model.*;
+import java.time.LocalDate;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
@@ -25,9 +26,11 @@ public interface InventoryInstanceService {
 
     public List<AvailableInstanceDetailDto> getAvailableInstancesWithDetails(int itemId);
 
-    public List<InventoryInstance> consumeInventoryInstance(InventoryItem item, double qty, Long requestId);
+    /** Consumes instances linked to a Material Request. Pass refDocNo (e.g. DN number) to stamp consumedByDocNo on serials. */
+    public List<InventoryInstance> consumeInventoryInstance(InventoryItem item, double qty, Long requestId, String refDocNo);
 
-    public List<InventoryInstance> consumeSpecificInstances(InventoryItem item, List<Long> instanceIds, double qty);
+    /** Consumes specific instances by ID. Pass refDocNo (e.g. DN number) to stamp consumedByDocNo on serials. */
+    public List<InventoryInstance> consumeSpecificInstances(InventoryItem item, List<Long> instanceIds, double qty, String refDocNo);
 
     public List<InventoryInstance> bookInventoryInstance(InventoryItem inventoryItem, double bookedQty);
 
@@ -91,4 +94,11 @@ public interface InventoryInstanceService {
     public InventoryProcurementOrderDTO completeProcurementOrder(Long orderId, String completedBy);
 
     public List<InventoryMovementLog> getMovementHistory(Long instanceId);
+
+    /**
+     * Returns an item-wise closing stock valuation report.
+     * @param asOfDate  ignored at MVP (uses live availableQuantity); reserved for future historical support
+     * @param itemType  optional filter: RAW_MATERIAL, FINISHED_GOODS, SEMI_FINISHED, CONSUMABLE
+     */
+    List<StockValuationLineDTO> getStockValuation(LocalDate asOfDate, String itemType);
 }

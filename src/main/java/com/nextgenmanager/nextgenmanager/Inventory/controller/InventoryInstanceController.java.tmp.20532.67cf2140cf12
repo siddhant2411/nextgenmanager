@@ -431,19 +431,5 @@ public class InventoryInstanceController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error fetching history: " + ex.getMessage());
         }
     }
-
-    /**
-     * Sprint 2-B — Stock Valuation Report
-     * GET /api/inventory/valuation-report?itemType=RAW_MATERIAL
-     *
-     * Returns all active items with closing qty, avg rate, and total value.
-     * Grouped/sorted by itemType then itemCode.
-     */
-    @GetMapping("/valuation-report")
-    public ResponseEntity<List<StockValuationLineDTO>> getValuationReport(
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOfDate,
-            @RequestParam(required = false) String itemType) {
-        return ResponseEntity.ok(inventoryInstanceService.getStockValuation(asOfDate, itemType));
-    }
 }
 

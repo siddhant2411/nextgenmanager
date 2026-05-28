@@ -1,10 +1,14 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
+import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
+import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.purchase.service.AmountInWords;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
+import com.nextgenmanager.nextgenmanager.sales.model.SalesPayment;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxType;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
+import com.nextgenmanager.nextgenmanager.sales.repository.SalesPaymentRepository;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -12,34 +16,92 @@ import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
 public class InvoicePdfService {
 
+    private static final int ITEMS_PER_PAGE = 10;
+
     private final TemplateEngine templateEngine;
     private final SalesOrderRepository salesOrderRepository;
+    private final SalesPaymentRepository salesPaymentRepository;
+    private final CompanyDetailsRepository companyDetailsRepository;
 
     public byte[] generateInvoicePdf(Long id) {
+        return render("invoice/invoice", buildContext(id, true));
+    }
+
+    public byte[] generateOrderAcknowledgementPdf(Long id) {
+        return render("invoice/order-acknowledgement", buildContext(id, false));
+    }
+
+    public byte[] generateProformaInvoicePdf(Long id) {
+        return render("invoice/proforma-invoice", buildContext(id, false));
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private Context buildContext(Long id, boolean includePayments) {
         SalesOrder salesOrder = salesOrderRepository.findById(id)
                 .orElseThrow(() -> new SalesOrderNotFoundException(id));
 
-        Context context = new Context();
-        context.setVariable("salesOrder", salesOrder);
-        context.setVariable("companyName", "Process Equipment Corporation");
-        context.setVariable("companyAddress", "123 Street, Ahmedabad");
-        context.setVariable("companyEmail", "info@procequip.com");
-        context.setVariable("gstNo", "24ARJPM1573G1ZT");
-        context.setVariable("bankName", "Process Equipment Corporation");
-        context.setVariable("bankBank", "Canara Bank");
-        context.setVariable("bankAccount", "028210102655");
-        context.setVariable("bankIfsc", "CNBK02821010");
-        context.setVariable("TaxType", TaxType.class);
-        context.setVariable("amountInWords", AmountInWords.convert(salesOrder.getTotalPayableAmount()));
+        CompanyDetails company = companyDetailsRepository.findAll().stream()
+                .findFirst().orElse(new CompanyDetails());
 
-        String html = templateEngine.process("invoice/invoice", context)
+        String companyAddress = Stream.of(company.getStreet1(), company.getStreet2(), company.getCity())
+                .filter(s -> s != null && !s.isBlank())
+                .collect(Collectors.joining(", "));
+        if (company.getPinCode() != null && !company.getPinCode().isBlank())
+            companyAddress += (companyAddress.isEmpty() ? "" : " - ") + company.getPinCode();
+        if (company.getState() != null && !company.getState().isBlank())
+            companyAddress += (companyAddress.isEmpty() ? "" : ", ") + company.getState();
+
+        Context ctx = new Context();
+        ctx.setVariable("salesOrder", salesOrder);
+        ctx.setVariable("company", company);
+        ctx.setVariable("companyAddress", companyAddress);
+        ctx.setVariable("itemPages", paginateItems(salesOrder.getItems()));
+        ctx.setVariable("TaxType", TaxType.class);
+        ctx.setVariable("amountInWords", AmountInWords.convert(salesOrder.getTotalPayableAmount()));
+
+        if (includePayments) {
+            Long orderId = salesOrder.getId();
+            List<SalesPayment> payments = salesPaymentRepository
+                    .findBySalesOrderIdOrderByPaymentDateAsc(orderId);
+            BigDecimal totalPaid = salesPaymentRepository.sumAmountBySalesOrderId(orderId);
+            BigDecimal payable = salesOrder.getTotalPayableAmount() != null
+                    ? salesOrder.getTotalPayableAmount() : BigDecimal.ZERO;
+            ctx.setVariable("payments", payments);
+            ctx.setVariable("totalPaid", totalPaid);
+            ctx.setVariable("balanceDue", payable.subtract(totalPaid).max(BigDecimal.ZERO));
+        }
+        return ctx;
+    }
+
+    private List<List<Object>> paginateItems(List<?> items) {
+        List<List<Object>> pages = new ArrayList<>();
+        int total = (items != null) ? items.size() : 0;
+        int pageCount = Math.max(1, (int) Math.ceil((double) total / ITEMS_PER_PAGE));
+        for (int p = 0; p < pageCount; p++) {
+            List<Object> page = new ArrayList<>();
+            for (int i = 0; i < ITEMS_PER_PAGE; i++) {
+                int idx = p * ITEMS_PER_PAGE + i;
+                page.add(idx < total ? items.get(idx) : null);
+            }
+            pages.add(page);
+        }
+        return pages;
+    }
+
+    private byte[] render(String template, Context ctx) {
+        String html = templateEngine.process(template, ctx)
                 .replace("&nbsp;", "&#160;");
-
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
         builder.useFastMode();
@@ -48,7 +110,7 @@ public class InvoicePdfService {
         try {
             builder.run();
         } catch (Exception e) {
-            throw new RuntimeException("Error generating PDF", e);
+            throw new RuntimeException("Error generating PDF: " + template, e);
         }
         return out.toByteArray();
     }

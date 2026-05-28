@@ -32,4 +32,8 @@ public interface SerialNumberRepository extends JpaRepository<SerialNumber, Long
 
     @Query("SELECT s FROM SerialNumber s WHERE s.sourceDocNo = :docNo ORDER BY s.createdDate ASC")
     List<SerialNumber> findBySourceDocNo(@Param("docNo") String docNo);
+
+    /** All serials dispatched / consumed by a specific document (DN number, SO number, WO number). */
+    @Query("SELECT s FROM SerialNumber s WHERE s.consumedByDocNo = :docNo ORDER BY s.consumedDate ASC")
+    List<SerialNumber> findByConsumedByDocNo(@Param("docNo") String docNo);
 }

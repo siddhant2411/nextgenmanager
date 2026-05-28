@@ -34,6 +34,8 @@ public interface InventoryItemService {
 
     public String generateUniqueCode();
 
+    public boolean checkItemCodeExists(String itemCode);
+
     public Page<InventoryItemDTO> filterInventoryItems(com.nextgenmanager.nextgenmanager.common.dto.FilterRequest request);
 
 

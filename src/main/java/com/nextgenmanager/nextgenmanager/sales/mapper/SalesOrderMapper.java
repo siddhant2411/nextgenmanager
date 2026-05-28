@@ -32,5 +32,6 @@ public interface SalesOrderMapper {
     @Mapping(target = "revisionNo", ignore = true)
     @Mapping(target = "parentSoId", ignore = true)
     @Mapping(target = "taxPercentage", ignore = true)
+    @Mapping(target = "payments", ignore = true)
     SalesOrder toEntity(SalesOrderDto dto);
 }

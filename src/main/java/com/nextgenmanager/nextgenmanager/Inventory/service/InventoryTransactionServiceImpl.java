@@ -158,12 +158,20 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         boolean isSerial = settings.isSerialTracked();
 
         if (isBatch || isSerial) {
+            // Derive the source label for batch/serial records:
+            //   GRN transaction        → "GRN"
+            //   WO completion (PRODUCE with referenceType=WORK_ORDER) → "WORK_ORDER"
+            //   Everything else        → "MANUAL"
+            String batchSource = "GRN".equals(req.getTransactionType()) ? "GRN"
+                    : "WORK_ORDER".equals(req.getReferenceType()) ? "WORK_ORDER"
+                    : "MANUAL";
+
             // ── Create batch record (one per produce call) ─────────────────
             BatchNumber batch = null;
             if (isBatch) {
                 batch = batchSerialService.createBatch(
                         item, qty,
-                        req.getTransactionType(),   // "GRN" or "PRODUCE" (WO)
+                        batchSource,
                         req.getReferenceDocNo(),
                         req.getWarehouse(),
                         req.getManufacturingDate(),
@@ -181,7 +189,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
             if (isSerial) {
                 serials = batchSerialService.createSerials(
                         item, instanceCount, batch,
-                        req.getTransactionType(),
+                        batchSource,
                         req.getReferenceDocNo(),
                         req.getWarehouse(),
                         req.getManualSerialNumbers(),
@@ -277,6 +285,13 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
     }
 
     @Override
+    public double getOpeningBalance(int itemId, LocalDate asOf) {
+        List<InventoryLedger> latest = inventoryLedgerRepository
+                .findLatestBeforeDate(itemId, asOf, PageRequest.of(0, 1));
+        return latest.isEmpty() ? 0.0 : latest.get(0).getClosingBalance();
+    }
+
+    @Override
     public double getCurrentStock(int itemId, String warehouse) {
         List<InventoryLedger> latest = inventoryLedgerRepository
                 .findLatestByItem(itemId, PageRequest.of(0, 1));
@@ -313,6 +328,26 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         ledger.setClosingBalance(closingBalance);
         ledger.setInventoryItem(item);
         inventoryLedgerRepository.save(ledger);
+    }
+
+    // ─── SALES DISPATCH ───────────────────────────────────────────────────────
+
+    /**
+     * Writes a SALES_DISPATCH ledger entry for goods leaving via a Delivery Note.
+     * Does NOT modify ProductInventorySettings — that was already done by
+     * InventoryInstanceService.updateItemAvailability() when the instances were consumed.
+     * This is a ledger-only write so the Stock Ledger Report captures the outward movement.
+     */
+    @Override
+    @Transactional
+    public void writeDispatchLedger(InventoryTransactionDTO req) {
+        InventoryItem item = loadItem(req.getInventoryItemId());
+        ProductInventorySettings settings = item.getProductInventorySettings();
+        double qty = req.getQuantity();
+        // closingBalance reflects the state AFTER instances were already consumed
+        writeLedger(req, item, -qty, settings.getAvailableQuantity());
+        logger.info("SALES_DISPATCH ledger: {} of {} | closing balance={} | ref={}",
+                qty, item.getItemCode(), settings.getAvailableQuantity(), req.getReferenceDocNo());
     }
 
     private void consumeTrackedInstances(InventoryItem item, double qty, String refDocNo,
