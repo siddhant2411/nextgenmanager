@@ -10,12 +10,12 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/purchase-orders")
-@PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN','INVENTORY_USER','USER')")
+@RequiresPurchaseAccess
 public class PurchaseOrderController {
 
     private final PurchaseOrderService service;
@@ -65,13 +65,13 @@ public class PurchaseOrderController {
     }
 
     @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @RequiresPurchaseAdminAccess
     public ResponseEntity<PurchaseOrderDto> approve(@PathVariable Long id) {
         return ResponseEntity.ok(service.approve(id));
     }
 
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @RequiresPurchaseAdminAccess
     public ResponseEntity<PurchaseOrderDto> reject(@PathVariable Long id,
                                                    @RequestBody PurchaseOrderApprovalActionDto dto) {
         return ResponseEntity.ok(service.reject(id, dto));
@@ -101,19 +101,19 @@ public class PurchaseOrderController {
     // ── Inventory receipt helpers ─────────────────────────────────────────────
 
     @GetMapping("/pending-receipt")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
+    @RequiresPurchaseInventoryAdminAccess
     public ResponseEntity<List<PurchaseOrderListDto>> pendingReceipt() {
         return ResponseEntity.ok(service.getPendingReceipt());
     }
 
     @GetMapping("/overdue")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
+    @RequiresPurchaseInventoryAdminAccess
     public ResponseEntity<List<PurchaseOrderListDto>> overduePOs() {
         return ResponseEntity.ok(service.getOverduePOs());
     }
 
     @GetMapping("/analytics")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @RequiresPurchaseAdminAccess
     public ResponseEntity<PurchaseAnalyticsDto> analytics() {
         return ResponseEntity.ok(service.getPurchaseAnalytics());
     }

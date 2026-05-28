@@ -5,14 +5,14 @@ import com.nextgenmanager.nextgenmanager.purchase.dto.VendorInvoiceDto;
 import com.nextgenmanager.nextgenmanager.purchase.dto.VendorInvoiceListDto;
 import com.nextgenmanager.nextgenmanager.purchase.service.VendorInvoiceService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/vendor-invoices")
-@PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN','INVENTORY_USER','USER')")
+@RequiresPurchaseAccess
 public class VendorInvoiceController {
 
     private final VendorInvoiceService service;
@@ -22,7 +22,7 @@ public class VendorInvoiceController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
+    @RequiresPurchaseInventoryAdminAccess
     public ResponseEntity<VendorInvoiceDto> create(@RequestBody CreateVendorInvoiceRequest request) {
         return ResponseEntity.ok(service.create(request));
     }
@@ -38,13 +38,13 @@ public class VendorInvoiceController {
     }
 
     @PutMapping("/{id}/post")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
+    @RequiresPurchaseInventoryAdminAccess
     public ResponseEntity<VendorInvoiceDto> post(@PathVariable Long id) {
         return ResponseEntity.ok(service.post(id));
     }
 
     @PutMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @RequiresAdminOnly
     public ResponseEntity<VendorInvoiceDto> cancel(@PathVariable Long id) {
         return ResponseEntity.ok(service.cancel(id));
     }

@@ -13,7 +13,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresSalesAccess;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresSalesAdminAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -23,7 +24,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/sales-orders")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER')")
+@RequiresSalesAccess
 @RequiredArgsConstructor
 public class SalesOrderController {
 
@@ -80,13 +81,13 @@ public class SalesOrderController {
     }
 
     @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_SALES_ADMIN')")
+    @RequiresSalesAdminAccess
     public ResponseEntity<SalesOrderDto> approve(@PathVariable Long id) {
         return ResponseEntity.ok(salesOrderService.approve(id));
     }
 
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_SALES_ADMIN')")
+    @RequiresSalesAdminAccess
     public ResponseEntity<SalesOrderDto> reject(@PathVariable Long id,
                                                 @RequestBody(required = false) SalesOrderApprovalActionDto dto) {
         return ResponseEntity.ok(salesOrderService.reject(id, dto));
@@ -147,7 +148,7 @@ public class SalesOrderController {
     }
 
     @GetMapping("/{id}/profitability")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_SALES_ADMIN')")
+    @RequiresSalesAdminAccess
     public ResponseEntity<SalesOrderProfitabilityDto> getProfitability(@PathVariable Long id) {
         return ResponseEntity.ok(salesOrderService.getProfitability(id));
     }

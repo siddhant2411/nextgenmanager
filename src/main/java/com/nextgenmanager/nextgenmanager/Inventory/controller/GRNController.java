@@ -12,7 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -20,7 +20,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/grn")
-@PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN','INVENTORY_USER','USER')")
+@RequiresPurchaseAccess
 public class GRNController {
 
     @Autowired private GRNService grnService;
@@ -28,7 +28,7 @@ public class GRNController {
     @Autowired private InventoryLedgerRepository inventoryLedgerRepository;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
+    @RequiresPurchaseInventoryAdminAccess
     public ResponseEntity<GRNResponseDTO> createGRN(@RequestBody CreateGRNRequest request) {
         return ResponseEntity.ok(grnService.createGRN(request));
     }

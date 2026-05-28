@@ -7,12 +7,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/purchase-requisitions")
-@PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN','INVENTORY_USER','USER')")
+@RequiresOperationsAccess
 public class PurchaseRequisitionController {
 
     private final PurchaseRequisitionService service;
@@ -62,13 +62,13 @@ public class PurchaseRequisitionController {
     }
 
     @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @RequiresPurchaseAdminAccess
     public ResponseEntity<PurchaseRequisitionDto> approve(@PathVariable Long id) {
         return ResponseEntity.ok(service.approve(id));
     }
 
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @RequiresPurchaseAdminAccess
     public ResponseEntity<PurchaseRequisitionDto> reject(@PathVariable Long id,
                                                          @RequestBody PurchaseRequisitionApprovalActionDto dto) {
         return ResponseEntity.ok(service.reject(id, dto));

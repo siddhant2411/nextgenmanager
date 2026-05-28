@@ -14,7 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresProductionAdminAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -28,14 +28,14 @@ public class JobWorkChallanController {
     @Autowired private JobWorkChallanExportService exportService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Create a new Job Work Challan in DRAFT status")
     public ResponseEntity<JobWorkChallanDTO> create(@Valid @RequestBody JobWorkChallanRequestDTO req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(req));
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "List all challans (optionally filter by status, vendorId, workOrderId)")
     public ResponseEntity<List<JobWorkChallanDTO>> getAll(
             @RequestParam(required = false) ChallanStatus status,
@@ -49,7 +49,7 @@ public class JobWorkChallanController {
     }
 
     @GetMapping("/overdue")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(
         summary = "List overdue challans",
         description = "Returns DISPATCHED / PARTIALLY_RECEIVED challans past the 180-day GST return deadline."
@@ -59,13 +59,13 @@ public class JobWorkChallanController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     public ResponseEntity<JobWorkChallanDTO> getById(@PathVariable Long id) {
         return ResponseEntity.ok(service.getById(id));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Update a DRAFT challan (lines, vendor, remarks)")
     public ResponseEntity<JobWorkChallanDTO> update(
             @PathVariable Long id, @Valid @RequestBody JobWorkChallanRequestDTO req) {
@@ -73,7 +73,7 @@ public class JobWorkChallanController {
     }
 
     @PostMapping("/{id}/dispatch")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(
         summary = "Dispatch challan — DRAFT → DISPATCHED",
         description = "Sets dispatch date and starts the 180-day GST return clock."
@@ -83,7 +83,7 @@ public class JobWorkChallanController {
     }
 
     @PostMapping("/{id}/receive")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(
         summary = "Record receipt of materials from job worker",
         description = "Updates line quantities. Challan auto-transitions to PARTIALLY_RECEIVED or COMPLETED."
@@ -94,14 +94,14 @@ public class JobWorkChallanController {
     }
 
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Cancel a DRAFT or DISPATCHED challan")
     public ResponseEntity<JobWorkChallanDTO> cancel(@PathVariable Long id) {
         return ResponseEntity.ok(service.cancel(id));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Soft-delete a DRAFT challan")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
@@ -109,7 +109,7 @@ public class JobWorkChallanController {
     }
 
     @GetMapping("/{id}/print")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Download Job Work Challan as PDF")
     public ResponseEntity<byte[]> printChallan(@PathVariable Long id) {
         try {

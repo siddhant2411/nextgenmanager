@@ -8,14 +8,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/debit-notes")
-@PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN','INVENTORY_USER','PURCHASE_ADMIN','USER')")
+@RequiresPurchaseAccess
 public class DebitNoteController {
 
     private final DebitNoteService service;
@@ -27,7 +27,7 @@ public class DebitNoteController {
     // ── Create ────────────────────────────────────────────────────────────────
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN','PURCHASE_ADMIN')")
+    @RequiresPurchaseInventoryAdminAccess
     public ResponseEntity<DebitNoteResponseDTO> create(@RequestBody CreateDebitNoteRequest request) {
         return ResponseEntity.ok(service.create(request));
     }
@@ -70,13 +70,13 @@ public class DebitNoteController {
     // ── State transitions ─────────────────────────────────────────────────────
 
     @PutMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN','PURCHASE_ADMIN')")
+    @RequiresPurchaseInventoryAdminAccess
     public ResponseEntity<DebitNoteResponseDTO> confirm(@PathVariable Long id) {
         return ResponseEntity.ok(service.confirm(id));
     }
 
     @PutMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @RequiresAdminOnly
     public ResponseEntity<DebitNoteResponseDTO> cancel(@PathVariable Long id) {
         return ResponseEntity.ok(service.cancel(id));
     }

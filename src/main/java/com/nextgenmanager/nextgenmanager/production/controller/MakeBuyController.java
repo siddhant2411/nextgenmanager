@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresProductionAdminAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -27,7 +27,7 @@ public class MakeBuyController {
      * POST /api/make-or-buy/analyze
      */
     @PostMapping("/analyze")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(
             summary = "Run Make-or-Buy analysis",
             description = "Compares in-house manufacturing cost (MAKE), purchase from supplier (BUY), " +
@@ -46,7 +46,7 @@ public class MakeBuyController {
      * GET /api/make-or-buy/analyze/{itemId}?quantity=100
      */
     @GetMapping("/analyze/{itemId}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(
             summary = "Quick Make-or-Buy analysis",
             description = "Convenience endpoint: uses the active BOM and last purchase cost automatically. " +

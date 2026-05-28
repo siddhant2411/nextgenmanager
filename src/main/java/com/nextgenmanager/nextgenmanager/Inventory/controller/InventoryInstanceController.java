@@ -18,7 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +28,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/inventory")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER')")
+@RequiresInventoryAccess
 @Validated
 public class InventoryInstanceController {
 
@@ -38,7 +38,7 @@ public class InventoryInstanceController {
     private InventoryInstanceService inventoryInstanceService;
 
     @PostMapping("/add")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> addInventoryInstance(
             @RequestBody InventoryInstance inventoryInstance,
             @RequestParam("qty") double qty) {
@@ -183,7 +183,7 @@ public class InventoryInstanceController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> deleteInventoryInstance(@PathVariable String id) {
         logger.info("Received request to delete inventory instance with id: {}", id);
         try {
@@ -204,7 +204,7 @@ public class InventoryInstanceController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> updateInventoryInstance(@PathVariable String id, @RequestBody InventoryInstance inventoryInstance) {
         logger.info("Received request to update BOM with id: {}", id);
         try {
@@ -294,7 +294,7 @@ public class InventoryInstanceController {
     }
 
     @PutMapping("/requests/approve")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> approveRequests(@RequestParam String requestId,  @RequestParam String approvedBy,  @RequestParam String approvalRemarks) {
         try {
             List<InventoryInstance> approved = inventoryInstanceService.approveInventoryRequest(Long.parseLong(requestId), approvedBy, approvalRemarks);
@@ -309,14 +309,14 @@ public class InventoryInstanceController {
     }
 
     @PutMapping("/requests/reject")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<List<InventoryInstance>> rejectRequest(@RequestParam String requestId,@RequestParam String approvedBy, @RequestParam String approvalRemarks) {
         List<InventoryInstance> approved = inventoryInstanceService.rejectInventoryRequest(Long.parseLong(requestId),approvedBy,approvalRemarks);
         return ResponseEntity.ok(approved);
     }
 
     @PostMapping("/add-instances")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> addInventory(@RequestBody AddInventoryRequest request) {
         try {
             List<InventoryInstance> savedInstances = inventoryInstanceService.addInventory(request);
@@ -367,7 +367,7 @@ public class InventoryInstanceController {
     }
 
     @PutMapping("/inventory-procurement/{id}/status")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<Void> changeProcurementStatus(@PathVariable Long id,
                                                         @RequestParam InventoryProcurementStatus status) {
         inventoryInstanceService.updateProcurementStatus(id, status);
@@ -393,7 +393,7 @@ public class InventoryInstanceController {
      * @return List of InventoryInstance added (updated + new)
      */
     @PostMapping("/procurement/{procurementOrderId}/add")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<List<InventoryInstance>> addInventoryToExistingProcurement(
             @PathVariable("procurementOrderId") long procurementOrderId,
             @RequestBody AddInventoryRequest request) {
@@ -405,7 +405,7 @@ public class InventoryInstanceController {
     }
 
     @PutMapping("/inventory-procurement-orders/{orderId}/complete")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> completeProcurementOrder(
             @PathVariable Long orderId,
             @RequestParam(defaultValue = "system") String completedBy) {

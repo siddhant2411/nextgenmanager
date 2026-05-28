@@ -6,6 +6,7 @@ import com.nextgenmanager.nextgenmanager.production.dto.DowntimeReasonCodeDTO;
 import com.nextgenmanager.nextgenmanager.production.service.workcenter.DowntimeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresProductionModuleAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/production/downtime")
 @RequiredArgsConstructor
+@RequiresProductionModuleAccess
 public class DowntimeController {
 
     private final DowntimeService downtimeService;

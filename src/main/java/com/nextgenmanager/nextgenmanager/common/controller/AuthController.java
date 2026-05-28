@@ -42,7 +42,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -223,7 +223,7 @@ public class AuthController {
     }
 
     @PostMapping("/users")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "Create user (admin)")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<AuthCreateUserResponse> createUser(
@@ -240,7 +240,7 @@ public class AuthController {
     }
 
     @GetMapping("/users")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "List users (admin)")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<List<AuthUserListItemResponse>> listUsers(Authentication authentication) {
@@ -249,7 +249,7 @@ public class AuthController {
     }
 
     @PatchMapping("/users/{id}/status")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "Update user active/locked status (admin)")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<AuthCreateUserResponse> updateUserStatus(
@@ -263,7 +263,7 @@ public class AuthController {
     }
 
     @PutMapping("/users/{id}/roles")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "Replace user roles")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<AuthCreateUserResponse> updateUserRoles(
@@ -277,7 +277,7 @@ public class AuthController {
     }
 
     @DeleteMapping("/users/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "Soft delete user")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<Void> softDeleteUser(
@@ -291,23 +291,19 @@ public class AuthController {
     }
 
     @PatchMapping("/users/{id}/reset-password")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "Reset user password with temporary password (admin)")
     @SecurityRequirement(name = "bearerAuth")
-    public ResponseEntity<Void> adminResetPassword(
+    public ResponseEntity<Map<String, String>> adminResetPassword(
             @PathVariable Long id,
-            @RequestBody AuthAdminResetPasswordRequest request,
+            @RequestBody(required = false) AuthAdminResetPasswordRequest request,
             Authentication authentication
     ) {
+        String temporaryPassword = request == null ? null : request.temporaryPassword();
         String actor = authentication == null ? "SYSTEM" : authentication.getName();
         boolean isSuperAdmin = hasAuthority(authentication, "ROLE_SUPER_ADMIN");
-        authUserManagementService.adminResetPassword(
-                id,
-                request == null ? null : request.temporaryPassword(),
-                actor,
-                isSuperAdmin
-        );
-        return ResponseEntity.noContent().build();
+        String password = authUserManagementService.adminResetPassword(id, temporaryPassword, actor, isSuperAdmin);
+        return ResponseEntity.ok(Map.of("temporaryPassword", password));
     }
 
     @PatchMapping("/me/password")
@@ -320,16 +316,17 @@ public class AuthController {
         if (authentication == null || authentication.getName() == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
         }
-        authUserManagementService.changeOwnPassword(
-                authentication.getName(),
-                request == null ? null : request.currentPassword(),
-                request == null ? null : request.newPassword()
-        );
+        String currentPassword = request == null ? null : request.currentPassword();
+        String newPassword = request == null ? null : request.newPassword();
+        if (currentPassword == null || currentPassword.isBlank() || newPassword == null || newPassword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currentPassword and newPassword are required");
+        }
+        authUserManagementService.changeOwnPassword(authentication.getName(), currentPassword, newPassword);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/roles")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "List roles")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<List<AuthRoleResponse>> listRoles() {
@@ -337,7 +334,7 @@ public class AuthController {
     }
 
     @PostMapping("/roles")
-    @PreAuthorize("hasAuthority('ROLE_SUPER_ADMIN')")
+    @RequiresSuperAdminOnly
     @Operation(summary = "Create role (super admin)")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<AuthRoleResponse> createRole(
@@ -352,7 +349,7 @@ public class AuthController {
     }
 
     @PutMapping("/roles/{id}")
-    @PreAuthorize("hasAuthority('ROLE_SUPER_ADMIN')")
+    @RequiresSuperAdminOnly
     @Operation(summary = "Update role (super admin)")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<AuthRoleResponse> updateRole(
@@ -365,7 +362,7 @@ public class AuthController {
     }
 
     @DeleteMapping("/roles/{id}")
-    @PreAuthorize("hasAuthority('ROLE_SUPER_ADMIN')")
+    @RequiresSuperAdminOnly
     @Operation(summary = "Soft delete role (super admin)")
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<Void> deleteRole(
