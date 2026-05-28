@@ -136,6 +136,18 @@ public class BatchSerialServiceImpl implements BatchSerialService {
         return serialRepo.findBySourceDocNo(sourceDocNo).stream().map(this::toSerialDTO).toList();
     }
 
+    @Override
+    public SerialNumberDTO getSerialByNumber(String serialNumber) {
+        SerialNumber sn = serialRepo.findBySerialNumber(serialNumber)
+                .orElseThrow(() -> new RuntimeException("Serial number not found: " + serialNumber));
+        return toSerialDTO(sn);
+    }
+
+    @Override
+    public List<SerialNumberDTO> getSerialsConsumedByDocument(String consumedByDocNo) {
+        return serialRepo.findByConsumedByDocNo(consumedByDocNo).stream().map(this::toSerialDTO).toList();
+    }
+
     // ─── Number generation ────────────────────────────────────────────────────
 
     @Transactional

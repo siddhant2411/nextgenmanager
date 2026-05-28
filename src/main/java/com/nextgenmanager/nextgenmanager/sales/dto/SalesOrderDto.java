@@ -90,4 +90,8 @@ public class SalesOrderDto {
     private String sentToCustomerEmail;
     private Integer revisionNo;
     private Long parentSoId;
+
+    // Payment summary (computed from SalesPayment records)
+    private BigDecimal totalAdvancePaid;
+    private BigDecimal balanceDue;
 }

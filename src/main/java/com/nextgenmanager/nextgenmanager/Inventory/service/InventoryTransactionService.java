@@ -54,9 +54,28 @@ public interface InventoryTransactionService {
     /** Returns ledger entries for an item, newest first. */
     List<InventoryLedger> getStockHistory(int itemId, LocalDate from, LocalDate to);
 
+    /**
+     * Returns the closing balance of the last ledger entry BEFORE the given date.
+     * Returns 0 if no entries exist before that date (i.e. item had no stock yet).
+     * Used to show "Opening Balance as on [date]" at the top of a ledger report.
+     */
+    double getOpeningBalance(int itemId, LocalDate asOf);
+
     /** Returns the current closing balance for an item (from the most recent ledger entry). */
     double getCurrentStock(int itemId, String warehouse);
 
     /** Returns the total stock value for a warehouse (sum of GRN receipt amounts still in stock). */
     double getStockValue(String warehouse);
+
+    /**
+     * Writes a SALES_DISPATCH ledger entry for goods dispatched via a Delivery Note.
+     * Does NOT modify ProductInventorySettings — that is already handled by
+     * InventoryInstanceService.updateItemAvailability() when instances are consumed.
+     * This is a ledger-only write so the Stock Ledger Report shows the outward movement.
+     *
+     * @param dto must contain: inventoryItemId, quantity (positive dispatch qty),
+     *            transactionType="SALES_DISPATCH", referenceType="DELIVERY_NOTE",
+     *            referenceDocNo=dnNumber, createdBy
+     */
+    void writeDispatchLedger(InventoryTransactionDTO dto);
 }

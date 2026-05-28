@@ -1,9 +1,11 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.model.NumberSequence;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.NumberSequenceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
+import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.sales.dto.DeliveryNoteCreateDto;
@@ -39,6 +41,7 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
     private final SalesOrderRepository salesOrderRepository;
     private final InventoryItemRepository inventoryItemRepository;
     private final InventoryInstanceService inventoryInstanceService;
+    private final InventoryTransactionService inventoryTransactionService;
     private final NumberSequenceRepository numberSequenceRepository;
 
     @Override
@@ -103,15 +106,45 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             item.setQuantityDelivered(itemDto.getQuantityDelivered());
             item.setDeliveryNote(dn);
 
+            // DN number is set on the dn object before save, so it is available here
+            String dnNo = dn.getDeliveryNoteNo();
+
             List<InventoryInstance> consumedInstances;
             if (itemDto.getAllocatedInstanceIds() != null && !itemDto.getAllocatedInstanceIds().isEmpty()) {
                 consumedInstances = inventoryInstanceService.consumeSpecificInstances(
-                        invItem, itemDto.getAllocatedInstanceIds(), itemDto.getQuantityDelivered());
+                        invItem, itemDto.getAllocatedInstanceIds(), itemDto.getQuantityDelivered(), dnNo);
             } else if (soItem.getItemRequestId() != null) {
                 consumedInstances = inventoryInstanceService.consumeInventoryInstance(
-                        invItem, itemDto.getQuantityDelivered(), soItem.getItemRequestId());
+                        invItem, (double) itemDto.getQuantityDelivered(), soItem.getItemRequestId(), dnNo);
             } else {
                 consumedInstances = new ArrayList<>();
+            }
+
+            // Write SALES_DISPATCH ledger entry so the Stock Ledger Report captures this outward movement.
+            // ProductInventorySettings.availableQuantity is already correct at this point because
+            // consumeSpecificInstances / consumeInventoryInstance called updateItemAvailability().
+            try {
+                InventoryTransactionDTO dispatchDto = new InventoryTransactionDTO();
+                dispatchDto.setInventoryItemId(invItem.getInventoryItemId());
+                dispatchDto.setQuantity(itemDto.getQuantityDelivered());
+                dispatchDto.setTransactionType("SALES_DISPATCH");
+                dispatchDto.setReferenceType("DELIVERY_NOTE");
+                dispatchDto.setReferenceDocNo(dnNo);
+                // Also store the Sales Order number for cross-reference
+                if (dn.getSalesOrder() != null) {
+                    dispatchDto.setOverrideReason("SO: " + dn.getSalesOrder().getOrderNumber());
+                }
+                try {
+                    dispatchDto.setCreatedBy(
+                        org.springframework.security.core.context.SecurityContextHolder
+                            .getContext().getAuthentication().getName());
+                } catch (Exception ignored) { }
+                inventoryTransactionService.writeDispatchLedger(dispatchDto);
+            } catch (Exception e) {
+                // Log but don't fail the entire DN — instance consumption already succeeded
+                org.slf4j.LoggerFactory.getLogger(DeliveryNoteServiceImpl.class)
+                    .error("Failed to write dispatch ledger for item {} on DN {}: {}",
+                        invItem.getItemCode(), dnNo, e.getMessage());
             }
 
             java.math.BigDecimal actualCost = java.math.BigDecimal.ZERO;

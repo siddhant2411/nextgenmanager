@@ -74,11 +74,31 @@ public class BatchSerialController {
     }
 
     /**
-     * GET /api/batch-serial/serials/by-document?docNo=GRN-202505-0001
-     * Returns all serials created from a specific GRN or Work Order.
+     * GET /api/batch-serial/serials/by-document?docNo=WO-42
+     * Returns all serials created from a specific GRN or Work Order (sourceDocNo lookup).
      */
     @GetMapping("/serials/by-document")
     public ResponseEntity<List<SerialNumberDTO>> getSerialsByDocument(@RequestParam String docNo) {
         return ResponseEntity.ok(batchSerialService.getSerialsForDocument(docNo));
+    }
+
+    /**
+     * GET /api/batch-serial/serials/consumed-by?docNo=DC/2025/0001
+     * Returns all serials dispatched on a specific Delivery Note (or consumed by any document).
+     * Use this to see exactly which serial numbers went out on a dispatch.
+     */
+    @GetMapping("/serials/consumed-by")
+    public ResponseEntity<List<SerialNumberDTO>> getSerialsConsumedByDocument(@RequestParam String docNo) {
+        return ResponseEntity.ok(batchSerialService.getSerialsConsumedByDocument(docNo));
+    }
+
+    /**
+     * GET /api/batch-serial/serials/lookup?sn=SN-FG001-202505-000001
+     * Full lifecycle of a single serial: where it was created (sourceDocNo / source)
+     * and where it went (consumedByDocNo / consumedDate).
+     */
+    @GetMapping("/serials/lookup")
+    public ResponseEntity<SerialNumberDTO> getSerialLifecycle(@RequestParam String sn) {
+        return ResponseEntity.ok(batchSerialService.getSerialByNumber(sn));
     }
 }

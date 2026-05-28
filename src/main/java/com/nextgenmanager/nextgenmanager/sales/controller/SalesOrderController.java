@@ -162,10 +162,27 @@ public class SalesOrderController {
     @GetMapping("/{id}/pdf")
     public ResponseEntity<byte[]> downloadPdf(@PathVariable Long id) {
         SalesOrderDto order = salesOrderService.getSalesOrderById(id);
-        byte[] pdf = invoicePdfService.generateInvoicePdf(id);
+        return pdfResponse(invoicePdfService.generateInvoicePdf(id),
+                "Invoice-" + order.getOrderNumber() + ".pdf");
+    }
+
+    @GetMapping("/{id}/pdf/order-acknowledgement")
+    public ResponseEntity<byte[]> downloadOrderAcknowledgement(@PathVariable Long id) {
+        SalesOrderDto order = salesOrderService.getSalesOrderById(id);
+        return pdfResponse(invoicePdfService.generateOrderAcknowledgementPdf(id),
+                "OA-" + order.getOrderNumber() + ".pdf");
+    }
+
+    @GetMapping("/{id}/pdf/proforma-invoice")
+    public ResponseEntity<byte[]> downloadProformaInvoice(@PathVariable Long id) {
+        SalesOrderDto order = salesOrderService.getSalesOrderById(id);
+        return pdfResponse(invoicePdfService.generateProformaInvoicePdf(id),
+                "PF-" + order.getOrderNumber() + ".pdf");
+    }
+
+    private ResponseEntity<byte[]> pdfResponse(byte[] pdf, String filename) {
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=sales-order-" + order.getOrderNumber() + ".pdf")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdf);
     }

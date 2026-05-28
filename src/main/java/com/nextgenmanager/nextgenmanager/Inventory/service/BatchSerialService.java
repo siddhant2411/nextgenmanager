@@ -60,9 +60,21 @@ public interface BatchSerialService {
     /** All serials belonging to a batch. */
     List<SerialNumberDTO> getSerialsForBatch(Long batchId);
 
-    /** All batches and serials created for a specific document (GRN or WO number). */
+    /** All batches created for a specific source document (GRN or WO number). */
     List<BatchNumberDTO> getBatchesForDocument(String sourceDocNo);
 
-    /** All serials created for a specific document. */
+    /** All serials created for a specific source document (GRN or WO number). */
     List<SerialNumberDTO> getSerialsForDocument(String sourceDocNo);
+
+    /**
+     * Look up a single serial number by its serial string.
+     * Returns the full lifecycle DTO including sourceDocNo (WO/GRN) and consumedByDocNo (DN/SO).
+     */
+    SerialNumberDTO getSerialByNumber(String serialNumber);
+
+    /**
+     * All serials that were dispatched / consumed via a specific document
+     * (e.g. a Delivery Note number). Useful for showing what serials went out on a DN.
+     */
+    List<SerialNumberDTO> getSerialsConsumedByDocument(String consumedByDocNo);
 }

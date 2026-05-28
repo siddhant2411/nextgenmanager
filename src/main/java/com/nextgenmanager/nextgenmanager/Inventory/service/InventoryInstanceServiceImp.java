@@ -4,6 +4,7 @@ import com.nextgenmanager.nextgenmanager.Inventory.dto.*;
 import com.nextgenmanager.nextgenmanager.Inventory.model.*;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryBookingApprovalRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryLedgerRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryProcurementOrderRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryMovementLogRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRepository;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -54,6 +56,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Autowired
     private InventoryMovementLogRepository movementLogRepository;
+
+    @Autowired
+    private InventoryLedgerRepository inventoryLedgerRepository;
 
     
     @PersistenceContext
@@ -200,7 +205,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Override
     @Transactional
-    public List<InventoryInstance> consumeInventoryInstance(InventoryItem item, double qty, Long requestId) {
+    public List<InventoryInstance> consumeInventoryInstance(InventoryItem item, double qty, Long requestId, String refDocNo) {
         try {
             InventoryItem dbItem = inventoryItemRepository.findByActiveId(item.getInventoryItemId());
             if (dbItem == null) throw new ResourceNotFoundException("Inventory item not found");
@@ -223,6 +228,14 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                         inst.setConsumeDate(now);
                         inst.setQuantity(BigDecimal.ZERO);
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                        // Stamp serial consumedByDocNo
+                        if (refDocNo != null && inst.getSerialNumber() != null) {
+                            com.nextgenmanager.nextgenmanager.Inventory.model.SerialNumber sn = inst.getSerialNumber();
+                            sn.setStatus(com.nextgenmanager.nextgenmanager.Inventory.model.SerialStatus.CONSUMED);
+                            sn.setConsumedDate(now);
+                            sn.setConsumedByDocNo(refDocNo);
+                            serialNumberRepository.save(sn);
+                        }
                         consumed.add(inst);
                         count++;
                     }
@@ -240,9 +253,20 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     instance.setConsumeDate(now);
                     BigDecimal newQty = availableQty.subtract(toConsume);
                     instance.setQuantity(newQty);
-                    instance.setConsumed(newQty.compareTo(BigDecimal.ZERO) == 0);
-                    if (newQty.compareTo(BigDecimal.ZERO) == 0) {
+                    boolean fullyConsumed = newQty.compareTo(BigDecimal.ZERO) == 0;
+                    instance.setConsumed(fullyConsumed);
+                    if (fullyConsumed) {
                         instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                        // Stamp batch remainingQty
+                        if (instance.getBatchNumber() != null) {
+                            com.nextgenmanager.nextgenmanager.Inventory.model.BatchNumber batch = instance.getBatchNumber();
+                            BigDecimal currentRemaining = batch.getRemainingQty() != null ? batch.getRemainingQty() : BigDecimal.ZERO;
+                            batch.setRemainingQty(currentRemaining.subtract(toConsume).max(BigDecimal.ZERO));
+                            if (batch.getRemainingQty().compareTo(BigDecimal.ZERO) <= 0) {
+                                batch.setStatus(com.nextgenmanager.nextgenmanager.Inventory.model.BatchStatus.CONSUMED);
+                            }
+                            batchNumberRepository.save(batch);
+                        }
                     }
                     consumed.add(instance);
                     remainingQty -= toConsume.doubleValue();
@@ -297,7 +321,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Override
     @Transactional
-    public List<InventoryInstance> consumeSpecificInstances(InventoryItem item, List<Long> instanceIds, double qty) {
+    public List<InventoryInstance> consumeSpecificInstances(InventoryItem item, List<Long> instanceIds, double qty, String refDocNo) {
         try {
             InventoryItem dbItem = inventoryItemRepository.findByActiveId(item.getInventoryItemId());
             if (dbItem == null) throw new ResourceNotFoundException("Inventory item not found");
@@ -308,10 +332,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
             for (Long instanceId : instanceIds) {
                 if (remainingQty <= 0) break;
-                
+
                 InventoryInstance instance = inventoryInstanceRepository.findById(instanceId)
                         .orElseThrow(() -> new ResourceNotFoundException("Inventory instance not found: " + instanceId));
-                
+
                 if (!instance.getInventoryItem().equals(dbItem)) continue;
 
                 if (isUnitByNos(dbItem)) {
@@ -319,15 +343,16 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     instance.setConsumeDate(now);
                     instance.setQuantity(BigDecimal.ZERO);
                     instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
-                    
-                    // Update linked SerialNumber
+
+                    // Stamp serial with dispatch document number for full traceability
                     if (instance.getSerialNumber() != null) {
                         SerialNumber sn = instance.getSerialNumber();
                         sn.setStatus(SerialStatus.CONSUMED);
                         sn.setConsumedDate(now);
+                        if (refDocNo != null) sn.setConsumedByDocNo(refDocNo);
                         serialNumberRepository.save(sn);
                     }
-                    
+
                     consumed.add(instance);
                     remainingQty--;
                 } else {
@@ -361,14 +386,15 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             inventoryInstanceRepository.saveAll(consumed);
             updateItemAvailability(dbItem.getInventoryItemId());
 
+            String logRef = refDocNo != null ? refDocNo : "DISPATCH";
             for (InventoryInstance inst : consumed) {
-                logMovement(inst, 
-                    "Main Inventory", 
-                    "Packaging / Customer", 
-                    "DISPATCH", 
-                    "DN-AUTO", // We can enhance this later to pass actual DN number
-                    "SYSTEM", 
-                    "Inventory consumed / dispatched via Delivery Note");
+                logMovement(inst,
+                    "Main Inventory",
+                    "Packaging / Customer",
+                    "SALES_DISPATCH",
+                    logRef,
+                    "SYSTEM",
+                    "Dispatched via Delivery Note " + logRef);
             }
 
             return consumed;
@@ -870,14 +896,42 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             inventoryProcurementOrderRepository.save(procurementOrder);
 
             updateItemAvailability(dbItem.getInventoryItemId());
+
+            // ── Write to InventoryLedger so Stock Ledger report reflects this receipt ──
+            InventoryItem refreshed = inventoryItemRepository.findByActiveId(dbItem.getInventoryItemId());
+            double closingBal = (refreshed != null && refreshed.getProductInventorySettings() != null)
+                    ? refreshed.getProductInventorySettings().getAvailableQuantity()
+                    : addedQty.doubleValue();
+            // Opening stock entries are ADJUSTMENT; everything else is a PRODUCE (inward movement)
+            String ledgerTxType = (request.getProcurementDecision() == ProcurementDecision.OPENING_STOCK)
+                    ? "ADJUSTMENT" : "PRODUCE";
+            String refType = (request.getProcurementDecision() != null)
+                    ? request.getProcurementDecision().name() : "MANUAL_ENTRY";
+            String refDocNo = (request.getReferenceId() > 0)
+                    ? "REF-" + request.getReferenceId() : "MANUAL";
+            InventoryLedger ledger = new InventoryLedger();
+            ledger.setMovementDate(LocalDate.now());
+            ledger.setTransactionType(ledgerTxType);
+            ledger.setQuantity(addedQty.doubleValue());
+            ledger.setRate(finalCost.doubleValue());
+            ledger.setAmount(addedQty.multiply(finalCost).doubleValue());
+            ledger.setValuationMethod("AVERAGE");
+            ledger.setReferenceType(refType);
+            ledger.setReferenceDocNo(refDocNo);
+            ledger.setCreatedBy(request.getCreatedBy());
+            ledger.setClosingBalance(closingBal);
+            ledger.setInventoryItem(dbItem);
+            inventoryLedgerRepository.save(ledger);
+            // ────────────────────────────────────────────────────────────────────────
+
             // Log movement for all added/updated instances
             for (InventoryInstance inst : resultInstances) {
-                logMovement(inst, 
-                    "Vendor / Source", 
-                    "Main Inventory", 
-                    "RECEIVE", 
+                logMovement(inst,
+                    "Vendor / Source",
+                    "Main Inventory",
+                    "RECEIVE",
                     request.getReferenceId() >-1 ? "REF-" + request.getReferenceId() : "GRN-MANUAL",
-                    request.getCreatedBy(), 
+                    request.getCreatedBy(),
                     "Inventory received via GRN / Add Stock");
             }
             return resultInstances;
@@ -1097,5 +1151,56 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     @Override
     public List<InventoryMovementLog> getMovementHistory(Long instanceId) {
         return movementLogRepository.findByInventoryInstanceIdOrderByTimestampDesc(instanceId);
+    }
+
+    // ── Sprint 2-B: Stock Valuation Report ────────────────────────────────────
+
+    @Override
+    public List<com.nextgenmanager.nextgenmanager.Inventory.dto.StockValuationLineDTO> getStockValuation(
+            java.time.LocalDate asOfDate, String itemType) {
+
+        List<com.nextgenmanager.nextgenmanager.items.model.InventoryItem> items =
+                inventoryItemRepository.findAllByDeletedDateIsNull();
+
+        List<com.nextgenmanager.nextgenmanager.Inventory.dto.StockValuationLineDTO> result = new java.util.ArrayList<>();
+
+        for (com.nextgenmanager.nextgenmanager.items.model.InventoryItem item : items) {
+            com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings inv = item.getProductInventorySettings();
+            if (inv == null) continue;
+
+            if (itemType != null && !itemType.isBlank()) {
+                String type = item.getItemType() != null ? item.getItemType().name() : "";
+                if (!type.equalsIgnoreCase(itemType)) continue;
+            }
+
+            double qty  = inv.getAvailableQuantity();
+            double rate = 0.0;
+            com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings fin = item.getProductFinanceSettings();
+            if (fin != null) {
+                if (fin.getLastPurchaseCost() != null && fin.getLastPurchaseCost() > 0) {
+                    rate = fin.getLastPurchaseCost();
+                } else if (fin.getStandardCost() != null && fin.getStandardCost() > 0) {
+                    rate = fin.getStandardCost();
+                }
+            }
+
+            result.add(new com.nextgenmanager.nextgenmanager.Inventory.dto.StockValuationLineDTO(
+                    item.getInventoryItemId(),
+                    item.getItemCode(),
+                    item.getName(),
+                    item.getItemType() != null ? item.getItemType().name() : "",
+                    item.getUom()      != null ? item.getUom().name()      : "",
+                    qty, rate, qty * rate,
+                    item.getHsnCode()
+            ));
+        }
+
+        result.sort(java.util.Comparator
+                .comparing(com.nextgenmanager.nextgenmanager.Inventory.dto.StockValuationLineDTO::getItemType,
+                        java.util.Comparator.nullsLast(String::compareTo))
+                .thenComparing(com.nextgenmanager.nextgenmanager.Inventory.dto.StockValuationLineDTO::getItemCode,
+                        java.util.Comparator.nullsLast(String::compareTo)));
+
+        return result;
     }
 }

@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.Inventory.controller;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.CreateGRNRequest;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.GRNResponseDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryLedger;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryLedgerRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.GRNService;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,7 @@ public class GRNController {
 
     @Autowired private GRNService grnService;
     @Autowired private InventoryTransactionService inventoryTransactionService;
+    @Autowired private InventoryLedgerRepository inventoryLedgerRepository;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','INVENTORY_ADMIN')")
@@ -61,8 +63,45 @@ public class GRNController {
         return ResponseEntity.ok(inventoryTransactionService.getStockHistory(itemId, from, to));
     }
 
+    /**
+     * Returns the closing balance of an item just before the given date.
+     * Used by the frontend to show "Opening Balance as on [date]" in the stock ledger report.
+     *
+     * Example: GET /api/grn/stock-balance/42?asOf=2025-04-01
+     * → returns the qty on hand at end-of-day 31-Mar-2025
+     */
+    @GetMapping("/stock-balance/{itemId}")
+    public ResponseEntity<Double> getOpeningBalance(
+            @PathVariable int itemId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return ResponseEntity.ok(inventoryTransactionService.getOpeningBalance(itemId, asOf));
+    }
+
     @GetMapping("/stock-value")
     public ResponseEntity<Double> getStockValue(@RequestParam(required = false) String warehouse) {
         return ResponseEntity.ok(inventoryTransactionService.getStockValue(warehouse));
+    }
+
+    /**
+     * Inward / Outward register — date-wise list of all stock movements across all items.
+     * Needed for GST audit. Data is sourced entirely from InventoryLedger.
+     *
+     * GET /api/grn/register?from=2025-01-01&to=2025-03-31
+     * GET /api/grn/register?from=2025-01-01&to=2025-03-31&type=INWARD
+     * GET /api/grn/register?from=2025-01-01&to=2025-03-31&type=OUTWARD
+     *
+     * type = INWARD  → GRN / PRODUCE / RETURN / ADJUSTMENT(+)
+     * type = OUTWARD → CONSUME / RESERVE / SALES_DISPATCH / ADJUSTMENT(−)
+     * type omitted   → all movements
+     */
+    @GetMapping("/register")
+    public ResponseEntity<Page<InventoryLedger>> getRegister(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String type,
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "50") int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return ResponseEntity.ok(inventoryLedgerRepository.findRegister(from, to, type, pageable));
     }
 }

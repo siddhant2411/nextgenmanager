@@ -1344,6 +1344,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     issueDto.setQuantity(newIssued.doubleValue());
                     issueDto.setScrappedQuantity(newScrap.doubleValue());
                     issueDto.setTransactionType("ISSUE");
+                    issueDto.setReferenceType("WORK_ORDER");
                     issueDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
                     if (item.getOverrideInstanceIds() != null && !item.getOverrideInstanceIds().isEmpty()) {
                         issueDto.setOverrideInstanceIds(item.getOverrideInstanceIds());
@@ -1742,6 +1743,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 consumeDto.setInventoryItemId(material.getComponent().getInventoryItemId());
                 consumeDto.setQuantity(consumeQty.doubleValue());
                 consumeDto.setTransactionType("CONSUME");
+                consumeDto.setReferenceType("WORK_ORDER");
                 consumeDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
                 inventoryTransactionService.consumeStock(consumeDto);
             } catch (Exception e) {
@@ -2029,7 +2031,13 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             produceDto.setQuantity(totalCompleted.doubleValue());
             produceDto.setCostPerUnit(realUnitCost.doubleValue());
             produceDto.setTransactionType("PRODUCE");
+            produceDto.setReferenceType("WORK_ORDER");
             produceDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+            try {
+                produceDto.setCreatedBy(
+                    org.springframework.security.core.context.SecurityContextHolder
+                        .getContext().getAuthentication().getName());
+            } catch (Exception ignored) { }
             inventoryTransactionService.produceStock(produceDto);
             logger.info("PRODUCE {} units for WorkOrder {} at unit cost {}", totalCompleted, workOrder.getWorkOrderNumber(), realUnitCost);
 

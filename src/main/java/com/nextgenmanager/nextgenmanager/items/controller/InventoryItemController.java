@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -68,23 +69,23 @@ public class InventoryItemController {
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_USER')")
     public ResponseEntity<InventoryItem> addInventoryItem(
             @RequestPart("inventoryItem") InventoryItem inventoryItem,
-            @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) {
+            @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) throws Exception {
         logger.debug("Received request to add inventory item");
 
-        try {
-            inventoryItem.setAttachments(attachments);
-            InventoryItem savedItem = inventoryItemService.addInventoryItem(inventoryItem);
-            if (!canViewFinance() && savedItem != null) {
-                savedItem.setProductFinanceSettings(null);
-            }
-            return ResponseEntity.status(HttpStatus.CREATED).body(savedItem);
-        } catch (Exception e) {
-            logger.error("Error adding inventory item: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        inventoryItem.setAttachments(attachments);
+        InventoryItem savedItem = inventoryItemService.addInventoryItem(inventoryItem);
+        if (!canViewFinance() && savedItem != null) {
+            savedItem.setProductFinanceSettings(null);
         }
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedItem);
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
+            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
+            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
+            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
     public ResponseEntity<InventoryItem> getInventoryItem(@PathVariable String id) {
         logger.debug("Received request to fetch inventory item with id: {}", Integer.parseInt(id));
         try {
@@ -100,6 +101,11 @@ public class InventoryItemController {
     }
 
     @GetMapping("/all")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
+            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
+            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
+            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
     public ResponseEntity<?> getAllInventoryItems(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "5") int size,
@@ -121,6 +127,7 @@ public class InventoryItemController {
 
 
     @GetMapping("/all-with-deleted")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
     public ResponseEntity<List<InventoryItem>> getAllInventoryItemsWithDeleted() {
         logger.debug("Received request to fetch all inventory items including deleted");
         try {
@@ -158,25 +165,22 @@ public class InventoryItemController {
     public ResponseEntity<InventoryItem> editInventoryItem(
             @PathVariable int id,
             @RequestPart("inventoryItem") InventoryItem updatedItem,
-            @RequestPart(value = "attachments", required = false)  List<MultipartFile> attachments) {
+            @RequestPart(value = "attachments", required = false)  List<MultipartFile> attachments) throws Exception {
         logger.debug("Received request to edit inventory item with id: {}", id);
-        try {
-            updatedItem.setAttachments(attachments);
-            InventoryItem savedItem = inventoryItemService.editInventoryItem(id, updatedItem);
-            if (!canViewFinance() && savedItem != null) {
-                savedItem.setProductFinanceSettings(null);
-            }
-            return ResponseEntity.ok(savedItem);
-        } catch (IllegalArgumentException e) {
-            logger.warn("Item not found: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
-        } catch (Exception e) {
-            logger.error("Error editing inventory item: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        updatedItem.setAttachments(attachments);
+        InventoryItem savedItem = inventoryItemService.editInventoryItem(id, updatedItem);
+        if (!canViewFinance() && savedItem != null) {
+            savedItem.setProductFinanceSettings(null);
         }
+        return ResponseEntity.ok(savedItem);
     }
 
     @GetMapping("/search")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
+            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
+            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
+            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
     public Page<InventoryItem> searchInventoryItems(
             @RequestParam String query,
             @RequestParam(defaultValue = "0") int page,
@@ -202,6 +206,11 @@ public class InventoryItemController {
     }
 
     @GetMapping("/download/{fileId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
+            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
+            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
+            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
     public ResponseEntity<byte[]> downloadFile(@PathVariable Long fileId) {
         try {
             // 1️⃣ Get metadata from DB
@@ -246,12 +255,29 @@ public class InventoryItemController {
     }
 
     @GetMapping("/getItemCode")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_USER')")
     public ResponseEntity<String> generateCode(){
         return ResponseEntity.ok(inventoryItemService.generateUniqueCode());
     }
 
+    @GetMapping("/check-code")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
+            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
+            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
+            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    public ResponseEntity<?> checkItemCode(@RequestParam String itemCode) {
+        boolean exists = inventoryItemService.checkItemCodeExists(itemCode);
+        return ResponseEntity.ok(Map.of("exists", exists));
+    }
+
 
     @PostMapping("/filter")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
+            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
+            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
+            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
     public Page<InventoryItemDTO> filterInventoryItems(@RequestBody FilterRequest request) {
         Page<InventoryItemDTO> result = inventoryItemService.filterInventoryItems(request);
         if (!canViewFinance() && result != null) {

@@ -17,6 +17,7 @@ import com.nextgenmanager.nextgenmanager.sales.mapper.SalesOrderMapper;
 import com.nextgenmanager.nextgenmanager.sales.model.*;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderSpecification;
+import com.nextgenmanager.nextgenmanager.sales.repository.SalesPaymentRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final SalesOrderMapper salesOrderMapper;
     private final SalesOrderNumberGenerator orderNumberGenerator;
     private final SalesOrderTaxCalculator taxCalculator;
+    private final SalesPaymentRepository salesPaymentRepository;
 
     @Override
     public SalesOrderDto createSalesOrder(SalesOrderCreateDto dto) {
@@ -92,7 +94,15 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                 .orElseThrow(() -> new SalesOrderNotFoundException(id));
         SalesOrderDto dto = salesOrderMapper.toDTO(salesOrder);
         populateItemTracking(salesOrder, dto);
+        populatePaymentTotals(id, dto);
         return dto;
+    }
+
+    private void populatePaymentTotals(Long orderId, SalesOrderDto dto) {
+        BigDecimal totalPaid = salesPaymentRepository.sumAmountBySalesOrderId(orderId);
+        dto.setTotalAdvancePaid(totalPaid);
+        BigDecimal payable = dto.getTotalPayableAmount() != null ? dto.getTotalPayableAmount() : BigDecimal.ZERO;
+        dto.setBalanceDue(payable.subtract(totalPaid).max(BigDecimal.ZERO));
     }
 
 

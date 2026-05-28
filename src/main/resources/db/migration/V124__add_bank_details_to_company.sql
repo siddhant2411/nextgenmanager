@@ -1,0 +1,5 @@
+ALTER TABLE company_details
+    ADD COLUMN IF NOT EXISTS bankName        VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS bankAccountNumber VARCHAR(30),
+    ADD COLUMN IF NOT EXISTS bankIfscCode    VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS bankBranch      VARCHAR(200);

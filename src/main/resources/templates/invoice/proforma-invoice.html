@@ -2,40 +2,36 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8"/>
-    <title>Tax Invoice</title>
+    <title>Pro Forma Invoice</title>
     <style>
         @page { size: A4; margin: 10mm 12mm 10mm 12mm; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #000; background: #fff; }
         .invoice-page { width: 100%; border: 1.5px solid #000; min-height: 272mm; }
 
-        /* ── Header ── */
         .doc-header { border-bottom: 1px solid #000; padding: 8px 12px; text-align: center; }
         .company-name { font-size: 20px; font-weight: bold; letter-spacing: 1px; }
         .company-sub  { font-size: 11px; margin-top: 3px; color: #333; }
         .doc-title    { font-size: 15px; font-weight: bold; text-align: center; letter-spacing: 2px;
                         border-top: 1px solid #000; border-bottom: 1px solid #000;
                         padding: 4px 0; margin-top: 5px; }
+        .proforma-note { font-size: 10px; font-style: italic; color: #555; margin-top: 3px; }
 
         .page-info { font-size: 10px; color: #555; text-align: right;
                      padding: 2px 10px; border-bottom: 1px solid #ccc; }
 
-        /* ── Address ── */
-        .addr-row { display: table; width: 100%; border-bottom: 1px solid #000; }
+        .addr-row  { display: table; width: 100%; border-bottom: 1px solid #000; }
         .addr-cell { display: table-cell; vertical-align: top; padding: 8px 10px; }
         .addr-cell.left  { width: 50%; border-right: 1px solid #000; }
-        .addr-cell.right { width: 50%; }
         .addr-label { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 3px; }
         .addr-name  { font-size: 14px; font-weight: bold; }
         .addr-line  { font-size: 11px; line-height: 1.6; }
 
-        /* ── Reference table ── */
         .ref-table { width: 100%; border-collapse: collapse; border-bottom: 1px solid #000; }
         .ref-table td { border: 1px solid #ccc; padding: 5px 8px; font-size: 11px; vertical-align: top; width: 16.66%; }
-        .ref-table .ref-label { font-size: 10px; color: #555; display: block; }
-        .ref-table .ref-value { font-size: 12px; font-weight: bold; }
+        .ref-label { font-size: 10px; color: #555; display: block; }
+        .ref-value { font-size: 12px; font-weight: bold; }
 
-        /* ── Items table ── */
         .items-table { width: 100%; border-collapse: collapse; border-bottom: 1px solid #000; }
         .items-table th { background: #f0f0f0; border: 1px solid #999; padding: 5px 6px;
                           font-size: 11px; text-align: center; font-weight: bold; }
@@ -46,37 +42,22 @@
         .item-name { font-weight: bold; font-size: 11px; }
         .item-code { font-size: 10px; color: #555; }
 
-        /* ── Totals ── */
-        .totals-row { display: table; width: 100%; border-bottom: 1px solid #000; }
+        .totals-row   { display: table; width: 100%; border-bottom: 1px solid #000; }
         .totals-left  { display: table-cell; width: 55%; vertical-align: top;
                         padding: 8px 10px; border-right: 1px solid #000; }
         .totals-right { display: table-cell; width: 45%; vertical-align: top; padding: 0; }
         .totals-right table { width: 100%; border-collapse: collapse; }
         .totals-right td { padding: 4px 10px; font-size: 12px; border-bottom: 1px solid #eee; }
-        .totals-right td.label { color: #333; }
         .totals-right td.amount { text-align: right; }
         .totals-right tr.grand td { font-size: 14px; font-weight: bold; background: #f0f0f0;
                                      border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; }
-        .amount-words { font-size: 11px; margin-top: 5px; font-style: italic; }
 
-        /* ── Payments received ── */
-        .payments-section { border-bottom: 1px solid #000; padding: 6px 10px; }
-        .payments-section table { width: 100%; border-collapse: collapse; }
-        .payments-section th { font-size: 10px; text-align: left; padding: 3px 6px;
-                                background: #f0f0f0; border: 1px solid #ccc; }
-        .payments-section td { font-size: 11px; padding: 3px 6px; border: 1px solid #ccc; }
-        .payments-section td.num { text-align: right; }
-        .balance-due { font-size: 12px; font-weight: bold; margin-top: 6px; text-align: right; }
-
-        /* ── Bank + Declaration ── */
         .bank-decl-row { display: table; width: 100%; border-bottom: 1px solid #000; }
         .bank-cell  { display: table-cell; width: 50%; vertical-align: top;
                       padding: 8px 10px; border-right: 1px solid #000; font-size: 11px; }
-        .decl-cell  { display: table-cell; width: 50%; vertical-align: top;
-                      padding: 8px 10px; font-size: 11px; }
+        .terms-cell { display: table-cell; width: 50%; vertical-align: top; padding: 8px 10px; font-size: 11px; }
         .section-title { font-weight: bold; font-size: 11px; margin-bottom: 4px; text-decoration: underline; }
 
-        /* ── Footer ── */
         .footer-sig { padding: 8px 10px; text-align: right; font-size: 11px; }
         .footer-sig .for-line { margin-bottom: 32px; }
     </style>
@@ -85,7 +66,6 @@
 <th:block th:each="page, pageIter : ${itemPages}">
 <div class="invoice-page" th:style="${!pageIter.last ? 'page-break-after: always;' : ''}">
 
-    <!-- Company header -->
     <div class="doc-header">
         <div class="company-name" th:text="${company.companyName}"></div>
         <div class="company-sub">
@@ -94,26 +74,25 @@
             <th:block th:if="${company.phone != null}">&#160;|&#160; Ph: <span th:text="${company.phone}"></span></th:block>
             <th:block th:if="${company.gstNumber != null}">&#160;|&#160; GSTIN: <span th:text="${company.gstNumber}"></span></th:block>
         </div>
-        <div class="doc-title">TAX INVOICE</div>
+        <div class="doc-title">PRO FORMA INVOICE</div>
+        <div class="proforma-note">This is NOT a Tax Invoice. Subject to final invoice upon dispatch.</div>
     </div>
 
     <div class="page-info" th:if="${itemPages.size() > 1}">
         Page <span th:text="${pageIter.index + 1}"></span> of <span th:text="${itemPages.size()}"></span>
     </div>
 
-    <!-- Sold To / Ship To -->
+    <!-- Party details -->
     <div class="addr-row">
         <div class="addr-cell left">
             <div class="addr-label">Bill To</div>
             <div class="addr-name" th:text="${salesOrder.customer.companyName}"></div>
             <div class="addr-line" th:if="${salesOrder.customer.addresses != null and !salesOrder.customer.addresses.empty}"
                  th:text="${salesOrder.customer.addresses[0]}"></div>
-            <div class="addr-line">
-                GSTIN: <span th:text="${salesOrder.customer.gstNumber} ?: 'N/A'"></span>
-            </div>
+            <div class="addr-line">GSTIN: <span th:text="${salesOrder.customer.gstNumber} ?: 'N/A'"></span></div>
         </div>
-        <div class="addr-cell right">
-            <div class="addr-label">Delivery / Ship To</div>
+        <div class="addr-cell" style="width:50%; padding:8px 10px;">
+            <div class="addr-label">Ship To</div>
             <div class="addr-name" th:text="${salesOrder.customer.companyName}"></div>
             <div class="addr-line" th:text="${salesOrder.deliveryAddress}"></div>
         </div>
@@ -122,38 +101,30 @@
     <!-- Reference fields -->
     <table class="ref-table">
         <tr>
-            <td><span class="ref-label">Invoice No.</span><span class="ref-value" th:text="${salesOrder.orderNumber}"></span></td>
-            <td><span class="ref-label">Invoice Date</span><span class="ref-value" th:text="${salesOrder.orderDate}"></span></td>
-            <td><span class="ref-label">Buyer's P.O. No.</span><span class="ref-value" th:text="${salesOrder.poNumber}"></span></td>
-            <td><span class="ref-label">P.O. Date</span><span class="ref-value" th:text="${salesOrder.poDate}"></span></td>
+            <td><span class="ref-label">Pro Forma No.</span><span class="ref-value" th:text="${'PF-' + salesOrder.orderNumber}"></span></td>
+            <td><span class="ref-label">Date</span><span class="ref-value" th:text="${salesOrder.orderDate}"></span></td>
+            <td><span class="ref-label">Ref. Order No.</span><span class="ref-value" th:text="${salesOrder.orderNumber}"></span></td>
+            <td><span class="ref-label">Buyer P.O. No.</span><span class="ref-value" th:text="${salesOrder.poNumber}"></span></td>
+            <td><span class="ref-label">Expected Delivery</span><span class="ref-value" th:text="${salesOrder.deliveryDate}"></span></td>
             <td><span class="ref-label">Payment Terms</span><span class="ref-value" th:text="${salesOrder.paymentTerms}"></span></td>
-            <td><span class="ref-label">Due Date</span><span class="ref-value" th:text="${salesOrder.deliveryDate}"></span></td>
-        </tr>
-        <tr>
-            <td><span class="ref-label">Dispatch Through</span><span class="ref-value" th:text="${salesOrder.dispatchThrough}"></span></td>
-            <td><span class="ref-label">Transport Mode</span><span class="ref-value" th:text="${salesOrder.transportMode}"></span></td>
-            <td><span class="ref-label">E-Way Bill No.</span><span class="ref-value" th:text="${salesOrder.ewayBillNumber}"></span></td>
-            <td><span class="ref-label">Incoterms</span><span class="ref-value" th:text="${salesOrder.incoterms}"></span></td>
-            <td colspan="2"><span class="ref-label">Reference</span><span class="ref-value" th:text="${salesOrder.reference}"></span></td>
         </tr>
     </table>
 
-    <!-- Line items — exactly 10 rows per page -->
+    <!-- Items — exactly 10 rows per page -->
     <table class="items-table">
         <thead>
         <tr>
             <th style="width:4%">#</th>
-            <th style="width:28%">Description of Goods</th>
-            <th style="width:8%">HSN/SAC</th>
+            <th style="width:30%">Description of Goods</th>
+            <th style="width:9%">HSN/SAC</th>
             <th style="width:7%">Qty</th>
             <th style="width:6%">UOM</th>
-            <th style="width:10%">Rate (₹)</th>
+            <th style="width:11%">Rate (₹)</th>
             <th style="width:6%">Disc%</th>
-            <th style="width:10%">Taxable Amt</th>
-            <th th:if="${salesOrder.taxType.name() == 'CGST_SGST'}" style="width:8%">CGST%</th>
-            <th th:if="${salesOrder.taxType.name() == 'CGST_SGST'}" style="width:8%">SGST%</th>
-            <th th:if="${salesOrder.taxType.name() == 'IGST'}" style="width:8%">IGST%</th>
-            <th style="width:13%">Amount (₹)</th>
+            <th th:if="${salesOrder.taxType.name() == 'CGST_SGST'}" style="width:6%">CGST%</th>
+            <th th:if="${salesOrder.taxType.name() == 'CGST_SGST'}" style="width:6%">SGST%</th>
+            <th th:if="${salesOrder.taxType.name() == 'IGST'}" style="width:6%">IGST%</th>
+            <th style="width:11%">Amount (₹)</th>
         </tr>
         </thead>
         <tbody>
@@ -169,7 +140,6 @@
             <td class="ctr" th:text="${item != null ? item.inventoryItem.uom : ''}"></td>
             <td class="num" th:text="${item != null ? #numbers.formatDecimal(item.pricePerUnit, 1, 2) : ''}"></td>
             <td class="ctr" th:text="${item != null ? item.discountPercentage : ''}"></td>
-            <td class="num" th:text="${item != null ? #numbers.formatDecimal(item.totalAmountOfProduct, 1, 2) : ''}"></td>
             <td th:if="${salesOrder.taxType.name() == 'CGST_SGST'}" class="ctr"
                 th:text="${item != null and salesOrder.taxPercentage != null ? salesOrder.taxPercentage / 2 + '%' : ''}"></td>
             <td th:if="${salesOrder.taxType.name() == 'CGST_SGST'}" class="ctr"
@@ -181,72 +151,50 @@
         </tbody>
     </table>
 
-    <!-- Totals + bank + footer — only on last page -->
+    <!-- Totals — only on last page -->
     <th:block th:if="${pageIter.last}">
 
         <div class="totals-row">
             <div class="totals-left">
-                <div><b>Amount Chargeable (in words):</b></div>
-                <div class="amount-words" th:text="${amountInWords}"></div>
+                <div><b>Amount (in words):</b></div>
+                <div style="font-size:11px; font-style:italic; margin-top:4px;" th:text="${amountInWords}"></div>
                 <div style="margin-top:8px; font-size:11px;" th:if="${salesOrder.remarks != null and salesOrder.remarks != ''}">
                     <b>Remarks:</b> <span th:text="${salesOrder.remarks}"></span>
                 </div>
             </div>
             <div class="totals-right">
                 <table>
-                    <tr><td class="label">Sub Total</td>
+                    <tr><td>Sub Total</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.subTotal, 1, 2)}"></td></tr>
                     <tr th:if="${salesOrder.discountAmount != null and salesOrder.discountAmount.signum() != 0}">
-                        <td class="label">Discount (<span th:text="${salesOrder.discountPercentage}"></span>%)</td>
+                        <td>Discount (<span th:text="${salesOrder.discountPercentage}"></span>%)</td>
                         <td class="amount" th:text="'- ' + ${#numbers.formatDecimal(salesOrder.discountAmount, 1, 2)}"></td></tr>
                     <tr th:if="${salesOrder.freightAndForwardingCharges != null and salesOrder.freightAndForwardingCharges.signum() != 0}">
-                        <td class="label">Freight &amp; Forwarding</td>
+                        <td>Freight &amp; Forwarding</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.freightAndForwardingCharges, 1, 2)}"></td></tr>
-                    <tr><td class="label">Taxable Value</td>
+                    <tr><td>Taxable Value</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.taxableValue, 1, 2)}"></td></tr>
                     <tr th:if="${salesOrder.taxType.name() == 'CGST_SGST'}">
-                        <td class="label">CGST (<span th:text="${salesOrder.taxPercentage != null ? salesOrder.taxPercentage / 2 : ''}"></span>%)</td>
+                        <td>CGST (<span th:text="${salesOrder.taxPercentage != null ? salesOrder.taxPercentage / 2 : ''}"></span>%)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.cgstAmount, 1, 2)}"></td></tr>
                     <tr th:if="${salesOrder.taxType.name() == 'CGST_SGST'}">
-                        <td class="label">SGST (<span th:text="${salesOrder.taxPercentage != null ? salesOrder.taxPercentage / 2 : ''}"></span>%)</td>
+                        <td>SGST (<span th:text="${salesOrder.taxPercentage != null ? salesOrder.taxPercentage / 2 : ''}"></span>%)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.sgstAmount, 1, 2)}"></td></tr>
                     <tr th:if="${salesOrder.taxType.name() == 'IGST'}">
-                        <td class="label">IGST (<span th:text="${salesOrder.taxPercentage}"></span>%)</td>
+                        <td>IGST (<span th:text="${salesOrder.taxPercentage}"></span>%)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.igstAmount, 1, 2)}"></td></tr>
-                    <tr><td class="label">Round Off</td>
+                    <tr><td>Round Off</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.roundOffAmount, 1, 2)}"></td></tr>
                     <tr class="grand">
-                        <td class="label">Total Payable (₹)</td>
+                        <td>Total Amount (₹)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.totalPayableAmount, 1, 2)}"></td></tr>
                 </table>
             </div>
         </div>
 
-        <!-- Advance payments received -->
-        <div class="payments-section" th:if="${payments != null and !payments.empty}">
-            <div class="section-title">Advance / Payments Received</div>
-            <table style="margin-top:4px;">
-                <tr>
-                    <th>Date</th><th>Mode</th><th>Reference</th><th style="text-align:right">Amount (₹)</th>
-                </tr>
-                <tr th:each="pmt : ${payments}">
-                    <td th:text="${pmt.paymentDate}"></td>
-                    <td th:text="${pmt.paymentMode}"></td>
-                    <td th:text="${pmt.referenceNumber}"></td>
-                    <td class="num" th:text="${#numbers.formatDecimal(pmt.amount, 1, 2)}"></td>
-                </tr>
-            </table>
-            <div class="balance-due">
-                Total Received: ₹<span th:text="${#numbers.formatDecimal(totalPaid, 1, 2)}"></span>
-                &#160;&#160;|&#160;&#160;
-                Balance Due: ₹<span th:text="${#numbers.formatDecimal(balanceDue, 1, 2)}"></span>
-            </div>
-        </div>
-
-        <!-- Bank details + Declaration -->
         <div class="bank-decl-row">
             <div class="bank-cell">
-                <div class="section-title">Bank Details</div>
+                <div class="section-title">Bank Details (for Advance Payment)</div>
                 <table style="width:100%; border-collapse:collapse; margin-top:3px;">
                     <tr><td style="width:35%; font-size:10px; color:#555;">Bank Name</td>
                         <td style="font-size:11px;" th:text="${company.bankName}"></td></tr>
@@ -258,17 +206,29 @@
                         <td style="font-size:11px;" th:text="${company.bankIfscCode}"></td></tr>
                 </table>
             </div>
-            <div class="decl-cell">
-                <div class="section-title">Declaration</div>
-                <div style="margin-top:3px; font-size:11px; line-height:1.6;">
-                    We declare that this invoice shows the actual price of the goods / services described
-                    and that all particulars are true and correct. The goods have been sold on the basis
-                    of F.O.R. destination unless specifically stated otherwise. E.&amp;O.E.
+            <div class="terms-cell">
+                <div class="section-title">Terms &amp; Conditions</div>
+                <table style="margin-top:3px; width:100%; border-collapse:collapse;">
+                    <tr>
+                        <td style="font-weight:bold; width:35%; font-size:11px;">Incoterms</td>
+                        <td style="font-size:11px;" th:text="${salesOrder.incoterms}"></td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight:bold; font-size:11px;">Payment</td>
+                        <td style="font-size:11px;" th:text="${salesOrder.paymentTerms}"></td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight:bold; font-size:11px;">Dispatch Via</td>
+                        <td style="font-size:11px;" th:text="${salesOrder.dispatchThrough}"></td>
+                    </tr>
+                </table>
+                <div style="font-size:10px; margin-top:6px; color:#555; font-style:italic;">
+                    * Prices valid for 30 days from date of this pro forma invoice.<br/>
+                    * This document is not valid for input tax credit purposes.
                 </div>
             </div>
         </div>
 
-        <!-- Authorised signatory -->
         <div class="footer-sig">
             <div class="for-line">For <b th:text="${company.companyName}"></b></div>
             <div>Authorised Signatory</div>

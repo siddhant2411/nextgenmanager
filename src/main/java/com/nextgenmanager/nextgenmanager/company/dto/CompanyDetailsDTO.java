@@ -22,6 +22,10 @@ public record CompanyDetailsDTO(
         String currency,
         Integer financialYearStartMonth,
         String notes,
+        String bankName,
+        String bankAccountNumber,
+        String bankIfscCode,
+        String bankBranch,
         Date creationDate,
         Date updatedDate
 ) {}
