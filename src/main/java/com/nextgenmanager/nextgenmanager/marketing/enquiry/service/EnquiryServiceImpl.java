@@ -56,10 +56,15 @@ public class EnquiryServiceImpl implements EnquiryService {
     AppUserRepository appUserRepository;
 
     @Override
+    @Transactional(readOnly = true)
     public Enquiry getEnquiry(Long id) {
         logger.info("Fetching Enquiry with ID: {}", id);
         try {
-            return enquiryRepository.getActiveEnquiryById(id);
+            Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
+            if (enquiry == null) throw new ResourceNotFoundException("Enquiry with id " + id + " not found");
+            org.hibernate.Hibernate.initialize(enquiry.getEnquiredProducts());
+            org.hibernate.Hibernate.initialize(enquiry.getEnquiryConversationRecords());
+            return enquiry;
         } catch (ResourceNotFoundException e) {
             logger.error("Enquiry with id {} not found", id);
             throw e;

@@ -115,6 +115,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
 
     @Override
+    @Transactional(readOnly = true)
     public WorkOrderDTO getWorkOrder(int id) {
 
         WorkOrder workOrder = workOrderRepository.getReferenceById(id);

@@ -42,6 +42,7 @@ public class QuotationServiceImp implements QuotationService {
     Logger logger = LoggerFactory.getLogger(QuotationServiceImp.class);
 
     @Override
+    @Transactional(readOnly = true)
     public Quotation getQuotationById(Long id) {
         logger.info("Fetching Quotation with ID: {}", id);
 
@@ -50,6 +51,15 @@ public class QuotationServiceImp implements QuotationService {
         if (quotation == null) {
             logger.error("Quotation not found with ID: {}", id);
             throw new RuntimeException("Quotation not found with ID: " + id);
+        }
+
+        org.hibernate.Hibernate.initialize(quotation.getQuotationProducts());
+        if (quotation.getEnquiry() != null) {
+            org.hibernate.Hibernate.initialize(quotation.getEnquiry());
+            if (quotation.getEnquiry().getContact() != null) {
+                org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getAddresses());
+                org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getPersonDetails());
+            }
         }
 
         logger.info("Quotation fetched successfully with ID: {}", id);
