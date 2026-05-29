@@ -12,7 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresContactAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,7 +20,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/contact")
 @Tag(name = "Contacts", description = "Vendors, Customers and combined contacts with GST and MSME details")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER','ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+@RequiresContactAccess
 public class ContactController {
 
     @Autowired

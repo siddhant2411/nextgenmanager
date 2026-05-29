@@ -18,6 +18,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,11 +30,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 @RestController
 @RequestMapping("/api/inventory_item")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-        "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
-        "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-        "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
-        "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+@RequiresAllModulesAccess
 @Tag(name = "Inventory Items", description = "Product master data — items, specifications, attachments, vendor prices")
 public class InventoryItemController {
 
@@ -66,7 +63,7 @@ public class InventoryItemController {
             consumes = { MediaType.MULTIPART_FORM_DATA_VALUE },
             produces = MediaType.APPLICATION_JSON_VALUE
     )
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_USER')")
+    @RequiresInventoryAccess
     public ResponseEntity<InventoryItem> addInventoryItem(
             @RequestPart("inventoryItem") InventoryItem inventoryItem,
             @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) throws Exception {
@@ -81,11 +78,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
-            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
-            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    @RequiresAllModulesAccess
     public ResponseEntity<InventoryItem> getInventoryItem(@PathVariable String id) {
         logger.debug("Received request to fetch inventory item with id: {}", Integer.parseInt(id));
         try {
@@ -101,11 +94,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/all")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
-            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
-            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    @RequiresAllModulesAccess
     public ResponseEntity<?> getAllInventoryItems(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "5") int size,
@@ -127,7 +116,7 @@ public class InventoryItemController {
 
 
     @GetMapping("/all-with-deleted")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<List<InventoryItem>> getAllInventoryItemsWithDeleted() {
         logger.debug("Received request to fetch all inventory items including deleted");
         try {
@@ -143,7 +132,7 @@ public class InventoryItemController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> deleteInventoryItem(@PathVariable int id) {
         logger.debug("Received request to delete inventory item with id: {}", id);
         try {
@@ -176,11 +165,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/search")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
-            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
-            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    @RequiresAllModulesAccess
     public Page<InventoryItem> searchInventoryItems(
             @RequestParam String query,
             @RequestParam(defaultValue = "0") int page,
@@ -194,7 +179,7 @@ public class InventoryItemController {
     }
 
     @PostMapping(value = "/{id}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<String> uploadFile(@PathVariable int id, @RequestPart("file") MultipartFile file) {
         try {
             fileStorageService.uploadFile(file, "inventoryItem", "inventoryItem", (long) id, "SYSTEM");
@@ -206,11 +191,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/download/{fileId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
-            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
-            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    @RequiresAllModulesAccess
     public ResponseEntity<byte[]> downloadFile(@PathVariable Long fileId) {
         try {
             // 1️⃣ Get metadata from DB
@@ -243,7 +224,7 @@ public class InventoryItemController {
 
 
     @DeleteMapping("/delete-attachment/{fileId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<String> deleteFile(@PathVariable Long fileId) {
         try {
             fileStorageService.deleteAttachment(fileId);
@@ -255,17 +236,13 @@ public class InventoryItemController {
     }
 
     @GetMapping("/getItemCode")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_USER')")
+    @RequiresInventoryAccess
     public ResponseEntity<String> generateCode(){
         return ResponseEntity.ok(inventoryItemService.generateUniqueCode());
     }
 
     @GetMapping("/check-code")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
-            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
-            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    @RequiresAllModulesAccess
     public ResponseEntity<?> checkItemCode(@RequestParam String itemCode) {
         boolean exists = inventoryItemService.checkItemCodeExists(itemCode);
         return ResponseEntity.ok(Map.of("exists", exists));
@@ -273,11 +250,7 @@ public class InventoryItemController {
 
 
     @PostMapping("/filter")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-            "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
-            "'ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-            "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
-            "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')")
+    @RequiresAllModulesAccess
     public Page<InventoryItemDTO> filterInventoryItems(@RequestBody FilterRequest request) {
         Page<InventoryItemDTO> result = inventoryItemService.filterInventoryItems(request);
         if (!canViewFinance() && result != null) {
@@ -302,7 +275,7 @@ public class InventoryItemController {
     }
 
     @GetMapping("/export/bulk")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<byte[]> exportBulkItemMaster(@RequestParam(required = false) List<Integer> ids) {
         try {
             byte[] fileBytes = inventoryItemExportService.generateBulkItemExportExcel(ids);

@@ -13,7 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.xml.bind.ValidationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -21,7 +21,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/manufacturing/routing")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+@RequiresProductionAccess
 @SecurityRequirement(name = "bearerAuth")
 @Tag(name = "Routing", description = "Manufacturing routing and operation management with attachments")
 public class RoutingController {
@@ -37,7 +37,7 @@ public class RoutingController {
     // CREATE or UPDATE Routing (for a BOM)
     // ---------------------------------------------------------------------------
     @PostMapping("/bom/{bomId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Create or update routing for a BOM", description = "Creates a new routing or updates existing one including all operations and dependencies")
     public ResponseEntity<RoutingDto> createOrUpdateRouting(
             @PathVariable Integer bomId,
@@ -55,7 +55,7 @@ public class RoutingController {
     // UPDATE Operations Only
     // ---------------------------------------------------------------------------
     @PutMapping("/{routingId}/operations")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Update operations for a routing", description = "Updates operation list for an existing DRAFT/APPROVED routing")
     public ResponseEntity<Routing> updateOperations(
             @PathVariable Long routingId,
@@ -71,7 +71,7 @@ public class RoutingController {
     // APPROVE Routing
     // ---------------------------------------------------------------------------
     @PostMapping("/{routingId}/approve")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Approve a DRAFT routing")
     public ResponseEntity<Void> approve(
             @PathVariable Long routingId,
@@ -85,7 +85,7 @@ public class RoutingController {
     // ACTIVATE Routing
     // ---------------------------------------------------------------------------
     @PostMapping("/{routingId}/activate")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Activate an APPROVED routing")
     public ResponseEntity<Void> activate(
             @PathVariable Long routingId,
@@ -99,7 +99,7 @@ public class RoutingController {
     // OBSOLETE Routing
     // ---------------------------------------------------------------------------
     @PostMapping("/{routingId}/obsolete")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Mark a routing as obsolete")
     public ResponseEntity<Void> obsolete(
             @PathVariable Long routingId,
@@ -142,7 +142,7 @@ public class RoutingController {
     // ---------------------------------------------------------------------------
 
     @PostMapping(value = "/operation/{operationId}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Upload attachment for a routing operation", description = "Attach drawings, SOPs or other documents to a specific operation. Routing must be in DRAFT or APPROVED status.")
     public ResponseEntity<?> uploadOperationAttachment(
             @PathVariable Long operationId,
@@ -161,7 +161,7 @@ public class RoutingController {
     }
 
     @DeleteMapping("/operation/{operationId}/delete-attachment/{fileId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @Operation(summary = "Delete an attachment from a routing operation", description = "Routing must be in DRAFT or APPROVED status.")
     public ResponseEntity<?> deleteOperationAttachment(
             @PathVariable Long operationId,

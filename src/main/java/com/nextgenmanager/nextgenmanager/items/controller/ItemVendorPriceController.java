@@ -11,7 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,7 +26,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices — all vendors for this item */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
+    @RequiresInventoryPurchaseAccess
     @Operation(summary = "List all vendor prices for an item (PURCHASE + JOB_WORK)")
     public ResponseEntity<List<ItemVendorPriceDTO>> getAll(@PathVariable int itemId) {
         return ResponseEntity.ok(service.getByItem(itemId));
@@ -34,7 +34,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices?priceType=PURCHASE */
     @GetMapping(params = "priceType")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
+    @RequiresInventoryPurchaseAccess
     @Operation(summary = "List vendor prices for an item filtered by priceType (PURCHASE or JOB_WORK)")
     public ResponseEntity<List<ItemVendorPriceDTO>> getByType(
             @PathVariable int itemId,
@@ -44,7 +44,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices/{id} */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
+    @RequiresInventoryPurchaseAccess
     public ResponseEntity<ItemVendorPriceDTO> getById(
             @PathVariable int itemId, @PathVariable Long id) {
         return ResponseEntity.ok(service.getById(id));
@@ -52,7 +52,7 @@ public class ItemVendorPriceController {
 
     /** POST /api/items/{itemId}/vendor-prices */
     @PostMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresAdminOnly
     @Operation(
         summary = "Add a vendor price for an item",
         description = "Set priceType=PURCHASE for buy prices; priceType=JOB_WORK for subcontract/job-work rates. " +
@@ -67,7 +67,7 @@ public class ItemVendorPriceController {
 
     /** PUT /api/items/{itemId}/vendor-prices/{id} */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresAdminOnly
     @Operation(summary = "Update price, lead time, validity or preferred flag")
     public ResponseEntity<ItemVendorPriceDTO> update(
             @PathVariable int itemId,
@@ -79,7 +79,7 @@ public class ItemVendorPriceController {
 
     /** PATCH /api/items/{itemId}/vendor-prices/{id}/set-preferred */
     @PatchMapping("/{id}/set-preferred")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresAdminOnly
     @Operation(
         summary = "Mark this vendor as the preferred source for Make-or-Buy analysis",
         description = "Clears the preferred flag on any previously preferred entry for the same item+priceType."
@@ -91,7 +91,7 @@ public class ItemVendorPriceController {
 
     /** GET /api/items/{itemId}/vendor-prices/{id}/history — price change log, newest first */
     @GetMapping("/{id}/history")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_INVENTORY_ADMIN', 'ROLE_INVENTORY_USER', 'ROLE_PURCHASE_ADMIN', 'ROLE_PURCHASE_USER')")
+    @RequiresInventoryPurchaseAccess
     @Operation(summary = "Price change history for a vendor-price entry (newest first)")
     public ResponseEntity<List<ItemVendorPriceHistory>> getHistory(
             @PathVariable int itemId, @PathVariable Long id) {
@@ -100,7 +100,7 @@ public class ItemVendorPriceController {
 
     /** DELETE /api/items/{itemId}/vendor-prices/{id} */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    @RequiresAdminOnly
     public ResponseEntity<Void> delete(
             @PathVariable int itemId, @PathVariable Long id) {
         service.delete(id);

@@ -259,28 +259,34 @@ public class AuthUserManagementService {
     }
 
     @Transactional
-    public void adminResetPassword(Long userId, String temporaryPassword, String actor, boolean isSuperAdmin) {
-        if (isBlank(temporaryPassword)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "temporaryPassword is required");
-        }
+    public String adminResetPassword(Long userId, String temporaryPassword, String actor, boolean isSuperAdmin) {
         AppUser user = appUserRepository.findByIdAndDeletedDateIsNull(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
         enforceSuperAdminMutationPolicy(user, isSuperAdmin);
 
-        user.setPasswordHash(passwordEncoder.encode(temporaryPassword));
+        String password = (temporaryPassword != null && !temporaryPassword.isBlank())
+                ? temporaryPassword
+                : generateTemporaryPassword();
+
+        user.setPasswordHash(passwordEncoder.encode(password));
         user.setUpdatedBy(actor);
         user.setIsLocked(false);
         appUserRepository.save(user);
         refreshTokenService.revokeAllForUser(user.getId(), actor);
         logger.warn("Temporary password reset by {} for username {}", actor, user.getUsername());
+        return password;
+    }
+
+    private String generateTemporaryPassword() {
+        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
+        java.security.SecureRandom rng = new java.security.SecureRandom();
+        StringBuilder sb = new StringBuilder(12);
+        for (int i = 0; i < 12; i++) sb.append(chars.charAt(rng.nextInt(chars.length())));
+        return sb.toString();
     }
 
     @Transactional
     public void changeOwnPassword(String username, String currentPassword, String newPassword) {
-        if (isBlank(currentPassword) || isBlank(newPassword)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currentPassword and newPassword are required");
-        }
-
         AppUser user = appUserRepository.findByUsernameAndDeletedDateIsNull(username)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
 

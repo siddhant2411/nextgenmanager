@@ -8,7 +8,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresAdminOnly;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresAuthenticated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -21,14 +22,14 @@ public class CompanyDetailsController {
 
     @GetMapping
     @Operation(summary = "Get own company details")
-    @PreAuthorize("isAuthenticated()")
+    @RequiresAuthenticated
     public ResponseEntity<CompanyDetailsDTO> get() {
         return ResponseEntity.ok(companyDetailsService.get());
     }
 
     @PutMapping
     @Operation(summary = "Create or update own company details (admin only)")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN')")
+    @RequiresAdminOnly
     public ResponseEntity<CompanyDetailsDTO> upsert(@Valid @RequestBody CompanyDetailsRequestDTO request) {
         return ResponseEntity.ok(companyDetailsService.upsert(request));
     }

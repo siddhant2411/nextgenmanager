@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresProductionModuleAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,7 +16,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/manufacturing/test-template")
-@CrossOrigin
+@RequiresProductionModuleAccess
 public class TestTemplateController {
 
     private static final Logger logger = LoggerFactory.getLogger(TestTemplateController.class);

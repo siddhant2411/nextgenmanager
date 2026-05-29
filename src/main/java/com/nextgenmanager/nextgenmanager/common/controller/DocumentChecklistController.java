@@ -4,6 +4,7 @@ import com.nextgenmanager.nextgenmanager.common.dto.DocumentChecklistItemDto;
 import com.nextgenmanager.nextgenmanager.common.model.DocumentChecklistItem.ChecklistStatus;
 import com.nextgenmanager.nextgenmanager.common.model.DocumentType;
 import com.nextgenmanager.nextgenmanager.common.service.DocumentChecklistService;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresAuthenticated;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -15,6 +16,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/document-checklist/{entityType}/{entityId}")
+@RequiresAuthenticated
 public class DocumentChecklistController {
 
     private final DocumentChecklistService service;

@@ -4,6 +4,7 @@ import com.nextgenmanager.nextgenmanager.production.dto.OEEMetricsDTO;
 import com.nextgenmanager.nextgenmanager.production.service.utils.OEEService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresProductionModuleAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -12,6 +13,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/production/analytics/oee")
 @RequiredArgsConstructor
+@RequiresProductionModuleAccess
 public class OEEDashboardController {
 
     private final OEEService oeeService;

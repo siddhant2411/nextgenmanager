@@ -8,12 +8,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresOperationsAccess;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/batch-serial")
+@RequiresOperationsAccess
 public class BatchSerialController {
 
     @Autowired private BatchSerialService batchSerialService;

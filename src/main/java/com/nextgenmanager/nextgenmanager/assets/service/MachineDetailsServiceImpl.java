@@ -60,6 +60,7 @@ public class MachineDetailsServiceImpl implements MachineDetailsService {
     );
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public MachineDetailsResponseDTO getMachineDetailsById(long id) {
 
         logger.debug("Fetching MachineDetails for ID: {}", id);
@@ -88,6 +89,7 @@ public class MachineDetailsServiceImpl implements MachineDetailsService {
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<MachineDetailsResponseDTO> getMachineList() {
         logger.debug("Fetching all MachineDetails");
         List<MachineDetailsResponseDTO> dtos = machineDetailsRepository.findByDeletedDateIsNull().stream()
@@ -302,6 +304,7 @@ public class MachineDetailsServiceImpl implements MachineDetailsService {
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public MachineDetails getMachineDetailsEntityById(long id) {
         return machineDetailsRepository.findByIdAndDeletedDateIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("MachineDetails not found for ID: " + id));

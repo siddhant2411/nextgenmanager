@@ -7,7 +7,7 @@ import com.nextgenmanager.nextgenmanager.items.repository.ProcessTypeRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,9 +21,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/item-lookups")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-        "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-        "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+@RequiresAllModulesAccess
 public class ItemLookupController {
 
     @Autowired
@@ -40,7 +38,7 @@ public class ItemLookupController {
     }
 
     @PostMapping("/materials")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_USER')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<MaterialType> addMaterial(@RequestBody MaterialType material) {
         material.setId(null);
         return ResponseEntity.status(HttpStatus.CREATED).body(materialTypeRepo.save(material));
@@ -54,7 +52,7 @@ public class ItemLookupController {
     }
 
     @PostMapping("/process-types")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_USER')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<ProcessType> addProcessType(@RequestBody ProcessType processType) {
         processType.setId(null);
         return ResponseEntity.status(HttpStatus.CREATED).body(processTypeRepo.save(processType));

@@ -25,7 +25,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,7 +35,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/production/work-order")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+@RequiresProductionAccess
 @Tag(
     name = "Work Orders",
     description = "APIs for managing manufacturing work orders. Includes creation, retrieval, state transitions, material issuance, and scheduling."
@@ -525,7 +525,7 @@ public class WorkOrderController {
      */
     @PatchMapping("/material/issue")
     @SecurityRequirement(name = "bearerAuth")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     public ResponseEntity<?> issueMaterials(@RequestBody IssueWorkOrderMaterialDTO issueDTO) {
         try {
             logger.debug("Issuing materials for WorkOrder id: {} with {} material items",
@@ -876,7 +876,7 @@ public class WorkOrderController {
         )
     })
     @PatchMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<?> cancelWorkOrder(
         @Parameter(
@@ -946,7 +946,7 @@ public class WorkOrderController {
         )
     })
     @PatchMapping("/{id}/short-close")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<?> shortCloseWorkOrder(
         @Parameter(
@@ -1023,7 +1023,7 @@ public class WorkOrderController {
         )
     })
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<?> deleteWorkOrder(
         @Parameter(

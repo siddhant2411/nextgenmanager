@@ -24,7 +24,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -34,7 +34,7 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/bom")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+@RequiresProductionAccess
 @Tag(name = "BOM", description = "Bill of Materials management — components, routing, attachments, cost breakdown")
 public class BomController {
 
@@ -141,7 +141,7 @@ public class BomController {
         }
     }
 
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+    @RequiresProductionModuleAccess
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteBom(@PathVariable Integer id) {
         logger.info("Received request to delete BOM with id: {}", id);
@@ -265,7 +265,7 @@ public class BomController {
     }
 
     @PostMapping("/changeStatus/{bomId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PRODUCTION_ADMIN')")
+    @RequiresProductionAdminAccess
     public ResponseEntity<?> changeBomStatus(@PathVariable int bomId,@RequestBody BomStatusChangeRequest bomStatusChangeRequest){
         try {
             BomDTO bomDTO = bomService.changeBomStatus(bomId,bomStatusChangeRequest);

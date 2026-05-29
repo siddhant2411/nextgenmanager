@@ -5,7 +5,7 @@ import com.nextgenmanager.nextgenmanager.items.repository.ItemCodeSeriesReposito
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,9 +14,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/item-code-series")
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
-        "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER','ROLE_SALES_ADMIN','ROLE_SALES_USER'," +
-        "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER')")
+@RequiresAllModulesAccess
 public class ItemCodeSeriesController {
 
     @Autowired
@@ -30,7 +28,7 @@ public class ItemCodeSeriesController {
 
     /** Create a new series. Admin / Inventory Admin only. */
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<ItemCodeSeries> create(@RequestBody ItemCodeSeries series) {
         series.setId(null);        // force insert
         series.setLastNumber(0);   // always starts at 0
@@ -60,7 +58,7 @@ public class ItemCodeSeriesController {
 
     /** Soft-delete a series. */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    @RequiresInventoryAdminAccess
     public ResponseEntity<?> delete(@PathVariable Long id) {
         return repo.findById(id).map(s -> {
             s.setDeletedDate(new java.util.Date());
