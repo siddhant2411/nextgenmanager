@@ -53,15 +53,7 @@ public class QuotationServiceImp implements QuotationService {
             throw new RuntimeException("Quotation not found with ID: " + id);
         }
 
-        org.hibernate.Hibernate.initialize(quotation.getQuotationProducts());
-        if (quotation.getEnquiry() != null) {
-            org.hibernate.Hibernate.initialize(quotation.getEnquiry());
-            if (quotation.getEnquiry().getContact() != null) {
-                org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getAddresses());
-                org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getPersonDetails());
-            }
-        }
-
+        initializeLazyAssociations(quotation);
         logger.info("Quotation fetched successfully with ID: {}", id);
         return quotation;
     }
@@ -227,6 +219,7 @@ public class QuotationServiceImp implements QuotationService {
             calculateQuotationValues(saved);
 
             saved = quotationRepository.save(saved);
+            initializeLazyAssociations(saved);
             logger.info("Quotation created successfully with ID: {}", saved.getId());
             return saved;
         } catch (Exception e) {
@@ -270,6 +263,7 @@ public class QuotationServiceImp implements QuotationService {
                 assignQuotationNumber(saved);
             }
 
+            initializeLazyAssociations(saved);
             return saved;
         } catch (Exception e) {
             throw new Exception("Error while updating Quotation: " + e.getMessage(), e);
@@ -284,6 +278,27 @@ public class QuotationServiceImp implements QuotationService {
 
         quotation.setDeletedDate(new Date());
         quotationRepository.save(quotation);
+    }
+
+    private void initializeLazyAssociations(Quotation quotation) {
+        org.hibernate.Hibernate.initialize(quotation.getQuotationProducts());
+        if (quotation.getQuotationProducts() != null) {
+            quotation.getQuotationProducts().forEach(p -> org.hibernate.Hibernate.initialize(p.getInventoryItem()));
+        }
+        if (quotation.getEnquiry() != null) {
+            org.hibernate.Hibernate.initialize(quotation.getEnquiry());
+            org.hibernate.Hibernate.initialize(quotation.getEnquiry().getEnquiredProducts());
+            if (quotation.getEnquiry().getEnquiredProducts() != null) {
+                quotation.getEnquiry().getEnquiredProducts().forEach(p -> org.hibernate.Hibernate.initialize(p.getInventoryItem()));
+            }
+            org.hibernate.Hibernate.initialize(quotation.getEnquiry().getEnquiryConversationRecords());
+            org.hibernate.Hibernate.initialize(quotation.getEnquiry().getAssignedTo());
+            if (quotation.getEnquiry().getContact() != null) {
+                org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact());
+                org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getAddresses());
+                org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getPersonDetails());
+            }
+        }
     }
 
     private void calculateQuotationValues(Quotation quotation) {

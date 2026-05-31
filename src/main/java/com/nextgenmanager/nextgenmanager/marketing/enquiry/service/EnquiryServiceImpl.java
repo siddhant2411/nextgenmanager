@@ -63,7 +63,16 @@ public class EnquiryServiceImpl implements EnquiryService {
             Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
             if (enquiry == null) throw new ResourceNotFoundException("Enquiry with id " + id + " not found");
             org.hibernate.Hibernate.initialize(enquiry.getEnquiredProducts());
+            if (enquiry.getEnquiredProducts() != null) {
+                enquiry.getEnquiredProducts().forEach(p -> org.hibernate.Hibernate.initialize(p.getInventoryItem()));
+            }
             org.hibernate.Hibernate.initialize(enquiry.getEnquiryConversationRecords());
+            org.hibernate.Hibernate.initialize(enquiry.getAssignedTo());
+            if (enquiry.getContact() != null) {
+                org.hibernate.Hibernate.initialize(enquiry.getContact());
+                org.hibernate.Hibernate.initialize(enquiry.getContact().getAddresses());
+                org.hibernate.Hibernate.initialize(enquiry.getContact().getPersonDetails());
+            }
             return enquiry;
         } catch (ResourceNotFoundException e) {
             logger.error("Enquiry with id {} not found", id);
@@ -161,6 +170,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
+    @Transactional
     public Enquiry updateEnquiry(Enquiry updatedEnquiry, Long id) {
         logger.info("Updating Enquiry with ID: {}", id);
         Enquiry existingEnquiry = getEnquiry(id);
@@ -287,6 +297,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
+    @Transactional
     public void deleteEnquiry(Long id) {
         logger.info("Deleting Enquiry with ID: {}", id);
         Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
@@ -304,6 +315,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
+    @Transactional
     public void closeEnquiry(Long id, String closeReason) {
         logger.info("Closing Enquiry with ID: {}", id);
         Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
@@ -322,6 +334,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     }
 
     @Override
+    @Transactional
     public void updateEnquiryStatus(Long id, com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus status) {
         logger.info("Updating status for Enquiry with ID: {}", id);
         Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);

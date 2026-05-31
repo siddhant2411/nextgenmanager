@@ -339,6 +339,7 @@ public class RoutingServiceImpl implements RoutingService{
     // GETTERS
     // ----------------------------------------------------------
     @Override
+    @Transactional(readOnly = true)
     public RoutingDto getByBom(Integer bomId) {
         Routing routing =routingRepository.findByBomId(bomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Routing not found for BOM: " + bomId));
@@ -350,6 +351,7 @@ public class RoutingServiceImpl implements RoutingService{
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Routing getRoutingEntityByBom(Integer bomId){
 
         Routing routing =routingRepository.findByBomId(bomId)
@@ -359,6 +361,7 @@ public class RoutingServiceImpl implements RoutingService{
     }
 
     @Override
+    @Transactional(readOnly = true)
     public RoutingDto getRouting(Long id) {
         Routing routing =routingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Routing not found for BOM: " + id));
@@ -368,6 +371,7 @@ public class RoutingServiceImpl implements RoutingService{
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<RoutingOperationDto> getOperations(Long routingId) {
         Routing routing = routingRepository.findById(routingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Routing not found: " + routingId));
@@ -383,6 +387,7 @@ public class RoutingServiceImpl implements RoutingService{
 
 
     @Override
+    @Transactional(readOnly = true)
     public List<RoutingOperation> getOperationsEntities(Long routingId) {
         Routing routing = routingRepository.findById(routingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Routing not found: " + routingId));
