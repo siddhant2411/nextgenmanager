@@ -13,6 +13,7 @@ import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthUpdateRoleRequest;
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthUpdateUserRolesRequest;
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthUpdateUserStatusRequest;
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthAdminResetPasswordRequest;
+import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthRecoveryResetRequest;
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthUserListItemResponse;
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthUserResponse;
 import com.nextgenmanager.nextgenmanager.common.model.AppUser;
@@ -322,6 +323,23 @@ public class AuthController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currentPassword and newPassword are required");
         }
         authUserManagementService.changeOwnPassword(authentication.getName(), currentPassword, newPassword);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/recovery/reset")
+    @Operation(summary = "Reset password using server recovery secret (no auth required)")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Password reset successfully"),
+            @ApiResponse(responseCode = "400", description = "Missing required fields"),
+            @ApiResponse(responseCode = "401", description = "Invalid recovery secret"),
+            @ApiResponse(responseCode = "404", description = "User not found"),
+            @ApiResponse(responseCode = "503", description = "Recovery not configured on this server")
+    })
+    public ResponseEntity<Void> recoveryReset(@RequestBody AuthRecoveryResetRequest request) {
+        if (request == null || request.recoverySecret() == null || request.username() == null || request.newPassword() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "recoverySecret, username, and newPassword are required");
+        }
+        authUserManagementService.recoveryResetPassword(request.recoverySecret(), request.username(), request.newPassword());
         return ResponseEntity.noContent().build();
     }
 
