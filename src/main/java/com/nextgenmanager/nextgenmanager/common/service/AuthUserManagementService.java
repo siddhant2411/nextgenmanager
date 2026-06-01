@@ -14,6 +14,7 @@ import com.nextgenmanager.nextgenmanager.common.repository.UserRoleMapRepository
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,9 @@ public class AuthUserManagementService {
     private final UserRoleMapRepository userRoleMapRepository;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
+
+    @Value("${security.recovery.secret:}")
+    private String recoverySecret;
 
     @Transactional(readOnly = true)
     public List<AuthUserListItemResponse> listUsers(String actor) {
@@ -275,6 +279,31 @@ public class AuthUserManagementService {
         refreshTokenService.revokeAllForUser(user.getId(), actor);
         logger.warn("Temporary password reset by {} for username {}", actor, user.getUsername());
         return password;
+    }
+
+    @Transactional
+    public void recoveryResetPassword(String providedSecret, String username, String newPassword) {
+        if (isBlank(recoverySecret)) {
+            logger.error("Recovery reset attempted but security.recovery.secret is not configured");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Recovery is not configured on this server");
+        }
+        if (!recoverySecret.equals(providedSecret)) {
+            logger.warn("Recovery reset failed: invalid recovery secret for username {}", username);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid recovery secret");
+        }
+        if (isBlank(username) || isBlank(newPassword)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username and newPassword are required");
+        }
+
+        AppUser user = appUserRepository.findByUsernameAndDeletedDateIsNull(username.trim())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setIsLocked(false);
+        user.setUpdatedBy("RECOVERY");
+        appUserRepository.save(user);
+        refreshTokenService.revokeAllForUser(user.getId(), "RECOVERY");
+        logger.warn("Password reset via recovery secret for username {}", username);
     }
 
     private String generateTemporaryPassword() {
