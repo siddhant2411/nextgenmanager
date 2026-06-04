@@ -2,6 +2,8 @@ package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkImportResultDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.*;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
@@ -24,20 +26,30 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class EnquiryImportService {
 
     private static final Logger logger = LoggerFactory.getLogger(EnquiryImportService.class);
 
+    // Column order for both Excel and CSV templates
+    // 0:enqNo(optional), 1:opportunityName*, 2:companyName, 3:contactPersonName,
+    // 4:contactPersonPhone, 5:contactPersonEmail, 6:city, 7:state,
+    // 8:enquirySource, 9:referenceNumber, 10:expectedRevenue,
+    // 11:probability(0-100), 12:priority(HOT/WARM/COLD),
+    // 13:status(NEW/CONTACTED/etc), 14:enqDate(yyyy-MM-dd),
+    // 15:nextFollowupDate(yyyy-MM-dd),
+    // 16:item1, 17:item1_qty, 18:item2, 19:item2_qty, ... (pairs, up to item15)
+    private static final int ITEM_START_COL = 16;
+    private static final int MAX_ITEMS = 15;
+
+    private record ItemEntry(String value, BigDecimal qty) {}
+
     @Autowired private EnquiryRepository enquiryRepository;
     @Autowired private ContactRepository contactRepository;
+    @Autowired private InventoryItemRepository inventoryItemRepository;
     @Autowired private EnquiryNumberGenerator enquiryNumberGenerator;
-
-    // Column order for both Excel and CSV templates
-    // 0:opportunityName, 1:companyName, 2:contactPersonName, 3:contactPersonPhone,
-    // 4:contactPersonEmail, 5:city, 6:state, 7:enquirySource, 8:referenceNumber,
-    // 9:expectedRevenue, 10:probability, 11:priority, 12:status, 13:enqDate, 14:nextFollowupDate
 
     @Transactional
     public BulkImportResultDTO importFromFile(MultipartFile file) throws Exception {
@@ -59,12 +71,21 @@ public class EnquiryImportService {
                 Row row = sheet.getRow(i);
                 if (row == null || isRowEmpty(row)) continue;
                 try {
+                    List<ItemEntry> items = new ArrayList<>();
+                    for (int c = ITEM_START_COL; c < row.getLastCellNum(); c += 2) {
+                        String v = getCellString(row, c);
+                        if (v == null || v.isBlank()) continue;
+                        String qtyStr = getCellString(row, c + 1);
+                        items.add(new ItemEntry(v.trim(), parseBigDecimal(qtyStr, BigDecimal.ONE)));
+                    }
                     Enquiry e = buildEnquiry(
-                        getCellString(row, 0), getCellString(row, 1), getCellString(row, 2),
-                        getCellString(row, 3), getCellString(row, 4), getCellString(row, 5),
-                        getCellString(row, 6), getCellString(row, 7), getCellString(row, 8),
-                        getCellString(row, 9), getCellString(row, 10), getCellString(row, 11),
-                        getCellString(row, 12), getCellString(row, 13), getCellString(row, 14)
+                        getCellString(row, 0),
+                        getCellString(row, 1), getCellString(row, 2), getCellString(row, 3),
+                        getCellString(row, 4), getCellString(row, 5), getCellString(row, 6),
+                        getCellString(row, 7), getCellString(row, 8), getCellString(row, 9),
+                        getCellString(row, 10), getCellString(row, 11), getCellString(row, 12),
+                        getCellString(row, 13), getCellString(row, 14), getCellString(row, 15),
+                        items
                     );
                     enquiryRepository.save(e);
                     created++;
@@ -91,11 +112,21 @@ public class EnquiryImportService {
                 lineNum++;
                 if (lineNum == 1 || line.trim().isEmpty()) continue;
                 String[] cols = parseCsvLine(line);
+                List<ItemEntry> items = new ArrayList<>();
+                for (int c = ITEM_START_COL; c < cols.length; c += 2) {
+                    String v = col(cols, c);
+                    if (v == null || v.isBlank()) continue;
+                    String qtyStr = col(cols, c + 1);
+                    items.add(new ItemEntry(v.trim(), parseBigDecimal(qtyStr, BigDecimal.ONE)));
+                }
                 try {
                     Enquiry e = buildEnquiry(
-                        col(cols, 0), col(cols, 1), col(cols, 2), col(cols, 3), col(cols, 4),
-                        col(cols, 5), col(cols, 6), col(cols, 7), col(cols, 8), col(cols, 9),
-                        col(cols, 10), col(cols, 11), col(cols, 12), col(cols, 13), col(cols, 14)
+                        col(cols, 0),
+                        col(cols, 1), col(cols, 2), col(cols, 3), col(cols, 4),
+                        col(cols, 5), col(cols, 6), col(cols, 7), col(cols, 8),
+                        col(cols, 9), col(cols, 10), col(cols, 11), col(cols, 12),
+                        col(cols, 13), col(cols, 14), col(cols, 15),
+                        items
                     );
                     enquiryRepository.save(e);
                     created++;
@@ -114,33 +145,45 @@ public class EnquiryImportService {
     public byte[] generateTemplate() throws Exception {
         try (XSSFWorkbook wb = new XSSFWorkbook()) {
             Sheet sheet = wb.createSheet("Enquiry Import");
-            String[] headers = {
-                "opportunityName*", "companyName", "contactPersonName", "contactPersonPhone",
-                "contactPersonEmail", "city", "state", "enquirySource", "referenceNumber",
-                "expectedRevenue", "probability(0-100)", "priority(HOT/WARM/COLD)",
+
+            List<String> headers = new ArrayList<>(List.of(
+                "enqNo(optional)", "opportunityName*", "companyName", "contactPersonName",
+                "contactPersonPhone", "contactPersonEmail", "city", "state",
+                "enquirySource", "referenceNumber", "expectedRevenue",
+                "probability(0-100)", "priority(HOT/WARM/COLD)",
                 "status(NEW/CONTACTED/etc)", "enqDate(yyyy-MM-dd)", "nextFollowupDate(yyyy-MM-dd)"
-            };
-            Row hRow = sheet.createRow(0);
+            ));
+            for (int i = 1; i <= MAX_ITEMS; i++) {
+                headers.add("item" + i);
+                headers.add("item" + i + "_qty");
+            }
+
             CellStyle bold = wb.createCellStyle();
             Font f = wb.createFont();
             f.setBold(true);
             bold.setFont(f);
-            for (int i = 0; i < headers.length; i++) {
+
+            Row hRow = sheet.createRow(0);
+            for (int i = 0; i < headers.size(); i++) {
                 Cell c = hRow.createCell(i);
-                c.setCellValue(headers[i]);
+                c.setCellValue(headers.get(i));
                 c.setCellStyle(bold);
             }
+
             // Sample data row
             Row sample = sheet.createRow(1);
             String today = LocalDate.now().toString();
             String followup = LocalDate.now().plusDays(7).toString();
             String[] sampleData = {
-                "Machine Enquiry - ABC Co", "ABC Company Ltd", "Rahul Sharma", "+91 9876543210",
+                "", "Machine Enquiry - ABC Co", "ABC Company Ltd", "Rahul Sharma", "+91 9876543210",
                 "rahul@abc.com", "Mumbai", "Maharashtra", "IndiaMart", "REF-001",
-                "50000", "60", "WARM", "NEW", today, followup
+                "50000", "60", "WARM", "NEW", today, followup,
+                "ITEM-001", "3", "ITEM-002", "", "Custom Gear Box", "2"
             };
             for (int i = 0; i < sampleData.length; i++) sample.createCell(i).setCellValue(sampleData[i]);
-            for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
+
+            for (int i = 0; i < headers.size(); i++) sheet.autoSizeColumn(i);
+
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             wb.write(out);
             return out.toByteArray();
@@ -148,23 +191,33 @@ public class EnquiryImportService {
     }
 
     private Enquiry buildEnquiry(
+            String enqNo,
             String opportunityName, String companyName, String contactPersonName,
             String contactPersonPhone, String contactPersonEmail,
             String city, String state, String enquirySource, String referenceNumber,
             String expectedRevenue, String probability, String priority,
-            String status, String enqDate, String nextFollowupDate) {
+            String status, String enqDate, String nextFollowupDate,
+            List<ItemEntry> items) {
 
-        // Parse date early — needed for validation and dedup
         LocalDate parsedEnqDate = parseDate(enqDate);
         String trimmedOpportunity = trim(opportunityName);
 
-        // Invalid if both opportunity name and date are absent
         if (trimmedOpportunity == null && parsedEnqDate == null) {
             throw new ImportRowException("invalid entry: both opportunityName and enqDate are missing");
         }
 
+        // Resolve enquiry number: use provided value or auto-generate
+        String resolvedEnqNo = trim(enqNo);
+        if (resolvedEnqNo != null) {
+            if (enquiryRepository.findByEnqNo(resolvedEnqNo).isPresent()) {
+                throw new DuplicateRowException("enqNo already exists: " + resolvedEnqNo);
+            }
+        } else {
+            resolvedEnqNo = enquiryNumberGenerator.next();
+        }
+
         Enquiry e = new Enquiry();
-        e.setEnqNo(enquiryNumberGenerator.next());
+        e.setEnqNo(resolvedEnqNo);
         e.setOpportunityName(trimmedOpportunity);
         e.setContactPersonName(trim(contactPersonName));
         e.setContactPersonPhone(trim(contactPersonPhone));
@@ -174,7 +227,6 @@ public class EnquiryImportService {
         e.setEnquirySource(trim(enquirySource));
         e.setReferenceNumber(trim(referenceNumber));
 
-        // Try to match contact by company name; fall back to manualCompanyName
         if (companyName != null && !companyName.isBlank()) {
             List<Contact> matches = contactRepository.searchForDropdown(companyName.trim(), null, PageRequest.of(0, 1));
             if (!matches.isEmpty()) {
@@ -184,7 +236,6 @@ public class EnquiryImportService {
             }
         }
 
-        // Dedup key: (enqDate + opportunityName + company) | (opportunityName + company) | (company + enqDate)
         String resolvedCompany = e.getContact() != null
             ? e.getContact().getCompanyName()
             : (e.getManualCompanyName() != null ? e.getManualCompanyName() : "");
@@ -211,7 +262,21 @@ public class EnquiryImportService {
         LocalDate parsedFollowup = parseDate(nextFollowupDate);
         e.setNextFollowupDate(parsedFollowup != null ? parsedFollowup : e.getEnqDate().plusDays(7));
         e.setDaysForNextFollowup(7);
-        e.setEnquiredProducts(new ArrayList<>());
+
+        List<EnquiredProducts> products = new ArrayList<>();
+        for (ItemEntry item : items) {
+            Optional<InventoryItem> matched = inventoryItemRepository.findByItemCodeIgnoreCaseAndDeletedDateIsNull(item.value());
+            EnquiredProducts ep = new EnquiredProducts();
+            if (matched.isPresent()) {
+                ep.setInventoryItem(matched.get());
+            } else {
+                ep.setProductNameRequired(item.value());
+            }
+            ep.setQty(item.qty());
+            ep.setEnquiry(e);
+            products.add(ep);
+        }
+        e.setEnquiredProducts(products);
         e.setEnquiryConversationRecords(new ArrayList<>());
 
         return e;
@@ -261,7 +326,8 @@ public class EnquiryImportService {
     }
 
     private boolean isRowEmpty(Row row) {
-        for (int i = 0; i < 5; i++) {
+        // Check cols 1-5 (opportunityName onwards; col 0 is optional enqNo)
+        for (int i = 1; i <= 5; i++) {
             String val = getCellString(row, i);
             if (val != null && !val.isBlank()) return false;
         }

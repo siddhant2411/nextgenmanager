@@ -45,6 +45,16 @@ public class AuthUserManagementService {
     @Value("${security.recovery.secret:}")
     private String recoverySecret;
 
+    @Value("${security.recovery.label:Passcode}")
+    private String recoveryLabel;
+
+    @Value("${security.recovery.hint:Enter the recovery passcode set in your server configuration file.}")
+    private String recoveryHint;
+
+    public java.util.Map<String, String> getRecoveryInfo() {
+        return java.util.Map.of("label", recoveryLabel, "hint", recoveryHint);
+    }
+
     @Transactional(readOnly = true)
     public List<AuthUserListItemResponse> listUsers(String actor) {
         logger.info("User list requested by {}", actor);

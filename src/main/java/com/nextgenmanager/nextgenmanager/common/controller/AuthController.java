@@ -326,6 +326,12 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/recovery/info")
+    @Operation(summary = "Get recovery flow label and hint text (no auth required)")
+    public ResponseEntity<Map<String, String>> recoveryInfo() {
+        return ResponseEntity.ok(authUserManagementService.getRecoveryInfo());
+    }
+
     @PostMapping("/recovery/reset")
     @Operation(summary = "Reset password using server recovery secret (no auth required)")
     @ApiResponses({
