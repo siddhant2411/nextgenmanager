@@ -146,10 +146,7 @@ public class BomController {
     public ResponseEntity<?> deleteBom(@PathVariable Integer id) {
         logger.info("Received request to delete BOM with id: {}", id);
         try {
-            Bom deletedBom = bomService.deleteBom(id);
-
-            BOMRoutingMapper responseMapper = new BOMRoutingMapper();
-            responseMapper.setBom(BomMapper.toDto(deletedBom));
+            bomService.deleteBom(id);
 
             logger.info("Successfully deleted BOM ID: {}", id);
             return ResponseEntity.status(HttpStatus.OK).body("Bom with id: "+id+" is deleted");

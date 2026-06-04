@@ -52,4 +52,6 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
     List<InventoryItem> findAllByDeletedDateIsNull();
 
     List<InventoryItem> findByInventoryItemIdInAndDeletedDateIsNull(List<Integer> ids);
+
+    java.util.Optional<InventoryItem> findByItemCodeIgnoreCaseAndDeletedDateIsNull(String itemCode);
 }
