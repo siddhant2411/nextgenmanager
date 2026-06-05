@@ -14,6 +14,7 @@ import org.springframework.data.domain.Sort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
@@ -52,6 +53,7 @@ public class EnquiryExportService {
         }
     }
 
+    @Transactional(readOnly = true)
     public byte[] exportToExcel(String enqNo, String companyName, LocalDate lastContactedDate,
                                 LocalDate enqDate, LocalDate closedDate, Integer daysForNextFollowup,
                                 String lastContactedDateComp, String enqDateComp, String closedDateComp) throws Exception {
