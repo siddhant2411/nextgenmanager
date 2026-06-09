@@ -1064,6 +1064,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         // Generate one InventoryRequest (Material Request) per material.
         // Stock reservation is deferred to the Stores approval step.
         // forceRelease is no longer used (Stores controls availability gating).
+        int mrCount = 0;
         for (WorkOrderMaterial material : materials) {
             if (material.getPlannedRequiredQuantity().compareTo(BigDecimal.ZERO) > 0) {
                 com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest mr =
@@ -1079,29 +1080,37 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 mr = inventoryRequestRepository.save(mr);
                 material.setInventoryRequestId(mr.getId());
                 workOrderMaterialRepository.save(material);
+                mrCount++;
             }
         }
 
-        //  Update Work Order status to MATERIAL_PENDING (awaiting Stores approval)
-        workOrder.setWorkOrderStatus(WorkOrderStatus.MATERIAL_PENDING);
+        // If no MRs were generated (no materials or all zero-quantity), skip the Stores approval
+        // step and go directly to READY_FOR_PRODUCTION so the WO does not get stuck.
+        WorkOrderStatus releaseStatus = mrCount > 0
+                ? WorkOrderStatus.MATERIAL_PENDING
+                : WorkOrderStatus.READY_FOR_PRODUCTION;
+        workOrder.setWorkOrderStatus(releaseStatus);
         workOrderRepository.save(workOrder);
 
         logger.info(
-                "WorkOrder {} pending material approval — {} MRs generated",
-                workOrder.getWorkOrderNumber(), materials.size()
+                "WorkOrder {} released — {} MRs generated → status {}",
+                workOrder.getWorkOrderNumber(), mrCount, releaseStatus
         );
 
         //  Initialize operation statuses with dependency awareness
         if (!operations.isEmpty()) {
             initializeOperationDependencies(operations, workOrder.getPlannedQuantity());
         }
+        String auditNote = mrCount > 0
+                ? "Material requests generated, awaiting Stores approval"
+                : "No materials required — released directly to production";
         auditService.record(
                 workOrder,
                 WorkOrderEventType.RELEASED,
                 "status",
                 previousStatus,
-                "MATERIAL_PENDING",
-                "Material requests generated, awaiting Stores approval"
+                releaseStatus.name(),
+                auditNote
         );
 
         //  Return updated DTO
@@ -1895,15 +1904,16 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     return new EntityNotFoundException("WorkOrder not found");
                 });
 
-        //  Status guard
-        if (workOrder.getWorkOrderStatus() != WorkOrderStatus.IN_PROGRESS) {
+        //  Status guard — also allow READY_FOR_PRODUCTION when the WO has no operations
+        if (workOrder.getWorkOrderStatus() != WorkOrderStatus.IN_PROGRESS
+                && workOrder.getWorkOrderStatus() != WorkOrderStatus.READY_FOR_PRODUCTION) {
             logger.warn(
                     "Cannot complete WorkOrder {} due to status {}",
                     workOrder.getWorkOrderNumber(),
                     workOrder.getWorkOrderStatus()
             );
             throw new IllegalStateException(
-                    "Only IN_PROGRESS WorkOrders can be completed"
+                    "Only IN_PROGRESS or READY_FOR_PRODUCTION WorkOrders can be completed"
             );
         }
 
