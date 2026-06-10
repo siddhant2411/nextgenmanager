@@ -43,7 +43,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         boolean isTracked = settings.isBatchTracked() || settings.isSerialTracked();
 
         if (settings.getAvailableQuantity() < qty && isTracked) {
-            throw new RuntimeException("Insufficient available stock to reserve " + qty + " of " + item.getItemCode()
+            throw new IllegalStateException("Insufficient stock to reserve " + qty + " of " + item.getItemCode()
                 + ". Available: " + settings.getAvailableQuantity());
         }
 
@@ -124,7 +124,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         boolean isTracked = settings.isBatchTracked() || settings.isSerialTracked();
         double totalReachable = settings.getReservedQuantity() + settings.getAvailableQuantity();
         if (totalReachable < qty && isTracked) {
-            throw new RuntimeException("Cannot consume " + qty + " of " + item.getItemCode()
+            throw new IllegalStateException("Cannot consume " + qty + " of " + item.getItemCode()
                 + ". Reserved: " + settings.getReservedQuantity()
                 + ", Available: " + settings.getAvailableQuantity());
         }
@@ -305,9 +305,9 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
 
     private InventoryItem loadItem(int itemId) {
         InventoryItem item = inventoryItemRepository.findByActiveId(itemId);
-        if (item == null) throw new RuntimeException("Inventory item not found: id=" + itemId);
+        if (item == null) throw new IllegalArgumentException("Inventory item not found: id=" + itemId);
         if (item.getProductInventorySettings() == null)
-            throw new RuntimeException("Item " + item.getItemCode() + " has no inventory settings configured");
+            throw new IllegalStateException("Item " + item.getItemCode() + " has no inventory settings configured");
         return item;
     }
 

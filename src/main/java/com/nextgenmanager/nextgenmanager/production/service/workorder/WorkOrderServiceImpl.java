@@ -444,6 +444,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<WorkOrderListDTO> getAllWorkOrders(
            FilterRequest request
     ) {

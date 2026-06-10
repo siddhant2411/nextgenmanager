@@ -9,6 +9,7 @@ import com.nextgenmanager.nextgenmanager.sales.repository.TaxInvoiceRepository;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
@@ -25,6 +26,7 @@ public class TaxInvoicePdfService {
     private final TaxInvoiceRepository taxInvoiceRepository;
     private final CompanyDetailsRepository companyDetailsRepository;
 
+    @Transactional(readOnly = true)
     public byte[] generatePdf(Long id) {
         TaxInvoice invoice = taxInvoiceRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Invoice not found: " + id));

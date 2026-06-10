@@ -7,6 +7,7 @@ import com.nextgenmanager.nextgenmanager.sales.repository.DeliveryNoteRepository
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
@@ -20,6 +21,7 @@ public class DeliveryNotePdfService {
     private final DeliveryNoteRepository deliveryNoteRepository;
     private final CompanyDetailsRepository companyDetailsRepository;
 
+    @Transactional(readOnly = true)
     public byte[] generatePdf(Long id) {
         DeliveryNote dn = deliveryNoteRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Delivery Note not found: " + id));

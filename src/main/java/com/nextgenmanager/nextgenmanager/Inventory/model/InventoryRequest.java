@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.Inventory.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -34,7 +34,7 @@ public class InventoryRequest {
 
     private Long sourceId;
     @OneToMany(mappedBy = "inventoryRequest", cascade = CascadeType.ALL)
-    @JsonManagedReference
+    @JsonIgnore
     private List<InventoryInstance> requestedInstances = new ArrayList<>();
 
     @Temporal(TemporalType.TIMESTAMP)
