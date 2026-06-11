@@ -12,6 +12,7 @@ import com.nextgenmanager.nextgenmanager.sales.repository.SalesPaymentRepository
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
@@ -24,6 +25,7 @@ import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class InvoicePdfService {
 
     private static final int ITEMS_PER_PAGE = 10;

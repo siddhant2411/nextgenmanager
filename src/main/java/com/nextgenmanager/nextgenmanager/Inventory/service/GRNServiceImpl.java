@@ -113,6 +113,7 @@ public class GRNServiceImpl implements GRNService {
     }
 
     @Override
+    @Transactional
     public GRNResponseDTO getGRN(Long grnId) {
         GoodsReceiptNote grn = grnRepository.findById(grnId)
                 .orElseThrow(() -> new RuntimeException("GRN not found: " + grnId));
@@ -120,12 +121,14 @@ public class GRNServiceImpl implements GRNService {
     }
 
     @Override
+    @Transactional
     public List<GRNResponseDTO> getGRNsByPurchaseOrder(Long purchaseOrderId) {
         return grnRepository.findByPurchaseOrder_Id(purchaseOrderId)
                 .stream().map(this::toResponseDTO).collect(Collectors.toList());
     }
 
     @Override
+    @Transactional
     public Page<GRNResponseDTO> searchGRNs(Long poId, String status, Long vendorId, String grnNumber, Pageable pageable) {
         GRNStatus grnStatus = null;
         if (status != null && !status.isBlank()) {

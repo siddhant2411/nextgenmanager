@@ -104,6 +104,7 @@ public class QuotationServiceImp implements QuotationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ResponseEntity<byte[]> downloadQuotationPdf(Long id) {
         String html = parseQuotationTemplate(id);
         String qtnNo = getQuotationById(id).getQtnNo();
