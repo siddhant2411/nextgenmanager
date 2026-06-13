@@ -1,5 +1,8 @@
 package com.nextgenmanager.nextgenmanager.common.controller;
 
+import com.nextgenmanager.nextgenmanager.accounting.voucher.exception.InvalidVoucherException;
+import com.nextgenmanager.nextgenmanager.accounting.voucher.exception.LockedPeriodException;
+import com.nextgenmanager.nextgenmanager.accounting.voucher.exception.UnbalancedVoucherException;
 import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
 import com.nextgenmanager.nextgenmanager.bom.service.BusinessException;
 import com.nextgenmanager.nextgenmanager.bom.service.InvalidDataException;
@@ -145,6 +148,24 @@ public class GlobalExceptionHandler {
         String message = Optional.ofNullable(ex.getMessage()).filter(m -> !m.isBlank()).orElse("BOM operation failed");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(buildError(HttpStatus.INTERNAL_SERVER_ERROR, message, request));
+    }
+
+    @ExceptionHandler(UnbalancedVoucherException.class)
+    public ResponseEntity<ApiError> handleUnbalancedVoucher(UnbalancedVoucherException ex, HttpServletRequest request) {
+        return ResponseEntity.badRequest()
+                .body(buildError(HttpStatus.BAD_REQUEST, ex.getMessage(), request));
+    }
+
+    @ExceptionHandler(InvalidVoucherException.class)
+    public ResponseEntity<ApiError> handleInvalidVoucher(InvalidVoucherException ex, HttpServletRequest request) {
+        return ResponseEntity.badRequest()
+                .body(buildError(HttpStatus.BAD_REQUEST, ex.getMessage(), request));
+    }
+
+    @ExceptionHandler(LockedPeriodException.class)
+    public ResponseEntity<ApiError> handleLockedPeriod(LockedPeriodException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(buildError(HttpStatus.CONFLICT, ex.getMessage(), request));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

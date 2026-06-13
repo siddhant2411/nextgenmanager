@@ -85,8 +85,8 @@
         <div class="addr-cell left">
             <div class="addr-label">Customer</div>
             <div class="addr-name" th:text="${salesOrder.customer.companyName}"></div>
-            <div class="addr-line" th:if="${salesOrder.customer.addresses != null and !salesOrder.customer.addresses.empty}"
-                 th:text="${salesOrder.customer.addresses[0]}"></div>
+            <div class="addr-line" th:if="${billingAddress != null and billingAddress != ''}"
+                 th:text="${billingAddress}"></div>
             <div class="addr-line">GSTIN: <span th:text="${salesOrder.customer.gstNumber} ?: 'N/A'"></span></div>
         </div>
         <div class="addr-cell" style="width:50%; padding:8px 10px;">
@@ -161,10 +161,10 @@
                     <tr><td>Taxable Value</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.taxableValue, 1, 2)}"></td></tr>
                     <tr th:if="${salesOrder.taxType.name() == 'CGST_SGST'}">
-                        <td>CGST + SGST (<span th:text="${salesOrder.taxPercentage}"></span>%)</td>
+                        <td>CGST + SGST (<span th:text="${effectiveTaxPct}"></span>%)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.cgstAmount.add(salesOrder.sgstAmount), 1, 2)}"></td></tr>
                     <tr th:if="${salesOrder.taxType.name() == 'IGST'}">
-                        <td>IGST (<span th:text="${salesOrder.taxPercentage}"></span>%)</td>
+                        <td>IGST (<span th:text="${effectiveTaxPct}"></span>%)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.igstAmount, 1, 2)}"></td></tr>
                     <tr class="grand">
                         <td>Order Value (₹)</td>

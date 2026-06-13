@@ -237,15 +237,15 @@
                 <td style="width: 15%;" class="text-right" th:text="${#numbers.formatDecimal(invoice.subTotal, 1, 'COMMA', 2, 'POINT')}">10,000.00</td>
             </tr>
             <tr th:if="${invoice.cgstAmount != null && invoice.cgstAmount > 0}">
-                <td class="label">CGST</td>
+                <td class="label">CGST (<span th:text="${effectiveHalfTaxPct}"></span>%)</td>
                 <td class="text-right" th:text="${#numbers.formatDecimal(invoice.cgstAmount, 1, 'COMMA', 2, 'POINT')}">900.00</td>
             </tr>
             <tr th:if="${invoice.sgstAmount != null && invoice.sgstAmount > 0}">
-                <td class="label">SGST</td>
+                <td class="label">SGST (<span th:text="${effectiveHalfTaxPct}"></span>%)</td>
                 <td class="text-right" th:text="${#numbers.formatDecimal(invoice.sgstAmount, 1, 'COMMA', 2, 'POINT')}">900.00</td>
             </tr>
             <tr th:if="${invoice.igstAmount != null && invoice.igstAmount > 0}">
-                <td class="label">IGST</td>
+                <td class="label">IGST (<span th:text="${effectiveTaxPct}"></span>%)</td>
                 <td class="text-right" th:text="${#numbers.formatDecimal(invoice.igstAmount, 1, 'COMMA', 2, 'POINT')}">1,800.00</td>
             </tr>
             <tr>
