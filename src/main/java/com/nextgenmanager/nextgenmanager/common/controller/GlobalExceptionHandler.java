@@ -12,6 +12,7 @@ import com.nextgenmanager.nextgenmanager.purchase.exception.InvalidPurchaseOrder
 import com.nextgenmanager.nextgenmanager.purchase.exception.PurchaseOrderNotFoundException;
 import com.nextgenmanager.nextgenmanager.purchase.requisition.exception.InvalidPurchaseRequisitionStateException;
 import com.nextgenmanager.nextgenmanager.purchase.requisition.exception.PurchaseRequisitionNotFoundException;
+import com.nextgenmanager.nextgenmanager.sales.exception.InsufficientStockForDeliveryException;
 import com.nextgenmanager.nextgenmanager.sales.exception.InvalidSalesOrderStateException;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,6 +31,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -112,6 +114,19 @@ public class GlobalExceptionHandler {
         String message = Optional.ofNullable(ex.getMessage()).filter(m -> !m.isBlank()).orElse("Invalid data provided");
         return ResponseEntity.badRequest()
                 .body(buildError(HttpStatus.BAD_REQUEST, message, request));
+    }
+
+    @ExceptionHandler(InsufficientStockForDeliveryException.class)
+    public ResponseEntity<Map<String, Object>> handleInsufficientStockForDelivery(
+            InsufficientStockForDeliveryException ex, HttpServletRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", OffsetDateTime.now());
+        body.put("status", 422);
+        body.put("error", "Insufficient Stock");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getRequestURI());
+        body.put("storeRequestsCreated", ex.getShortfalls());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
     }
 
     @ExceptionHandler(InvalidSalesOrderStateException.class)

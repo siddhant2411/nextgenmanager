@@ -3,9 +3,13 @@ package com.nextgenmanager.nextgenmanager.sales.service;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.sales.events.SalesOrderApprovedEvent;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
+import com.nextgenmanager.nextgenmanager.items.model.ReplenishmentStrategy;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationStatus;
@@ -54,6 +58,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final SalesOrderNumberGenerator orderNumberGenerator;
     private final SalesOrderTaxCalculator taxCalculator;
     private final SalesPaymentRepository salesPaymentRepository;
+    private final DomainEventPublisher domainEventPublisher;
 
     @Override
     public SalesOrderDto createSalesOrder(SalesOrderCreateDto dto) {
@@ -165,13 +170,20 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         SalesOrderStatus current = order.getStatus();
         assertTransitionAllowed(current, newStatus);
 
+        boolean reservedNow = false;
         if (current == SalesOrderStatus.DRAFT && newStatus == SalesOrderStatus.APPROVED && isInventoryAction) {
             reserveInventory(order);
+            reservedNow = true;
         }
 
         order.setStatus(newStatus);
         salesOrderRepository.save(order);
         logger.info("SalesOrder {} status: {} -> {}", id, current, newStatus);
+
+        // Route any MAKE_TO_ORDER shortfalls after commit (same as approve()).
+        if (reservedNow) {
+            domainEventPublisher.publish(new SalesOrderApprovedEvent(order.getId()));
+        }
     }
 
     @Override
@@ -266,15 +278,48 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         so.setReference(dto.getReference());
     }
 
+    /**
+     * Route-aware reservation, run on SO approval.
+     *
+     * <p>MAKE_TO_ORDER — reserve available stock and raise an order-linked procurement
+     * need for the shortfall (routed to a Work Order or Purchase Requisition downstream).
+     *
+     * <p>MAKE_TO_STOCK — reserve only what is physically on hand; the shortfall is left to
+     * reorder rules, not chained to this order. No order-linked procurement need is raised.
+     */
     private void reserveInventory(SalesOrder order) {
+        String user = currentUsername();
         for (SalesOrderItem item : order.getItems()) {
             if (item.getItemRequestId() != null) continue; // already reserved
-            InventoryRequest req = inventoryInstanceService.requestInstance(
-                    item.getInventoryItem(),
-                    item.getQty().doubleValue(),
-                    InventoryRequestSource.SALES_ORDER, order.getId(),
-                    "USER", "NEW ORDER");
-            item.setItemRequestId(req.getId());
+
+            InventoryItem invItem = item.getInventoryItem();
+            double orderedQty = item.getQty() != null ? item.getQty().doubleValue() : 0.0;
+            if (orderedQty <= 0) continue;
+
+            ProductInventorySettings settings = invItem.getProductInventorySettings();
+            ReplenishmentStrategy strategy = (settings != null && settings.getReplenishmentStrategy() != null)
+                    ? settings.getReplenishmentStrategy()
+                    : ReplenishmentStrategy.MAKE_TO_STOCK;
+
+            if (strategy == ReplenishmentStrategy.MAKE_TO_ORDER) {
+                InventoryRequest req = inventoryInstanceService.requestInstance(
+                        invItem, orderedQty,
+                        InventoryRequestSource.SALES_ORDER, order.getId(),
+                        user, "MTO: sales order " + order.getOrderNumber());
+                item.setItemRequestId(req.getId());
+            } else {
+                // MAKE_TO_STOCK: reserve only on-hand qty; reorder rules replenish the rest.
+                double available = settings != null ? settings.getAvailableQuantity() : 0.0;
+                double toReserve = Math.min(orderedQty, available);
+                if (toReserve > 0) {
+                    InventoryRequest req = inventoryInstanceService.requestInstance(
+                            invItem, toReserve,
+                            InventoryRequestSource.SALES_ORDER, order.getId(),
+                            user, "MTS: reserve on-hand for sales order " + order.getOrderNumber());
+                    item.setItemRequestId(req.getId());
+                }
+                // else: nothing on hand; leave unreserved for the reorder engine.
+            }
         }
     }
 
@@ -308,8 +353,13 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         so.setStatus(SalesOrderStatus.APPROVED);
 
         reserveInventory(so);
-        logger.info("SO {} approved by {}", id, so.getApprovedBy());
-        return salesOrderMapper.toDTO(salesOrderRepository.save(so));
+        SalesOrder saved = salesOrderRepository.save(so);
+        logger.info("SO {} approved by {}", id, saved.getApprovedBy());
+
+        // Route any MAKE_TO_ORDER shortfalls to WO/PR after this transaction commits.
+        domainEventPublisher.publish(new SalesOrderApprovedEvent(saved.getId()));
+
+        return salesOrderMapper.toDTO(saved);
     }
 
     @Override

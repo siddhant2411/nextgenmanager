@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.accounting.voucher.repository;
 
+import com.nextgenmanager.nextgenmanager.accounting.coa.model.SubLedgerType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherLine;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -47,4 +48,23 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
     List<Object[]> ledgerStatement(@Param("accountId") Long accountId,
                                    @Param("from") LocalDate from,
                                    @Param("to") LocalDate to);
+
+    /**
+     * All posted lines for every party sub-ledger of a given type (CUSTOMER/VENDOR) up to asOf,
+     * ordered by account then chronologically — drives FIFO open-item ageing.
+     * Returns Object[]{ledgerAccountId, date, drAmount, crAmount}.
+     */
+    @Query("""
+        SELECT vl.ledgerAccount.id, v.date, vl.drAmount, vl.crAmount
+        FROM VoucherLine vl
+        JOIN vl.voucher v
+        WHERE vl.ledgerAccount.subLedgerType = :type
+          AND vl.ledgerAccount.deletedDate IS NULL
+          AND v.status = 'POSTED'
+          AND v.deletedDate IS NULL
+          AND vl.deletedDate IS NULL
+          AND v.date <= :asOf
+        ORDER BY vl.ledgerAccount.id ASC, v.date ASC, v.voucherNumber ASC
+        """)
+    List<Object[]> partyLedgerLines(@Param("type") SubLedgerType type, @Param("asOf") LocalDate asOf);
 }

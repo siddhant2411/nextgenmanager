@@ -2,21 +2,25 @@ package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
+import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest;
 import com.nextgenmanager.nextgenmanager.Inventory.model.NumberSequence;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.NumberSequenceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.sales.dto.DeliveryNoteCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.DeliveryNoteDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.DeliveryNoteItemDetailDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.DeliveryNoteItemDto;
+import com.nextgenmanager.nextgenmanager.sales.exception.InsufficientStockForDeliveryException;
 import com.nextgenmanager.nextgenmanager.sales.exception.InvalidSalesOrderStateException;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
 import com.nextgenmanager.nextgenmanager.sales.model.*;
 import com.nextgenmanager.nextgenmanager.sales.repository.DeliveryNoteRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -43,6 +47,7 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
     private final InventoryInstanceService inventoryInstanceService;
     private final InventoryTransactionService inventoryTransactionService;
     private final NumberSequenceRepository numberSequenceRepository;
+    private final StoreInventoryRequestService storeInventoryRequestService;
 
     @Override
     public DeliveryNoteDto createDeliveryNote(DeliveryNoteCreateDto dto) {
@@ -63,6 +68,57 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
 
         // Build a map: inventoryItemId -> total already dispatched across prior DNs
         Map<Integer, Double> alreadyDispatched = computeAlreadyDispatched(so);
+
+        // BACKSTOP (primary path is route-aware reservation at SO approval — see
+        // SalesOrderServiceImpl.reserveInventory). This catches the planning-failure cases that
+        // slip through: legacy SOs approved before route-aware reservation, MTS items that came up
+        // short, or direct DCs. For batch/serial tracked items with no pre-allocated instances and
+        // insufficient available stock, raise a procurement need (deduped per SO+item) and block the DN.
+        String currentUser = "system";
+        try {
+            currentUser = SecurityContextHolder.getContext().getAuthentication().getName();
+        } catch (Exception ignored) { }
+
+        List<InsufficientStockForDeliveryException.ShortfallDetail> shortfalls = new ArrayList<>();
+        for (DeliveryNoteItemDto itemDto : dto.getItems()) {
+            InventoryItem invItem = inventoryItemRepository.findById(itemDto.getInventoryItemId())
+                    .orElse(null);
+            if (invItem == null) continue;
+
+            ProductInventorySettings settings = invItem.getProductInventorySettings();
+            if (settings == null) continue;
+            if (!settings.isBatchTracked() && !settings.isSerialTracked()) continue;
+
+            // Tracked item — skip if the caller already provided specific instance IDs
+            boolean hasAllocatedInstances = itemDto.getAllocatedInstanceIds() != null
+                    && !itemDto.getAllocatedInstanceIds().isEmpty();
+            if (hasAllocatedInstances) continue;
+
+            SalesOrderItem soItem = soItemByItemId.get(itemDto.getInventoryItemId());
+            // Skip if a prior inventory request already exists for this SO line
+            if (soItem != null && soItem.getItemRequestId() != null) continue;
+
+            double available = settings.getAvailableQuantity();
+            if (available < itemDto.getQuantityDelivered()) {
+                InventoryRequest storeRequest = storeInventoryRequestService.createOrFetchStoreRequest(
+                        invItem.getInventoryItemId(),
+                        itemDto.getQuantityDelivered(),
+                        dto.getSalesOrderId(),
+                        soItem != null ? soItem.getId() : null,
+                        currentUser);
+                shortfalls.add(new InsufficientStockForDeliveryException.ShortfallDetail(
+                        invItem.getItemCode(),
+                        invItem.getName(),
+                        itemDto.getQuantityDelivered(),
+                        available,
+                        storeRequest.getId(),
+                        storeRequest.getReferenceNumber()));
+            }
+        }
+
+        if (!shortfalls.isEmpty()) {
+            throw new InsufficientStockForDeliveryException(shortfalls);
+        }
 
         DeliveryNote dn = new DeliveryNote();
         dn.setSalesOrder(so);
@@ -117,6 +173,13 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                 consumedInstances = inventoryInstanceService.consumeInventoryInstance(
                         invItem, (double) itemDto.getQuantityDelivered(), soItem.getItemRequestId(), dnNo);
             } else {
+                ProductInventorySettings settings = invItem.getProductInventorySettings();
+                boolean isTracked = settings != null && (settings.isBatchTracked() || settings.isSerialTracked());
+                if (isTracked) {
+                    throw new InvalidSalesOrderStateException(
+                            "Item " + invItem.getItemCode() + " is batch/serial tracked. "
+                            + "Please select specific batch/serial instances to dispatch.");
+                }
                 consumedInstances = new ArrayList<>();
             }
 

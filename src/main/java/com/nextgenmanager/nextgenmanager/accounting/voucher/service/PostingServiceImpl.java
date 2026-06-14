@@ -68,23 +68,28 @@ public class PostingServiceImpl implements PostingService {
         List<VoucherLine> lines = buildLines(voucher, draft.getLines());
         voucher.setLines(lines);
 
-        // 5. Determine status via approval engine
-        Map<String, Object> context = new HashMap<>();
-        context.put("amount", lines.stream().map(VoucherLine::getDrAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
-        context.put("voucherType", draft.getVoucherType().name());
+        // 5. Determine status. The MANUAL_VOUCHER approval gate applies only to human-entered
+        //    vouchers. Source-document auto-posts (sourceDocType set) bypass it — the originating
+        //    document has its own approval, and routing GL postings through it would strand them
+        //    in PENDING_APPROVAL and out of the Trial Balance the moment a policy is configured.
+        boolean isManual = draft.getSourceDocType() == null;
+        if (isManual) {
+            Map<String, Object> context = new HashMap<>();
+            context.put("amount", lines.stream().map(VoucherLine::getDrAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add));
+            context.put("voucherType", draft.getVoucherType().name());
 
-        List<RequiredStep> steps = approvalEngine.evaluate("MANUAL_VOUCHER", context);
-        if (steps.isEmpty()) {
-            voucher.setStatus(VoucherStatus.POSTED);
-        } else {
-            voucher.setStatus(VoucherStatus.PENDING_APPROVAL);
-            // Create the approval request (sourcing the voucher id after save)
-            Voucher saved = voucherRepo.save(voucher);
-            approvalEngine.submit("MANUAL_VOUCHER", saved.getId(), context, username);
-            return toDto(saved);
+            List<RequiredStep> steps = approvalEngine.evaluate("MANUAL_VOUCHER", context);
+            if (!steps.isEmpty()) {
+                voucher.setStatus(VoucherStatus.PENDING_APPROVAL);
+                // Create the approval request (sourcing the voucher id after save)
+                Voucher saved = voucherRepo.save(voucher);
+                approvalEngine.submit("MANUAL_VOUCHER", saved.getId(), context, username);
+                return toDto(saved);
+            }
         }
 
+        voucher.setStatus(VoucherStatus.POSTED);
         return toDto(voucherRepo.save(voucher));
     }
 

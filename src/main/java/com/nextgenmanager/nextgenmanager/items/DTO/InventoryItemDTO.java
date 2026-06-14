@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.items.DTO;
 
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
+import com.nextgenmanager.nextgenmanager.items.model.ReplenishmentStrategy;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import lombok.*;
 
@@ -31,6 +32,7 @@ public class InventoryItemDTO {
     private String drawingNumber;
     private boolean manufactured;
     private boolean purchased;
+    private ReplenishmentStrategy replenishmentStrategy;
     private double leadTime;
     private Double standardCost;
     private Long drawingFileId;
