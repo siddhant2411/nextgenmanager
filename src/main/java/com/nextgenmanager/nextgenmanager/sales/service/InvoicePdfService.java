@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
+import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.purchase.service.AmountInWords;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
@@ -18,6 +19,7 @@ import org.thymeleaf.context.Context;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -64,13 +66,41 @@ public class InvoicePdfService {
         if (company.getState() != null && !company.getState().isBlank())
             companyAddress += (companyAddress.isEmpty() ? "" : ", ") + company.getState();
 
+        List<ContactAddress> addresses = salesOrder.getCustomer() != null
+                ? salesOrder.getCustomer().getAddresses() : List.of();
+        ContactAddress addr = addresses.stream()
+                .filter(ContactAddress::isDefault)
+                .findFirst()
+                .orElseGet(() -> addresses.isEmpty() ? null : addresses.get(0));
+        String billingAddress = addr != null
+                ? Stream.of(addr.getStreet1(), addr.getStreet2(), addr.getCity(), addr.getState())
+                        .filter(s -> s != null && !s.isBlank())
+                        .collect(Collectors.joining(", "))
+                        + (addr.getPinCode() != null && !addr.getPinCode().isBlank() ? " - " + addr.getPinCode() : "")
+                : "";
+
         Context ctx = new Context();
         ctx.setVariable("salesOrder", salesOrder);
         ctx.setVariable("company", company);
         ctx.setVariable("companyAddress", companyAddress);
+        ctx.setVariable("billingAddress", billingAddress);
         ctx.setVariable("itemPages", paginateItems(salesOrder.getItems()));
         ctx.setVariable("TaxType", TaxType.class);
         ctx.setVariable("amountInWords", AmountInWords.convert(salesOrder.getTotalPayableAmount()));
+
+        BigDecimal cgstAmt  = salesOrder.getCgstAmount()  != null ? salesOrder.getCgstAmount()  : BigDecimal.ZERO;
+        BigDecimal sgstAmt  = salesOrder.getSgstAmount()  != null ? salesOrder.getSgstAmount()  : BigDecimal.ZERO;
+        BigDecimal igstAmt  = salesOrder.getIgstAmount()  != null ? salesOrder.getIgstAmount()  : BigDecimal.ZERO;
+        BigDecimal taxableVal = salesOrder.getTaxableValue() != null ? salesOrder.getTaxableValue() : BigDecimal.ZERO;
+        BigDecimal totalTax = cgstAmt.add(sgstAmt).add(igstAmt);
+        BigDecimal effectiveTaxPct = taxableVal.signum() > 0
+                ? totalTax.multiply(BigDecimal.valueOf(100)).divide(taxableVal, 2, RoundingMode.HALF_UP).stripTrailingZeros()
+                : BigDecimal.ZERO;
+        BigDecimal effectiveHalfTaxPct = effectiveTaxPct.signum() > 0
+                ? effectiveTaxPct.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP).stripTrailingZeros()
+                : BigDecimal.ZERO;
+        ctx.setVariable("effectiveTaxPct", effectiveTaxPct);
+        ctx.setVariable("effectiveHalfTaxPct", effectiveHalfTaxPct);
 
         if (includePayments) {
             Long orderId = salesOrder.getId();

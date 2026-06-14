@@ -12,6 +12,10 @@ import com.nextgenmanager.nextgenmanager.purchase.dto.*;
 import com.nextgenmanager.nextgenmanager.purchase.model.*;
 import com.nextgenmanager.nextgenmanager.purchase.repository.DebitNoteRepository;
 import com.nextgenmanager.nextgenmanager.purchase.repository.PurchaseOrderRepository;
+import com.nextgenmanager.nextgenmanager.purchase.events.DebitNoteConfirmedEvent;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.common.events.DocumentVoidedEvent;
+import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,6 +37,7 @@ public class DebitNoteServiceImpl implements DebitNoteService {
     private final InventoryItemRepository itemRepo;
     private final InventoryTransactionService txService;
     private final DebitNoteNumberGenerator numberGenerator;
+    private final DomainEventPublisher domainEventPublisher;
 
     public DebitNoteServiceImpl(DebitNoteRepository debitNoteRepo,
                                 PurchaseOrderRepository poRepo,
@@ -40,7 +45,8 @@ public class DebitNoteServiceImpl implements DebitNoteService {
                                 ContactRepository contactRepo,
                                 InventoryItemRepository itemRepo,
                                 InventoryTransactionService txService,
-                                DebitNoteNumberGenerator numberGenerator) {
+                                DebitNoteNumberGenerator numberGenerator,
+                                DomainEventPublisher domainEventPublisher) {
         this.debitNoteRepo   = debitNoteRepo;
         this.poRepo          = poRepo;
         this.grnRepo         = grnRepo;
@@ -48,6 +54,7 @@ public class DebitNoteServiceImpl implements DebitNoteService {
         this.itemRepo        = itemRepo;
         this.txService       = txService;
         this.numberGenerator = numberGenerator;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -157,7 +164,11 @@ public class DebitNoteServiceImpl implements DebitNoteService {
         }
 
         dn.setStatus(DebitNoteStatus.CONFIRMED);
-        return toResponseDTO(debitNoteRepo.save(dn));
+        DebitNote saved = debitNoteRepo.save(dn);
+
+        // Accounting auto-posts the DEBIT_NOTE voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new DebitNoteConfirmedEvent(saved.getId()));
+        return toResponseDTO(saved);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -189,7 +200,10 @@ public class DebitNoteServiceImpl implements DebitNoteService {
 
         dn.setStatus(DebitNoteStatus.CANCELLED);
         dn.setDeletedDate(LocalDate.now());
-        return toResponseDTO(debitNoteRepo.save(dn));
+        DebitNote saved = debitNoteRepo.save(dn);
+        // Accounting reverses the DEBIT_NOTE voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new DocumentVoidedEvent(SourceDocTypes.DEBIT_NOTE, id, "Debit note cancelled"));
+        return toResponseDTO(saved);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

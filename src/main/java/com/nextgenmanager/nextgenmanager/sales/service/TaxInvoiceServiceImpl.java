@@ -11,6 +11,10 @@ import com.nextgenmanager.nextgenmanager.sales.repository.TaxInvoiceRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.DeliveryNoteRepository;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.common.events.DocumentVoidedEvent;
+import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
+import com.nextgenmanager.nextgenmanager.sales.events.TaxInvoiceIssuedEvent;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +41,7 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
     private final TaxInvoiceNumberGenerator numberGenerator;
     private final CompanyDetailsRepository companyDetailsRepository;
     private final DeliveryNoteRepository deliveryNoteRepository;
+    private final DomainEventPublisher domainEventPublisher;
 
     @Override
     public TaxInvoiceDto createFromSalesOrder(TaxInvoiceCreateDto dto) {
@@ -106,6 +111,9 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
 
         TaxInvoice saved = taxInvoiceRepository.save(invoice);
         logger.info("TaxInvoice {} created for SO {}", saved.getInvoiceNumber(), so.getOrderNumber());
+
+        // Accounting auto-posts the SALES voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new TaxInvoiceIssuedEvent(saved.getId()));
         return toDto(saved);
     }
 
@@ -172,7 +180,10 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
         invoice.setStatus(TaxInvoiceStatus.CANCELLED);
         invoice.setDeletedDate(new Date());
         logger.info("TaxInvoice {} cancelled", invoice.getInvoiceNumber());
-        return toDto(taxInvoiceRepository.save(invoice));
+        TaxInvoice saved = taxInvoiceRepository.save(invoice);
+        // Accounting reverses the SALES voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new DocumentVoidedEvent(SourceDocTypes.TAX_INVOICE, id, "Invoice cancelled"));
+        return toDto(saved);
     }
 
     @Override

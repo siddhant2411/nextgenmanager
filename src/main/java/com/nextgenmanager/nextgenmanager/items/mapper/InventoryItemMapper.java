@@ -14,6 +14,7 @@ public interface InventoryItemMapper {
     @Mapping(target = "drawingNumber", source = "productSpecification.drawingNumber")
     @Mapping(target = "manufactured", source = "productInventorySettings.manufactured")
     @Mapping(target = "purchased", source = "productInventorySettings.purchased")
+    @Mapping(target = "replenishmentStrategy", source = "productInventorySettings.replenishmentStrategy")
     @Mapping(target = "leadTime", source = "productInventorySettings.leadTime")
     @Mapping(target = "standardCost", source = "productFinanceSettings.standardCost")
     InventoryItemDTO toDTO(InventoryItem item);

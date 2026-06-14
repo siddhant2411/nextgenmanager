@@ -1,5 +1,8 @@
 package com.nextgenmanager.nextgenmanager.common.controller;
 
+import com.nextgenmanager.nextgenmanager.accounting.voucher.exception.InvalidVoucherException;
+import com.nextgenmanager.nextgenmanager.accounting.voucher.exception.LockedPeriodException;
+import com.nextgenmanager.nextgenmanager.accounting.voucher.exception.UnbalancedVoucherException;
 import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
 import com.nextgenmanager.nextgenmanager.bom.service.BusinessException;
 import com.nextgenmanager.nextgenmanager.bom.service.InvalidDataException;
@@ -9,6 +12,7 @@ import com.nextgenmanager.nextgenmanager.purchase.exception.InvalidPurchaseOrder
 import com.nextgenmanager.nextgenmanager.purchase.exception.PurchaseOrderNotFoundException;
 import com.nextgenmanager.nextgenmanager.purchase.requisition.exception.InvalidPurchaseRequisitionStateException;
 import com.nextgenmanager.nextgenmanager.purchase.requisition.exception.PurchaseRequisitionNotFoundException;
+import com.nextgenmanager.nextgenmanager.sales.exception.InsufficientStockForDeliveryException;
 import com.nextgenmanager.nextgenmanager.sales.exception.InvalidSalesOrderStateException;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +31,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -111,6 +116,19 @@ public class GlobalExceptionHandler {
                 .body(buildError(HttpStatus.BAD_REQUEST, message, request));
     }
 
+    @ExceptionHandler(InsufficientStockForDeliveryException.class)
+    public ResponseEntity<Map<String, Object>> handleInsufficientStockForDelivery(
+            InsufficientStockForDeliveryException ex, HttpServletRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", OffsetDateTime.now());
+        body.put("status", 422);
+        body.put("error", "Insufficient Stock");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getRequestURI());
+        body.put("storeRequestsCreated", ex.getShortfalls());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+    }
+
     @ExceptionHandler(InvalidSalesOrderStateException.class)
     public ResponseEntity<ApiError> handleInvalidSalesOrderState(InvalidSalesOrderStateException ex, HttpServletRequest request) {
         String message = Optional.ofNullable(ex.getMessage()).filter(m -> !m.isBlank()).orElse("This action is not allowed for the current sales order status");
@@ -145,6 +163,24 @@ public class GlobalExceptionHandler {
         String message = Optional.ofNullable(ex.getMessage()).filter(m -> !m.isBlank()).orElse("BOM operation failed");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(buildError(HttpStatus.INTERNAL_SERVER_ERROR, message, request));
+    }
+
+    @ExceptionHandler(UnbalancedVoucherException.class)
+    public ResponseEntity<ApiError> handleUnbalancedVoucher(UnbalancedVoucherException ex, HttpServletRequest request) {
+        return ResponseEntity.badRequest()
+                .body(buildError(HttpStatus.BAD_REQUEST, ex.getMessage(), request));
+    }
+
+    @ExceptionHandler(InvalidVoucherException.class)
+    public ResponseEntity<ApiError> handleInvalidVoucher(InvalidVoucherException ex, HttpServletRequest request) {
+        return ResponseEntity.badRequest()
+                .body(buildError(HttpStatus.BAD_REQUEST, ex.getMessage(), request));
+    }
+
+    @ExceptionHandler(LockedPeriodException.class)
+    public ResponseEntity<ApiError> handleLockedPeriod(LockedPeriodException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(buildError(HttpStatus.CONFLICT, ex.getMessage(), request));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

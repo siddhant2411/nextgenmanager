@@ -1,6 +1,10 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.common.events.DocumentVoidedEvent;
+import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
+import com.nextgenmanager.nextgenmanager.sales.events.SalesPaymentReceivedEvent;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesPaymentCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesPaymentDto;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
@@ -21,6 +25,7 @@ public class SalesPaymentServiceImpl implements SalesPaymentService {
 
     private final SalesPaymentRepository paymentRepository;
     private final SalesOrderRepository salesOrderRepository;
+    private final DomainEventPublisher domainEventPublisher;
 
     @Override
     public SalesPaymentDto recordPayment(Long salesOrderId, SalesPaymentCreateDto dto) {
@@ -36,6 +41,9 @@ public class SalesPaymentServiceImpl implements SalesPaymentService {
         payment.setNotes(dto.getNotes());
 
         SalesPayment saved = paymentRepository.save(payment);
+
+        // Accounting auto-posts the RECEIPT voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new SalesPaymentReceivedEvent(saved.getId()));
         return toDto(saved, order.getOrderNumber());
     }
 
@@ -52,6 +60,9 @@ public class SalesPaymentServiceImpl implements SalesPaymentService {
         SalesPayment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
         paymentRepository.delete(payment);
+
+        // Accounting reverses the RECEIPT voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new DocumentVoidedEvent(SourceDocTypes.SALES_PAYMENT, paymentId, "Payment deleted"));
     }
 
     @Override

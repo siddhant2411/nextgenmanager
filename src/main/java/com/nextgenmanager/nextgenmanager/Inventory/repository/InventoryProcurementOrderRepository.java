@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.Inventory.repository;
 
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryProcurementOrder;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryProcurementStatus;
+import com.nextgenmanager.nextgenmanager.Inventory.model.ProcurementDecision;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +14,10 @@ import java.util.List;
 public interface InventoryProcurementOrderRepository extends JpaRepository<InventoryProcurementOrder, Long> {
 
     List<InventoryProcurementOrder> findByInventoryRequestId(Long requestId);
+
+    /** Planning Desk queue: needs awaiting a make/buy decision. */
+    List<InventoryProcurementOrder> findByProcurementDecisionAndInventoryProcurementStatus(
+            ProcurementDecision procurementDecision, InventoryProcurementStatus status);
 
     @Query(value = "SELECT ipo.* FROM inventoryProcurementOrder ipo " +
             "LEFT JOIN inventoryItem ii ON ii.inventoryItemId = ipo.inventoryItemProcurementRequest " +

@@ -37,6 +37,16 @@ public class ProductInventorySettings {
 
     private boolean manufactured;
 
+    /**
+     * Replenishment route for this item. Drives how a sales-order shortfall is handled:
+     * MAKE_TO_STOCK reserves stock and relies on reorder rules; MAKE_TO_ORDER raises a
+     * procurement need chained to the order. Defaults to MAKE_TO_STOCK to preserve
+     * existing reserve-from-stock behaviour.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ReplenishmentStrategy replenishmentStrategy = ReplenishmentStrategy.MAKE_TO_STOCK;
+
     private double availableQuantity;
 
     private double orderedQuantity;

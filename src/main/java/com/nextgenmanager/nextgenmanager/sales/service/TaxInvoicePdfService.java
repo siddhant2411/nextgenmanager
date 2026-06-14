@@ -15,6 +15,7 @@ import org.thymeleaf.context.Context;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -70,6 +71,27 @@ public class TaxInvoicePdfService {
             hsnMap.put(hsn, summary);
         });
         context.setVariable("hsnSummary", hsnMap);
+
+        // Derive taxable base from line items (more reliable than stored header field)
+        BigDecimal computedTaxable = hsnMap.values().stream()
+                .map(HsnSummary::getTaxableValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Fall back to stored taxableValue if line-item derivation is zero (e.g. no items yet)
+        BigDecimal invTaxable = computedTaxable.signum() > 0 ? computedTaxable
+                : (invoice.getTaxableValue() != null ? invoice.getTaxableValue() : BigDecimal.ZERO);
+
+        BigDecimal invCgst = invoice.getCgstAmount() != null ? invoice.getCgstAmount() : BigDecimal.ZERO;
+        BigDecimal invSgst = invoice.getSgstAmount() != null ? invoice.getSgstAmount() : BigDecimal.ZERO;
+        BigDecimal invIgst = invoice.getIgstAmount() != null ? invoice.getIgstAmount() : BigDecimal.ZERO;
+        BigDecimal invTotalTax = invCgst.add(invSgst).add(invIgst);
+        BigDecimal invEffectiveTaxPct = invTaxable.signum() > 0
+                ? invTotalTax.multiply(BigDecimal.valueOf(100)).divide(invTaxable, 2, RoundingMode.HALF_UP).stripTrailingZeros()
+                : BigDecimal.ZERO;
+        BigDecimal invEffectiveHalfTaxPct = invEffectiveTaxPct.signum() > 0
+                ? invEffectiveTaxPct.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP).stripTrailingZeros()
+                : BigDecimal.ZERO;
+        context.setVariable("effectiveTaxPct", invEffectiveTaxPct);
+        context.setVariable("effectiveHalfTaxPct", invEffectiveHalfTaxPct);
 
         String html = templateEngine.process("invoice/tax_invoice_premium", context)
                 .replace("&nbsp;", "&#160;");

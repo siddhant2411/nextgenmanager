@@ -3,6 +3,8 @@ package com.nextgenmanager.nextgenmanager.purchase.service;
 import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptItem;
 import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptNote;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.GoodsReceiptNoteRepository;
+import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
+import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.purchase.dto.CreateVendorInvoiceRequest;
@@ -15,9 +17,15 @@ import com.nextgenmanager.nextgenmanager.purchase.mapper.VendorInvoiceMapper;
 import com.nextgenmanager.nextgenmanager.purchase.model.*;
 import com.nextgenmanager.nextgenmanager.purchase.repository.PurchaseOrderRepository;
 import com.nextgenmanager.nextgenmanager.purchase.repository.VendorInvoiceRepository;
+import com.nextgenmanager.nextgenmanager.purchase.events.VendorInvoicePostedEvent;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.common.events.DocumentVoidedEvent;
+import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
+import io.minio.GetObjectResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -34,17 +42,23 @@ public class VendorInvoiceServiceImpl implements VendorInvoiceService {
     private final GoodsReceiptNoteRepository grnRepo;
     private final InventoryItemRepository itemRepo;
     private final VendorInvoiceMapper mapper;
+    private final DomainEventPublisher domainEventPublisher;
+    private final FileStorageService fileStorageService;
 
     public VendorInvoiceServiceImpl(VendorInvoiceRepository invoiceRepo,
                                     PurchaseOrderRepository poRepo,
                                     GoodsReceiptNoteRepository grnRepo,
                                     InventoryItemRepository itemRepo,
-                                    VendorInvoiceMapper mapper) {
+                                    VendorInvoiceMapper mapper,
+                                    DomainEventPublisher domainEventPublisher,
+                                    FileStorageService fileStorageService) {
         this.invoiceRepo = invoiceRepo;
         this.poRepo      = poRepo;
         this.grnRepo     = grnRepo;
         this.itemRepo    = itemRepo;
         this.mapper      = mapper;
+        this.domainEventPublisher = domainEventPublisher;
+        this.fileStorageService   = fileStorageService;
     }
 
     @Override
@@ -137,7 +151,11 @@ public class VendorInvoiceServiceImpl implements VendorInvoiceService {
             throw new InvalidPurchaseOrderStateException("Only DRAFT invoices can be posted.");
         }
         invoice.setStatus(VendorInvoiceStatus.POSTED);
-        return mapper.toDto(invoiceRepo.save(invoice));
+        VendorInvoice saved = invoiceRepo.save(invoice);
+
+        // Accounting auto-posts the PURCHASE voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new VendorInvoicePostedEvent(saved.getId()));
+        return mapper.toDto(saved);
     }
 
     @Override
@@ -147,7 +165,40 @@ public class VendorInvoiceServiceImpl implements VendorInvoiceService {
             throw new InvalidPurchaseOrderStateException("Invoice is already cancelled.");
         }
         invoice.setStatus(VendorInvoiceStatus.CANCELLED);
-        return mapper.toDto(invoiceRepo.save(invoice));
+        VendorInvoice saved = invoiceRepo.save(invoice);
+        // Accounting reverses the PURCHASE voucher (listener runs after this tx commits).
+        domainEventPublisher.publish(new DocumentVoidedEvent(SourceDocTypes.VENDOR_INVOICE, id, "Vendor invoice cancelled"));
+        return mapper.toDto(saved);
+    }
+
+    // ── Attachments ──────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<FileAttachment> getAttachments(Long invoiceId) {
+        return fileStorageService.findAttachmentsByTypeAndId("VendorInvoice", invoiceId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public FileAttachment getAttachment(Long fileId) {
+        return fileStorageService.getFileById(fileId);
+    }
+
+    @Override
+    public void uploadAttachment(Long invoiceId, MultipartFile file) throws Exception {
+        findActive(invoiceId); // validate invoice exists
+        fileStorageService.uploadFile(file, "vendor-invoice", "VendorInvoice", invoiceId, currentUser());
+    }
+
+    @Override
+    public void deleteAttachment(Long fileId) throws Exception {
+        fileStorageService.deleteAttachment(fileId);
+    }
+
+    @Override
+    public GetObjectResponse downloadAttachment(Long fileId) throws Exception {
+        return fileStorageService.downloadById(fileId);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
