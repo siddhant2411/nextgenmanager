@@ -38,6 +38,8 @@ public interface EnquiryService {
 
     Long convertToQuotation(Long id);
 
+    java.util.List<java.util.Map<String, Object>> getLinkedQuotations(Long enquiryId);
+
     // Bulk operations
     void bulkDelete(BulkDeleteRequest request);
 
