@@ -165,6 +165,17 @@ public class EnquiryController {
         }
     }
 
+    @GetMapping("/{id}/quotations")
+    public ResponseEntity<?> getLinkedQuotations(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(enquiryService.getLinkedQuotations(id));
+        } catch (Exception e) {
+            logger.error("Error fetching linked quotations for enquiry {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", "Failed to fetch linked quotations"));
+        }
+    }
+
     @PostMapping("/convert-to-quotation/{id}")
     public ResponseEntity<?> convertToQuotation(@PathVariable Long id) {
         try {

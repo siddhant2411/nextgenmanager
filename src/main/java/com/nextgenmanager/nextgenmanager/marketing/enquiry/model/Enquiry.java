@@ -86,6 +86,9 @@ public class Enquiry {
 
     private String leadQuality; // QUALIFIED, UNQUALIFIED, UNKNOWN
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     private Date deletedDate;
 
     private String createdBy;

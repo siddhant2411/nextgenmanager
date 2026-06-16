@@ -213,6 +213,7 @@ public class EnquiryServiceImpl implements EnquiryService {
         existingEnquiry.setState(updatedEnquiry.getState());
         existingEnquiry.setAssignedTo(updatedEnquiry.getAssignedTo());
         existingEnquiry.setLeadQuality(updatedEnquiry.getLeadQuality());
+        existingEnquiry.setDescription(updatedEnquiry.getDescription());
     }
 
     private void updateConversationRecords(Enquiry existingEnquiry, List<EnquiryConversationRecord> updatedRecords) {
@@ -448,6 +449,23 @@ public class EnquiryServiceImpl implements EnquiryService {
         
         logger.info("Enquiry converted successfully. New Quotation ID: {}", saved.getId());
         return saved.getId();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.List<java.util.Map<String, Object>> getLinkedQuotations(Long enquiryId) {
+        return quotationRepository.findByEnquiryId(enquiryId).stream()
+                .filter(q -> q.getDeletedDate() == null)
+                .map(q -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id", q.getId());
+                    m.put("qtnNo", q.getQtnNo());
+                    m.put("qtnDate", q.getQtnDate());
+                    m.put("status", q.getQuotationStatus());
+                    m.put("totalAmount", q.getTotalAmount());
+                    return m;
+                })
+                .collect(java.util.stream.Collectors.toList());
     }
 
     @Override
