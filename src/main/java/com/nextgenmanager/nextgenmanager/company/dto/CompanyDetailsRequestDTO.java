@@ -20,6 +20,9 @@ public record CompanyDetailsRequestDTO(
         @Size(max = 10, message = "PAN must be 10 characters or less")
         String panNumber,
 
+        @Size(max = 15, message = "TAN must be 15 characters or less")
+        String tan,
+
         @Size(max = 21, message = "CIN must be 21 characters or less")
         String cinNumber,
 

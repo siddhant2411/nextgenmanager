@@ -49,6 +49,17 @@ public class LedgerResolver {
     public static final String INVENTORY_ADJUSTMENT = "5063E";       // expense (write-off / loss)
     public static final String INVENTORY_ADJUSTMENT_GAIN = "4024I";  // income (write-up / gain)
     public static final String OPENING_BALANCE_EQUITY = "3022E";     // cutover bridge for opening stock
+    // ─ Statutory deductions (Phase 4) ─
+    public static final String TDS_PAYABLE = "9015";
+    // ─ Payroll (Phase 4) ─
+    public static final String SALARIES_WAGES = "5030E";
+    public static final String SALARY_PAYABLE = "9031";
+    public static final String PF_PAYABLE = "9017";
+    public static final String ESI_PAYABLE = "9018";
+    public static final String PT_PAYABLE = "9019";
+    // ─ Depreciation (Phase 4) ─
+    public static final String DEPRECIATION_EXPENSE = "5070E";
+    public static final String ACCUMULATED_DEPRECIATION = "1020";
 
     private final LedgerAccountRepository ledgerRepo;
 
@@ -82,6 +93,20 @@ public class LedgerResolver {
     public LedgerAccount inventoryAdjustment()     { return byCode(INVENTORY_ADJUSTMENT); }
     public LedgerAccount inventoryAdjustmentGain() { return byCode(INVENTORY_ADJUSTMENT_GAIN); }
     public LedgerAccount openingBalanceEquity()    { return byCode(OPENING_BALANCE_EQUITY); }
+
+    // ─ Statutory deductions (Phase 4) ─
+    public LedgerAccount tdsPayable()              { return byCode(TDS_PAYABLE); }
+
+    // ─ Payroll (Phase 4) ─
+    public LedgerAccount salariesAndWages()        { return byCode(SALARIES_WAGES); }
+    public LedgerAccount salaryPayable()           { return byCode(SALARY_PAYABLE); }
+    public LedgerAccount pfPayable()               { return byCode(PF_PAYABLE); }
+    public LedgerAccount esiPayable()              { return byCode(ESI_PAYABLE); }
+    public LedgerAccount professionalTaxPayable()  { return byCode(PT_PAYABLE); }
+
+    // ─ Depreciation (Phase 4) ─
+    public LedgerAccount depreciationExpense()       { return byCode(DEPRECIATION_EXPENSE); }
+    public LedgerAccount accumulatedDepreciation()   { return byCode(ACCUMULATED_DEPRECIATION); }
 
     /**
      * Resolves an item's "home" stock ledger from its {@link ItemType}: finished/semi-finished

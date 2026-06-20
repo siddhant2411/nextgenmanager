@@ -109,4 +109,40 @@ class VendorPaymentPostingListenerTest {
         assertThat(d.getLines()).anyMatch(l -> l.getLedgerAccountId().equals(4010L) &&
                 l.getCrAmount().compareTo(new BigDecimal("250.00")) == 0);
     }
+
+    @Test
+    void tdsPayment_withholdsTds_creditsTdsPayableAndNetBank() {
+        Contact vendor = new Contact();
+        vendor.setCompanyName("Contractor Ltd");
+        VendorPayment p = payment(PaymentMode.NEFT, new BigDecimal("100000.00"), vendor);
+        p.setTdsSectionCode("194C");
+        p.setTdsRate(new BigDecimal("2.000"));
+        p.setTdsAmount(new BigDecimal("2000.00"));
+
+        LedgerAccount bank = ledger(4011L), party = ledger(8001L), tds = ledger(9015L);
+        when(paymentRepo.findById(95L)).thenReturn(Optional.of(p));
+        when(coaService.getOrCreatePartyLedger(vendor, SubLedgerType.VENDOR)).thenReturn(party);
+        when(ledgers.bankPrimary()).thenReturn(bank);
+        when(ledgers.tdsPayable()).thenReturn(tds);
+
+        listener.onVendorPaymentMade(new VendorPaymentMadeEvent(95L));
+
+        ArgumentCaptor<VoucherDraft> cap = ArgumentCaptor.forClass(VoucherDraft.class);
+        verify(postingService).post(cap.capture(), eq("SYSTEM"));
+        VoucherDraft d = cap.getValue();
+
+        assertThat(d.getLines()).hasSize(3);
+        // Vendor settled at gross
+        VoucherLineDraft vendorLine = d.getLines().stream()
+                .filter(l -> l.getLedgerAccountId().equals(8001L)).findFirst().orElseThrow();
+        assertThat(vendorLine.getDrAmount()).isEqualByComparingTo("100000.00");
+        // TDS withheld
+        VoucherLineDraft tdsLine = d.getLines().stream()
+                .filter(l -> l.getLedgerAccountId().equals(9015L)).findFirst().orElseThrow();
+        assertThat(tdsLine.getCrAmount()).isEqualByComparingTo("2000.00");
+        // Bank pays the net
+        VoucherLineDraft bankLine = d.getLines().stream()
+                .filter(l -> l.getLedgerAccountId().equals(4011L)).findFirst().orElseThrow();
+        assertThat(bankLine.getCrAmount()).isEqualByComparingTo("98000.00");
+    }
 }

@@ -18,4 +18,12 @@ public final class SourceDocTypes {
 
     /** A single valued stock movement (one {@code InventoryLedger} row) — Phase 3 perpetual inventory. */
     public static final String INVENTORY_MOVEMENT = "INVENTORY_MOVEMENT";
+
+    // ─ Phase 4 (statutory) ─
+    /** A TDS challan deposit — clears TDS Payable against the bank. */
+    public static final String TDS_CHALLAN = "TDS_CHALLAN";
+    /** A monthly payroll summary voucher. */
+    public static final String PAYROLL = "PAYROLL";
+    /** A periodic depreciation voucher. */
+    public static final String DEPRECIATION = "DEPRECIATION";
 }
