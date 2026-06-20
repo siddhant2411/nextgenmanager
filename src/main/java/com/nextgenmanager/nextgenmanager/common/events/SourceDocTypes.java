@@ -15,4 +15,7 @@ public final class SourceDocTypes {
     public static final String VENDOR_INVOICE = "VENDOR_INVOICE";
     public static final String VENDOR_PAYMENT = "VENDOR_PAYMENT";
     public static final String DEBIT_NOTE = "DEBIT_NOTE";
+
+    /** A single valued stock movement (one {@code InventoryLedger} row) — Phase 3 perpetual inventory. */
+    public static final String INVENTORY_MOVEMENT = "INVENTORY_MOVEMENT";
 }

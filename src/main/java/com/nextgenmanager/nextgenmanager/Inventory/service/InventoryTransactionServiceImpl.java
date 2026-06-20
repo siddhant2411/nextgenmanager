@@ -1,10 +1,13 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.events.InventoryMovementPostedEvent;
 import com.nextgenmanager.nextgenmanager.Inventory.model.*;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryLedgerRepository;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings;
 import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import jakarta.transaction.Transactional;
@@ -30,6 +33,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
     @Autowired private InventoryLedgerRepository inventoryLedgerRepository;
     @Autowired private InventoryInstanceRepository inventoryInstanceRepository;
     @Autowired private BatchSerialService batchSerialService;
+    @Autowired private DomainEventPublisher eventPublisher;
 
     // ─── RESERVE ─────────────────────────────────────────────────────────────
 
@@ -312,12 +316,13 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
     }
 
     private void writeLedger(InventoryTransactionDTO req, InventoryItem item, double movement, double closingBalance) {
+        double rate = effectiveRate(req, item);
         InventoryLedger ledger = new InventoryLedger();
         ledger.setMovementDate(LocalDate.now());
         ledger.setTransactionType(req.getTransactionType());
         ledger.setQuantity(movement);
-        ledger.setRate(req.getCostPerUnit());
-        ledger.setAmount(Math.abs(movement) * req.getCostPerUnit());
+        ledger.setRate(rate);
+        ledger.setAmount(Math.abs(movement) * rate);
         ledger.setValuationMethod("AVERAGE");
         ledger.setWarehouse(req.getWarehouse());
         ledger.setReferenceType(req.getReferenceType());
@@ -327,7 +332,27 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         ledger.setOverrideReason(req.getOverrideReason());
         ledger.setClosingBalance(closingBalance);
         ledger.setInventoryItem(item);
-        inventoryLedgerRepository.save(ledger);
+        InventoryLedger saved = inventoryLedgerRepository.save(ledger);
+
+        // Perpetual inventory (accounting Phase 3): notify accounting of every saved movement.
+        // The accounting listener posts only value-changing types (GRN, consume, produce,
+        // dispatch, adjustment, WO return) and ignores reserve / issue / zero-value rows.
+        eventPublisher.publish(new InventoryMovementPostedEvent(saved.getId()));
+    }
+
+    /**
+     * Unit cost used to value the ledger row. Callers that know the cost pass it (GRN rate,
+     * WO produce realUnitCost, dispatch instance cost); when absent (e.g. WO material
+     * consumption) fall back to the item's standard cost so the movement — and therefore the
+     * perpetual-inventory GL posting — is never zero-valued.
+     */
+    private double effectiveRate(InventoryTransactionDTO req, InventoryItem item) {
+        if (req.getCostPerUnit() > 0) return req.getCostPerUnit();
+        ProductFinanceSettings finance = item.getProductFinanceSettings();
+        if (finance != null && finance.getStandardCost() != null) {
+            return finance.getStandardCost();
+        }
+        return req.getCostPerUnit();
     }
 
     // ─── SALES DISPATCH ───────────────────────────────────────────────────────

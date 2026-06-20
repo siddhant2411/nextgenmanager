@@ -66,6 +66,19 @@ public class VendorInvoice {
     private boolean qtyMismatch;
     private boolean amountMismatch;
 
+    // ── GST / ITC (Phase 2) ──────────────────────────────────────────────────
+    /** Whether the input tax on this bill is claimable as ITC (false = blocked credit, Sec 17(5)). */
+    @Column(nullable = false)
+    private boolean itcEligible = true;
+
+    /** Reason ITC is ineligible (free text) — populated only when {@link #itcEligible} is false. */
+    @Column(length = 120)
+    private String itcIneligibleReason;
+
+    /** Whether tax on this bill is payable under reverse charge (RCM) by the recipient. */
+    @Column(nullable = false)
+    private boolean reverseCharge = false;
+
     @Column(columnDefinition = "TEXT")
     private String remarks;
 

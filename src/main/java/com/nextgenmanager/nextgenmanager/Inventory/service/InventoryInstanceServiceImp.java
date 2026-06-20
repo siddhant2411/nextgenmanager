@@ -1,7 +1,9 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.*;
+import com.nextgenmanager.nextgenmanager.Inventory.events.InventoryMovementPostedEvent;
 import com.nextgenmanager.nextgenmanager.Inventory.model.*;
+import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryBookingApprovalRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryLedgerRepository;
@@ -59,6 +61,13 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Autowired
     private InventoryLedgerRepository inventoryLedgerRepository;
+
+    @Autowired
+    private DomainEventPublisher eventPublisher;
+
+    @Autowired
+    @org.springframework.context.annotation.Lazy
+    private ProcurementRoutingService procurementRoutingService;
 
     
     @PersistenceContext
@@ -613,8 +622,12 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     totalCost = totalQuantity * inventoryItem.getProductFinanceSettings().getStandardCost();
                 }
 
-                boolean batchTracked  = inventoryItem.getProductInventorySettings() != null && inventoryItem.getProductInventorySettings().isBatchTracked();
-                boolean serialTracked = inventoryItem.getProductInventorySettings() != null && inventoryItem.getProductInventorySettings().isSerialTracked();
+                com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings invSettings = inventoryItem.getProductInventorySettings();
+                boolean batchTracked  = invSettings != null && invSettings.isBatchTracked();
+                boolean serialTracked = invSettings != null && invSettings.isSerialTracked();
+                double reorderLevel   = invSettings != null ? invSettings.getReorderLevel() : 0.0;
+                double minStock       = invSettings != null ? invSettings.getMinStock()      : 0.0;
+                double maxStock       = invSettings != null ? invSettings.getMaxStock()      : 0.0;
                 return new InventoryPresentDTO(
                         inventoryItem.getInventoryItemId(),
                         inventoryItem.getItemCode(),
@@ -625,7 +638,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                         totalQuantity,
                         totalCost,
                         batchTracked,
-                        serialTracked
+                        serialTracked,
+                        reorderLevel,
+                        minStock,
+                        maxStock
                 );
             });
         } catch (Exception e) {
@@ -922,6 +938,12 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             ledger.setClosingBalance(closingBal);
             ledger.setInventoryItem(dbItem);
             inventoryLedgerRepository.save(ledger);
+            // Opening-stock onboarding posts to the GL (Dr Stock / Cr Opening Balance Equity) so a
+            // company can migrate to perpetual inventory in one balanced step. Only OPENING_STOCK is
+            // published here — other receipts through this path keep their existing (non-posting) behaviour.
+            if (request.getProcurementDecision() == ProcurementDecision.OPENING_STOCK) {
+                eventPublisher.publish(new InventoryMovementPostedEvent(ledger.getId()));
+            }
             // ────────────────────────────────────────────────────────────────────────
 
             // Log movement for all added/updated instances
@@ -1151,6 +1173,43 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     @Override
     public List<InventoryMovementLog> getMovementHistory(Long instanceId) {
         return movementLogRepository.findByInventoryInstanceIdOrderByTimestampDesc(instanceId);
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> sendToPlanning(int itemId, java.math.BigDecimal qty, String requestedBy) {
+        InventoryItem item = inventoryItemRepository.findByActiveId(itemId);
+        if (item == null) throw new com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException("Inventory item not found: " + itemId);
+        if (qty == null || qty.signum() <= 0) throw new IllegalArgumentException("Quantity must be greater than zero.");
+
+        // Create a pending instance to carry the qty through the routing service's shortfallQty calculation
+        InventoryInstance pending = new InventoryInstance();
+        pending.setInventoryItem(item);
+        pending.setEntryDate(new Date());
+        pending.setQuantity(qty);
+        pending.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
+        InventoryInstance savedPending = inventoryInstanceRepository.save(pending);
+
+        InventoryProcurementOrder order = new InventoryProcurementOrder();
+        order.setInventoryItem(item);
+        order.setPendingInventoryList(List.of(savedPending));
+        order.setCreatedBy(requestedBy != null ? requestedBy : "SYSTEM");
+        order.setInventoryProcurementStatus(InventoryProcurementStatus.CREATED);
+        InventoryProcurementOrder savedOrder = inventoryProcurementOrderRepository.save(order);
+
+        try {
+            procurementRoutingService.routeForReorder(savedOrder.getId());
+        } catch (Exception e) {
+            logger.warn("Reorder routing failed for item {} — left UNDECIDED for Planning Desk: {}",
+                    item.getItemCode(), e.getMessage());
+        }
+
+        InventoryProcurementOrder routed = inventoryProcurementOrderRepository.findById(savedOrder.getId()).orElse(savedOrder);
+        Map<String, Object> result = new HashMap<>();
+        result.put("procurementOrderId", routed.getId());
+        result.put("decision", routed.getProcurementDecision().name());
+        if (routed.getOrderId() != null) result.put("orderId", routed.getOrderId());
+        return result;
     }
 
     // ── Sprint 2-B: Stock Valuation Report ────────────────────────────────────

@@ -439,6 +439,25 @@ public class InventoryInstanceController {
      * Returns all active items with closing qty, avg rate, and total value.
      * Grouped/sorted by itemType then itemCode.
      */
+    @PostMapping("/items/{itemId}/send-to-planning")
+    public ResponseEntity<?> sendToPlanning(
+            @PathVariable int itemId,
+            @RequestBody Map<String, Object> body) {
+        try {
+            java.math.BigDecimal qty = new java.math.BigDecimal(body.get("qty").toString());
+            String requestedBy = body.containsKey("requestedBy") ? (String) body.get("requestedBy") : "SYSTEM";
+            Map<String, Object> result = inventoryInstanceService.sendToPlanning(itemId, qty, requestedBy);
+            return ResponseEntity.ok(result);
+        } catch (com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error sending item {} to planning: {}", itemId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/valuation-report")
     public ResponseEntity<List<StockValuationLineDTO>> getValuationReport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOfDate,

@@ -101,4 +101,11 @@ public interface InventoryInstanceService {
      * @param itemType  optional filter: RAW_MATERIAL, FINISHED_GOODS, SEMI_FINISHED, CONSUMABLE
      */
     List<StockValuationLineDTO> getStockValuation(LocalDate asOfDate, String itemType);
+
+    /**
+     * Creates an UNDECIDED procurement order for the given item and qty, then auto-routes it
+     * (manufactured → draft WO; purchased → draft PR; ambiguous → Planning Desk queue).
+     * Returns a map with procurementOrderId, decision, and orderId (if auto-routed).
+     */
+    Map<String, Object> sendToPlanning(int itemId, java.math.BigDecimal qty, String requestedBy);
 }

@@ -3,9 +3,11 @@ package com.nextgenmanager.nextgenmanager.accounting.reports.controller;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.AgeingReportDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.DayBookDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.LedgerStatementDto;
+import com.nextgenmanager.nextgenmanager.accounting.reports.dto.StockGlReconciliationDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.TrialBalanceDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.service.AccountingReportService;
 import com.nextgenmanager.nextgenmanager.accounting.reports.service.AgeingReportService;
+import com.nextgenmanager.nextgenmanager.accounting.reports.service.StockGlReconciliationService;
 import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresAccountingAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -26,6 +28,7 @@ public class AccountingReportController {
 
     private final AccountingReportService reportService;
     private final AgeingReportService ageingReportService;
+    private final StockGlReconciliationService stockGlReconciliationService;
 
     @GetMapping("/trial-balance")
     public ResponseEntity<TrialBalanceDto> trialBalance(
@@ -76,6 +79,24 @@ public class AccountingReportController {
         LocalDate d = asOf != null ? asOf : LocalDate.now();
         byte[] body = ageingReportService.toExcel(ageingReportService.creditorsAgeing(d));
         return excel(body, "Creditors_Ageing_" + d + ".xlsx");
+    }
+
+    // ─── Stock vs GL reconciliation (3.4 — perpetual inventory) ───────────────
+
+    @GetMapping("/stock-gl-reconciliation")
+    public ResponseEntity<StockGlReconciliationDto> stockGlReconciliation(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return ResponseEntity.ok(stockGlReconciliationService.reconcile(from, asOf != null ? asOf : LocalDate.now()));
+    }
+
+    @GetMapping("/stock-gl-reconciliation/excel")
+    public ResponseEntity<byte[]> stockGlReconciliationExcel(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        LocalDate d = asOf != null ? asOf : LocalDate.now();
+        byte[] body = stockGlReconciliationService.toExcel(stockGlReconciliationService.reconcile(from, d));
+        return excel(body, "Stock_GL_Reconciliation_" + d + ".xlsx");
     }
 
     private ResponseEntity<byte[]> excel(byte[] body, String fileName) {

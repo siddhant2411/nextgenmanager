@@ -60,4 +60,18 @@ public interface InventoryLedgerRepository extends JpaRepository<InventoryLedger
             @Param("to")   java.time.LocalDate to,
             @Param("type") String type,
             org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * All movements up to asOf reduced to the fields the accounting GL↔stock reconciliation needs:
+     * Object[]{transactionType, referenceType, quantity, amount, itemType}. Replayed in-memory against
+     * the same posting allowlist the InventoryPostingListener uses, to value stock independently of the GL.
+     */
+    @Query("SELECT e.transactionType, e.referenceType, e.quantity, e.amount, e.inventoryItem.itemType " +
+           "FROM InventoryLedger e WHERE e.movementDate <= :asOf")
+    List<Object[]> movementsForReconciliation(@Param("asOf") LocalDate asOf);
+
+    /** Same projection as {@link #movementsForReconciliation}, restricted to a cutover window. */
+    @Query("SELECT e.transactionType, e.referenceType, e.quantity, e.amount, e.inventoryItem.itemType " +
+           "FROM InventoryLedger e WHERE e.movementDate BETWEEN :from AND :to")
+    List<Object[]> movementsForReconciliationInRange(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

@@ -32,4 +32,10 @@ public class InventoryPresentDTO {
     private boolean batchTracked;
 
     private boolean serialTracked;
+
+    private double reorderLevel;
+
+    private double minStock;
+
+    private double maxStock;
 }

@@ -35,11 +35,15 @@ import static com.nextgenmanager.nextgenmanager.accounting.posting.PostingSuppor
 /**
  * Auto-posts the PURCHASE voucher when a vendor invoice is posted:
  * <pre>
- *   Dr  Purchases - Raw Material        subtotal (taxable)
+ *   Dr  GR/IR Clearing  (goods bill, grn != null)   taxable
+ *       or  Purchases - Raw Material  (service/expense bill, no grn)
  *   Dr  Input CGST/SGST/IGST/Cess       respective tax amounts
  *      Cr  Vendor sub-ledger              grandTotal
  *      Cr/Dr  Round-off                   balancing difference
  * </pre>
+ * Under perpetual inventory (Phase 3) goods received against a GRN are already capitalised to
+ * stock (Dr Raw Material / Cr GR/IR) at receipt; the bill therefore clears GR/IR instead of
+ * expensing Purchases. Bills with no GRN (services, expenses) keep the direct expense posting.
  */
 @Component
 @RequiredArgsConstructor
@@ -82,8 +86,14 @@ public class VendorInvoicePostingListener {
             // leaks the discount into round-off. This derivation balances against Cr Vendor by construction.
             BigDecimal taxable = grandTotal.subtract(cgst).subtract(sgst).subtract(igst).subtract(cess);
 
+            // Perpetual inventory: goods received against a GRN were already capitalised to stock
+            // (Dr Raw Material / Cr GR/IR) — clear GR/IR here. Bills without a GRN expense directly.
+            boolean goodsBill = inv.getGrn() != null;
+            LedgerAccount debitLedger = goodsBill ? ledgers.grIrClearing() : ledgers.purchasesRawMaterial();
+            String debitNarration = (goodsBill ? "GR/IR clearing " : "Purchase ") + inv.getInvoiceNumber();
+
             List<VoucherLineDraft> lines = new ArrayList<>();
-            lines.add(dr(ledgers.purchasesRawMaterial().getId(), taxable, "Purchase " + inv.getInvoiceNumber(), null));
+            lines.add(dr(debitLedger.getId(), taxable, debitNarration, null));
             if (cgst.signum() > 0) lines.add(dr(ledgers.inputCgst().getId(), cgst, "Input CGST", TaxLineType.CGST));
             if (sgst.signum() > 0) lines.add(dr(ledgers.inputSgst().getId(), sgst, "Input SGST", TaxLineType.SGST));
             if (igst.signum() > 0) lines.add(dr(ledgers.inputIgst().getId(), igst, "Input IGST", TaxLineType.IGST));

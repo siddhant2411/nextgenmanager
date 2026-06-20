@@ -2,6 +2,8 @@ package com.nextgenmanager.nextgenmanager.accounting.posting;
 
 import com.nextgenmanager.nextgenmanager.accounting.coa.model.LedgerAccount;
 import com.nextgenmanager.nextgenmanager.accounting.coa.repository.LedgerAccountRepository;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +40,15 @@ public class LedgerResolver {
     // ─ Control accounts ─
     public static final String SUNDRY_DEBTORS = "3010";
     public static final String SUNDRY_CREDITORS = "8010";
+    // ─ Perpetual inventory (Phase 3) ─
+    public static final String RAW_MATERIAL_STOCK = "2010";
+    public static final String WIP_STOCK = "2011";
+    public static final String FINISHED_GOODS_STOCK = "2012";
+    public static final String GR_IR_CLEARING = "6030";
+    public static final String COGS = "5020E";
+    public static final String INVENTORY_ADJUSTMENT = "5063E";       // expense (write-off / loss)
+    public static final String INVENTORY_ADJUSTMENT_GAIN = "4024I";  // income (write-up / gain)
+    public static final String OPENING_BALANCE_EQUITY = "3022E";     // cutover bridge for opening stock
 
     private final LedgerAccountRepository ledgerRepo;
 
@@ -61,4 +72,27 @@ public class LedgerResolver {
     public LedgerAccount inputCess()        { return byCode(INPUT_CESS); }
     public LedgerAccount cashInHand()       { return byCode(CASH_IN_HAND); }
     public LedgerAccount bankPrimary()      { return byCode(BANK_PRIMARY); }
+
+    // ─ Perpetual inventory (Phase 3) ─
+    public LedgerAccount rawMaterialStock()        { return byCode(RAW_MATERIAL_STOCK); }
+    public LedgerAccount wip()                     { return byCode(WIP_STOCK); }
+    public LedgerAccount finishedGoodsStock()      { return byCode(FINISHED_GOODS_STOCK); }
+    public LedgerAccount grIrClearing()            { return byCode(GR_IR_CLEARING); }
+    public LedgerAccount cogs()                    { return byCode(COGS); }
+    public LedgerAccount inventoryAdjustment()     { return byCode(INVENTORY_ADJUSTMENT); }
+    public LedgerAccount inventoryAdjustmentGain() { return byCode(INVENTORY_ADJUSTMENT_GAIN); }
+    public LedgerAccount openingBalanceEquity()    { return byCode(OPENING_BALANCE_EQUITY); }
+
+    /**
+     * Resolves an item's "home" stock ledger from its {@link ItemType}: finished/semi-finished
+     * goods sit in Finished Goods Stock; everything else (raw material, consumable, sub-contracted)
+     * in Raw Material Stock. WIP (2011) is never an item's home — it is only the work-order bridge.
+     */
+    public LedgerAccount stockLedgerFor(InventoryItem item) {
+        ItemType type = item != null ? item.getItemType() : null;
+        if (type == ItemType.FINISHED_GOOD || type == ItemType.SEMI_FINISHED) {
+            return finishedGoodsStock();
+        }
+        return rawMaterialStock();
+    }
 }

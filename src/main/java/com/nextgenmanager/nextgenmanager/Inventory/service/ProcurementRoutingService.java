@@ -91,6 +91,89 @@ public class ProcurementRoutingService {
         }
     }
 
+    // ──────────────────────── reorder (MTS) routing ───────────────────────────────────
+
+    /**
+     * Routes a stock-reorder procurement need (no linked Sales Order) the same way as
+     * MTO: manufactured-only + BOM+routing → WO; purchased-only → PR; ambiguous → desk.
+     */
+    @Transactional
+    public void routeForReorder(Long procurementOrderId) {
+        InventoryProcurementOrder order = procurementOrderRepository.findById(procurementOrderId)
+                .orElseThrow(() -> new IllegalArgumentException("Procurement order not found: " + procurementOrderId));
+
+        InventoryItem item = order.getInventoryItem();
+        if (item == null) return;
+
+        ProductInventorySettings settings = item.getProductInventorySettings();
+        boolean manufactured = settings != null && settings.isManufactured();
+        boolean purchased    = settings != null && settings.isPurchased();
+        BigDecimal qty = shortfallQty(order);
+        if (qty.signum() <= 0) return;
+
+        try {
+            if (manufactured && !purchased) {
+                Bom bom = bomRepository.findActiveBomWithPositionsByParentItemId(item.getInventoryItemId()).orElse(null);
+                Routing routing = bom != null ? routingRepository.findByBomId(bom.getId()).orElse(null) : null;
+                if (bom != null && routing != null) {
+                    int woId = createWorkOrderForReorder(item, bom, routing, qty);
+                    order.setProcurementDecision(ProcurementDecision.WORK_ORDER);
+                    order.setOrderId((long) woId);
+                    procurementOrderRepository.save(order);
+                    log.info("Reorder: auto-routed item {} qty {} to Work Order {}", item.getItemCode(), qty, woId);
+                } else {
+                    log.info("Reorder: item {} manufactured but no active BOM+routing — left UNDECIDED for the desk", item.getItemCode());
+                }
+            } else if (purchased && !manufactured) {
+                Long prId = createPurchaseRequisitionForReorder(item, qty, order.getCreatedBy());
+                order.setProcurementDecision(ProcurementDecision.PURCHASE_ORDER);
+                order.setOrderId(prId);
+                procurementOrderRepository.save(order);
+                log.info("Reorder: auto-routed item {} qty {} to Purchase Requisition {}", item.getItemCode(), qty, prId);
+            } else {
+                log.info("Reorder: item {} make/buy ambiguous (manufactured={}, purchased={}) — left UNDECIDED for the desk",
+                        item.getItemCode(), manufactured, purchased);
+            }
+        } catch (Exception e) {
+            log.error("Reorder routing failed for item {} — left UNDECIDED for the desk", item.getItemCode(), e);
+        }
+    }
+
+    private int createWorkOrderForReorder(InventoryItem item, Bom bom, Routing routing, BigDecimal qty) {
+        WorkOrderRequestDTO dto = new WorkOrderRequestDTO();
+        dto.setBomId(bom.getId());
+        dto.setRoutingId(routing.getId());
+        dto.setPlannedQuantity(qty);
+        dto.setSourceType(WorkOrderSourceType.MANUAL);
+        dto.setPriority(WorkOrderPriority.NORMAL);
+        dto.setRemarks("Auto-created from stock reorder trigger for item " + item.getItemCode());
+        WorkOrderDTO wo = workOrderService.addWorkOrder(dto);
+        return wo.getId();
+    }
+
+    private Long createPurchaseRequisitionForReorder(InventoryItem item, BigDecimal qty, String requestedBy) {
+        PurchaseRequisitionItemCreateDto line = new PurchaseRequisitionItemCreateDto(
+                (long) item.getInventoryItemId(),
+                1,
+                item.getName(),
+                qty.doubleValue(),
+                null, null, null, null,
+                "Stock reorder — replenishment to max stock level");
+
+        PurchaseRequisitionCreateDto dto = new PurchaseRequisitionCreateDto(
+                new Date(), null,
+                requestedBy != null ? requestedBy : "SYSTEM",
+                null, null,
+                PurchaseRequisitionPriority.NORMAL,
+                PurchaseRequisitionSource.REORDER,
+                null, null,
+                List.of(line),
+                "Auto-created from stock reorder trigger for item " + item.getItemCode());
+
+        PurchaseRequisitionDto pr = purchaseRequisitionService.create(dto);
+        return pr.id();
+    }
+
     // ──────────────────────── manual decisions (Planning Desk) ────────────────────────
 
     /** Planner explicitly routes an UNDECIDED need to a Work Order. */
