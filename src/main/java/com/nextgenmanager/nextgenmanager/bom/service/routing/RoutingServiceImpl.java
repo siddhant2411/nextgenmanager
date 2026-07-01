@@ -8,6 +8,7 @@ import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingOperationDependencyDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingOperationDto;
 import com.nextgenmanager.nextgenmanager.production.helper.InvalidTransitionException;
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import com.nextgenmanager.nextgenmanager.production.enums.DependencyType;
 import com.nextgenmanager.nextgenmanager.production.enums.RoutingStatus;
 import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingDto;
@@ -159,7 +160,7 @@ public class RoutingServiceImpl implements RoutingService{
                 op.setMachineDetails(null);
             }
 
-            op.setCostType(opDto.getCostType());
+            op.setCostType(opDto.getCostType() != null ? opDto.getCostType() : CostType.CALCULATED);
             op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
@@ -248,7 +249,7 @@ public class RoutingServiceImpl implements RoutingService{
                 op.setMachineDetails(null);
             }
 
-            op.setCostType(opDto.getCostType());
+            op.setCostType(opDto.getCostType() != null ? opDto.getCostType() : CostType.CALCULATED);
             op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());

@@ -9,6 +9,7 @@ public record CompanyDetailsDTO(
         String tradeName,
         String gstNumber,
         String panNumber,
+        String tan,
         String cinNumber,
         String phone,
         String email,

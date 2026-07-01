@@ -74,11 +74,11 @@ class DebitNotePostingListenerTest {
         vendor.setCompanyName("Supplier Ltd");
         DebitNote dn = debitNote(vendor);
 
-        LedgerAccount party = ledger(8001L), purchases = ledger(5010L), cgst = ledger(6020L), sgst = ledger(6021L);
+        LedgerAccount party = ledger(8001L), grIr = ledger(6030L), cgst = ledger(6020L), sgst = ledger(6021L);
         when(debitNoteRepo.findByIdAndDeletedDateIsNull(90L)).thenReturn(Optional.of(dn));
         when(coaService.getOrCreatePartyLedger(vendor, SubLedgerType.VENDOR)).thenReturn(party);
         when(gstResolver.deriveGstTreatment(vendor)).thenReturn(GstTreatment.INTRA_STATE);
-        when(ledgers.purchasesRawMaterial()).thenReturn(purchases);
+        when(ledgers.grIrClearing()).thenReturn(grIr);
         when(ledgers.inputCgst()).thenReturn(cgst);
         when(ledgers.inputSgst()).thenReturn(sgst);
 
@@ -90,14 +90,16 @@ class DebitNotePostingListenerTest {
 
         assertThat(d.getVoucherType()).isEqualTo(VoucherType.DEBIT_NOTE);
         assertThat(d.getSourceDocType()).isEqualTo("DEBIT_NOTE");
-        assertThat(d.getLines()).hasSize(4); // vendor, purchases, cgst, sgst
+        assertThat(d.getLines()).hasSize(4); // vendor, grIr, cgst, sgst
         assertThat(sumDr(d)).isEqualByComparingTo("1180.00");
         assertThat(sumCr(d)).isEqualByComparingTo("1180.00");
         // Vendor is debited (they owe us back)
         VoucherLineDraft vendorLine = d.getLines().stream()
                 .filter(l -> l.getLedgerAccountId().equals(8001L)).findFirst().orElseThrow();
         assertThat(vendorLine.getDrAmount()).isEqualByComparingTo("1180.00");
-        // GST split 90/90
+        // GR-IR cleared (not Purchases), GST split 90/90
+        assertThat(d.getLines()).anyMatch(l -> l.getLedgerAccountId().equals(6030L) &&
+                l.getCrAmount().compareTo(new BigDecimal("1000.00")) == 0);
         assertThat(d.getLines()).anyMatch(l -> l.getLedgerAccountId().equals(6020L) &&
                 l.getCrAmount().compareTo(new BigDecimal("90.00")) == 0);
     }
@@ -108,11 +110,11 @@ class DebitNotePostingListenerTest {
         vendor.setCompanyName("Outstate Supplier");
         DebitNote dn = debitNote(vendor);
 
-        LedgerAccount party = ledger(8001L), purchases = ledger(5010L), igst = ledger(6022L);
+        LedgerAccount party = ledger(8001L), grIr = ledger(6030L), igst = ledger(6022L);
         when(debitNoteRepo.findByIdAndDeletedDateIsNull(90L)).thenReturn(Optional.of(dn));
         when(coaService.getOrCreatePartyLedger(vendor, SubLedgerType.VENDOR)).thenReturn(party);
         when(gstResolver.deriveGstTreatment(vendor)).thenReturn(GstTreatment.INTER_STATE);
-        when(ledgers.purchasesRawMaterial()).thenReturn(purchases);
+        when(ledgers.grIrClearing()).thenReturn(grIr);
         when(ledgers.inputIgst()).thenReturn(igst);
 
         listener.onDebitNoteConfirmed(new DebitNoteConfirmedEvent(90L));

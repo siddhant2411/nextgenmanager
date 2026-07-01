@@ -7,6 +7,7 @@ import com.nextgenmanager.nextgenmanager.accounting.voucher.dto.VoucherDraft;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.dto.VoucherLineDraft;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.service.PostingService;
+import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptNote;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.purchase.events.VendorInvoicePostedEvent;
 import com.nextgenmanager.nextgenmanager.purchase.model.VendorInvoice;
@@ -134,5 +135,48 @@ class VendorInvoicePostingListenerTest {
         assertThat(d.getLines()).hasSize(4); // purchases, cgst, sgst, vendor
         assertThat(sumDr(d)).isEqualByComparingTo("1912.00");
         assertThat(sumCr(d)).isEqualByComparingTo("1912.00");
+    }
+
+    /**
+     * Perpetual inventory (Phase 3): a goods bill linked to a GRN clears GR/IR Clearing (6030)
+     * — the stock was already capitalised at receipt — instead of expensing Purchases (5010).
+     */
+    @Test
+    void goodsBillWithGrn_debitsGrIrClearing_notPurchases() {
+        Contact vendor = new Contact();
+        vendor.setCompanyName("Supplier Ltd");
+        VendorInvoice inv = new VendorInvoice();
+        inv.setId(81L);
+        inv.setInvoiceNumber("VINV-2");
+        inv.setInvoiceDate(LocalDate.of(2025, 6, 3));
+        inv.setVendor(vendor);
+        inv.setGrn(new GoodsReceiptNote());           // linked GRN → clear GR/IR, not Purchases
+        inv.setSubtotal(new BigDecimal("1000.00"));
+        inv.setCgstAmount(new BigDecimal("90.00"));
+        inv.setSgstAmount(new BigDecimal("90.00"));
+        inv.setIgstAmount(BigDecimal.ZERO);
+        inv.setCessAmount(BigDecimal.ZERO);
+        inv.setGrandTotal(new BigDecimal("1180.00"));
+
+        LedgerAccount party = ledger(8001L), grIr = ledger(6030L), cgst = ledger(6020L), sgst = ledger(6021L);
+        when(invoiceRepo.findByIdAndDeletedDateIsNull(81L)).thenReturn(Optional.of(inv));
+        when(coaService.getOrCreatePartyLedger(vendor, SubLedgerType.VENDOR)).thenReturn(party);
+        when(ledgers.grIrClearing()).thenReturn(grIr);
+        when(ledgers.inputCgst()).thenReturn(cgst);
+        when(ledgers.inputSgst()).thenReturn(sgst);
+
+        listener.onVendorInvoicePosted(new VendorInvoicePostedEvent(81L));
+
+        ArgumentCaptor<VoucherDraft> cap = ArgumentCaptor.forClass(VoucherDraft.class);
+        verify(postingService).post(cap.capture(), eq("SYSTEM"));
+        VoucherDraft d = cap.getValue();
+
+        // Debit goes to GR/IR Clearing (6030), not Purchases (5010)
+        VoucherLineDraft grIrLine = d.getLines().stream()
+                .filter(l -> l.getLedgerAccountId().equals(6030L)).findFirst().orElseThrow();
+        assertThat(grIrLine.getDrAmount()).isEqualByComparingTo("1000.00");
+        assertThat(d.getLines()).noneMatch(l -> l.getLedgerAccountId().equals(5010L));
+        assertThat(sumDr(d)).isEqualByComparingTo("1180.00");
+        assertThat(sumCr(d)).isEqualByComparingTo("1180.00");
     }
 }

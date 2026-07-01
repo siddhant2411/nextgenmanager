@@ -32,6 +32,11 @@ public class VendorPaymentServiceImpl implements VendorPaymentService {
         VendorInvoice invoice = invoiceRepository.findByIdAndDeletedDateIsNull(vendorInvoiceId)
                 .orElseThrow(() -> new IllegalArgumentException("Vendor invoice not found: " + vendorInvoiceId));
 
+        BigDecimal tds = dto.getTdsAmount() != null ? dto.getTdsAmount() : BigDecimal.ZERO;
+        if (tds.compareTo(dto.getAmount()) > 0) {
+            throw new IllegalArgumentException("TDS amount cannot exceed the payment amount");
+        }
+
         VendorPayment payment = new VendorPayment();
         payment.setVendorInvoice(invoice);
         payment.setPaymentDate(dto.getPaymentDate());
@@ -39,6 +44,9 @@ public class VendorPaymentServiceImpl implements VendorPaymentService {
         payment.setPaymentMode(dto.getPaymentMode());
         payment.setReferenceNumber(dto.getReferenceNumber());
         payment.setNotes(dto.getNotes());
+        payment.setTdsSectionCode(tds.signum() > 0 ? dto.getTdsSectionCode() : null);
+        payment.setTdsRate(tds.signum() > 0 ? dto.getTdsRate() : null);
+        payment.setTdsAmount(tds);
         payment.setCreatedBy(currentUser());
 
         VendorPayment saved = paymentRepository.save(payment);
@@ -83,6 +91,9 @@ public class VendorPaymentServiceImpl implements VendorPaymentService {
         dto.setPaymentMode(p.getPaymentMode());
         dto.setReferenceNumber(p.getReferenceNumber());
         dto.setNotes(p.getNotes());
+        dto.setTdsSectionCode(p.getTdsSectionCode());
+        dto.setTdsRate(p.getTdsRate());
+        dto.setTdsAmount(p.getTdsAmount());
         dto.setCreationDate(p.getCreationDate());
         return dto;
     }

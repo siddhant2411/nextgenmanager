@@ -23,4 +23,11 @@ public class VendorPaymentCreateDto {
 
     private String referenceNumber;
     private String notes;
+
+    // ── Optional TDS withheld on this payment (Phase 4). Net bank outflow = amount − tdsAmount. ──
+    private String tdsSectionCode;
+    private BigDecimal tdsRate;
+
+    @DecimalMin(value = "0.00")
+    private BigDecimal tdsAmount;
 }

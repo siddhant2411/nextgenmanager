@@ -45,6 +45,9 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
 
     @Override
     public TaxInvoiceDto createFromSalesOrder(TaxInvoiceCreateDto dto) {
+        if (dto.getSalesOrderId() == null) {
+            throw new IllegalArgumentException("salesOrderId is required");
+        }
         SalesOrder so = salesOrderRepository.findById(dto.getSalesOrderId())
                 .orElseThrow(() -> new SalesOrderNotFoundException(dto.getSalesOrderId()));
 

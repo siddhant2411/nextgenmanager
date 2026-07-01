@@ -39,6 +39,18 @@ public class VendorPayment {
     @Column(length = 500)
     private String notes;
 
+    // ── TDS withheld on this payment (Phase 4). The vendor is settled at `amount`;
+    //    actual bank outflow = amount − tdsAmount. Section is referenced by code (loose coupling). ──
+
+    @Column(length = 20)
+    private String tdsSectionCode;
+
+    @Column(precision = 6, scale = 3)
+    private BigDecimal tdsRate;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal tdsAmount = BigDecimal.ZERO;
+
     @Column(length = 100)
     private String createdBy;
 

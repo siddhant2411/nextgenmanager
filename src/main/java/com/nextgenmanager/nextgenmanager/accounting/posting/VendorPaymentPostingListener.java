@@ -73,12 +73,22 @@ public class VendorPaymentPostingListener {
                     ? ledgers.cashInHand() : ledgers.bankPrimary();
 
             BigDecimal amount = nz(payment.getAmount());
+            BigDecimal tds = nz(payment.getTdsAmount());
+            BigDecimal netBank = amount.subtract(tds);
             String ref = payment.getReferenceNumber() != null ? " (" + payment.getReferenceNumber() + ")" : "";
             String invoiceNo = payment.getVendorInvoice().getInvoiceNumber();
 
+            // Vendor is settled at the gross amount; TDS is withheld so the bank only pays the net.
             List<VoucherLineDraft> lines = new ArrayList<>();
             lines.add(dr(party.getId(), amount, "Against invoice " + invoiceNo, null));
-            lines.add(cr(cashOrBank.getId(), amount, "Payment to " + vendor.getCompanyName() + ref, null));
+            if (tds.signum() > 0) {
+                String section = payment.getTdsSectionCode() != null ? payment.getTdsSectionCode() + " " : "";
+                lines.add(cr(ledgers.tdsPayable().getId(), tds,
+                        "TDS " + section + "on payment to " + vendor.getCompanyName(), null));
+            }
+            if (netBank.signum() > 0) {
+                lines.add(cr(cashOrBank.getId(), netBank, "Payment to " + vendor.getCompanyName() + ref, null));
+            }
 
             VoucherDraft draft = new VoucherDraft();
             draft.setVoucherType(VoucherType.PAYMENT);

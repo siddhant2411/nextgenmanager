@@ -17,5 +17,8 @@ public class VendorPaymentDto {
     private PaymentMode paymentMode;
     private String referenceNumber;
     private String notes;
+    private String tdsSectionCode;
+    private BigDecimal tdsRate;
+    private BigDecimal tdsAmount;
     private Date creationDate;
 }

@@ -183,7 +183,24 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                 consumedInstances = new ArrayList<>();
             }
 
-            // Write SALES_DISPATCH ledger entry so the Stock Ledger Report captures this outward movement.
+            // Cost of the goods leaving = average cost per unit of the consumed instances. Computed up
+            // front so it values BOTH the dispatch ledger row (→ perpetual COGS posting) and the
+            // DeliveryNoteItem.actualCost used for profitability reporting.
+            java.math.BigDecimal avgCostPerUnit = java.math.BigDecimal.ZERO;
+            if (!consumedInstances.isEmpty()) {
+                java.math.BigDecimal totalCostPerUnit = java.math.BigDecimal.ZERO;
+                for (InventoryInstance inst : consumedInstances) {
+                    totalCostPerUnit = totalCostPerUnit.add(
+                            inst.getCostPerUnit() != null ? inst.getCostPerUnit() : java.math.BigDecimal.ZERO);
+                }
+                avgCostPerUnit = totalCostPerUnit.divide(
+                        java.math.BigDecimal.valueOf(consumedInstances.size()), 5, java.math.RoundingMode.HALF_UP);
+            }
+            java.math.BigDecimal actualCost =
+                    avgCostPerUnit.multiply(java.math.BigDecimal.valueOf(itemDto.getQuantityDelivered()));
+
+            // Write SALES_DISPATCH ledger entry so the Stock Ledger Report captures this outward movement
+            // and accounting books COGS (Dr COGS / Cr Finished Goods) at the dispatched cost.
             // ProductInventorySettings.availableQuantity is already correct at this point because
             // consumeSpecificInstances / consumeInventoryInstance called updateItemAvailability().
             try {
@@ -193,6 +210,7 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                 dispatchDto.setTransactionType("SALES_DISPATCH");
                 dispatchDto.setReferenceType("DELIVERY_NOTE");
                 dispatchDto.setReferenceDocNo(dnNo);
+                dispatchDto.setCostPerUnit(avgCostPerUnit.doubleValue());
                 // Also store the Sales Order number for cross-reference
                 if (dn.getSalesOrder() != null) {
                     dispatchDto.setOverrideReason("SO: " + dn.getSalesOrder().getOrderNumber());
@@ -208,30 +226,6 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                 org.slf4j.LoggerFactory.getLogger(DeliveryNoteServiceImpl.class)
                     .error("Failed to write dispatch ledger for item {} on DN {}: {}",
                         invItem.getItemCode(), dnNo, e.getMessage());
-            }
-
-            java.math.BigDecimal actualCost = java.math.BigDecimal.ZERO;
-            for (InventoryInstance inst : consumedInstances) {
-                java.math.BigDecimal instCost = inst.getCostPerUnit() != null ? inst.getCostPerUnit() : java.math.BigDecimal.ZERO;
-                java.math.BigDecimal instQty;
-                if (inst.getInventoryItem().getUom() == com.nextgenmanager.nextgenmanager.items.model.UOM.NOS) {
-                    instQty = java.math.BigDecimal.ONE;
-                } else {
-                    // For batch items, quantity consumed is complicated. Actually, inst.getQuantity() is the remaining qty.
-                    // Wait, consumeSpecificInstances updates inst.getQuantity() to newQty and we don't know exact consumed unless we do math.
-                    // Let's approximate: costPerUnit * quantityDelivered. It's safer.
-                }
-                // We'll calculate cost based on total quantity delivered and average cost of instances, or just simplify for NOS items.
-            }
-
-            // Simpler cost calculation: average cost per unit * quantity delivered
-            if (!consumedInstances.isEmpty()) {
-                java.math.BigDecimal totalCostPerUnit = java.math.BigDecimal.ZERO;
-                for (InventoryInstance inst : consumedInstances) {
-                    totalCostPerUnit = totalCostPerUnit.add(inst.getCostPerUnit() != null ? inst.getCostPerUnit() : java.math.BigDecimal.ZERO);
-                }
-                java.math.BigDecimal avgCostPerUnit = totalCostPerUnit.divide(java.math.BigDecimal.valueOf(consumedInstances.size()), 5, java.math.RoundingMode.HALF_UP);
-                actualCost = avgCostPerUnit.multiply(java.math.BigDecimal.valueOf(itemDto.getQuantityDelivered()));
             }
 
             item.setActualCost(actualCost);

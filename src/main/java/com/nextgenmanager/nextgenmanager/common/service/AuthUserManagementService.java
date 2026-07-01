@@ -52,7 +52,8 @@ public class AuthUserManagementService {
     private String recoveryHint;
 
     public java.util.Map<String, String> getRecoveryInfo() {
-        return java.util.Map.of("label", recoveryLabel, "hint", recoveryHint);
+        String mode = (recoverySecret != null && !recoverySecret.isBlank()) ? "passcode" : "otp";
+        return java.util.Map.of("label", recoveryLabel, "hint", recoveryHint, "mode", mode);
     }
 
     @Transactional(readOnly = true)

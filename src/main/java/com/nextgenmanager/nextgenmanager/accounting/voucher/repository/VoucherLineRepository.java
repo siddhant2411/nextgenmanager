@@ -67,4 +67,41 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
         ORDER BY vl.ledgerAccount.id ASC, v.date ASC, v.voucherNumber ASC
         """)
     List<Object[]> partyLedgerLines(@Param("type") SubLedgerType type, @Param("asOf") LocalDate asOf);
+
+    /**
+     * GST reconciliation: Dr/Cr movement of the given ledger codes within a date range, for POSTED
+     * vouchers. Returns Object[]{ledgerCode, sumDr, sumCr}. Output-GST heads are net-credit
+     * (Cr−Dr); Input-GST heads are net-debit (Dr−Cr).
+     */
+    @Query("""
+        SELECT vl.ledgerAccount.code, COALESCE(SUM(vl.drAmount), 0), COALESCE(SUM(vl.crAmount), 0)
+        FROM VoucherLine vl
+        JOIN vl.voucher v
+        WHERE v.status = 'POSTED'
+          AND v.deletedDate IS NULL
+          AND vl.deletedDate IS NULL
+          AND v.date BETWEEN :from AND :to
+          AND vl.ledgerAccount.code IN :codes
+        GROUP BY vl.ledgerAccount.code
+        """)
+    List<Object[]> movementByCodeInRange(@Param("from") LocalDate from,
+                                         @Param("to") LocalDate to,
+                                         @Param("codes") List<String> codes);
+
+    /**
+     * Net Dr/Cr balance of the given ledger codes for all POSTED vouchers up to asOf.
+     * Returns Object[]{ledgerCode, sumDr, sumCr}. Drives the perpetual-inventory GL↔stock reconciliation.
+     */
+    @Query("""
+        SELECT vl.ledgerAccount.code, COALESCE(SUM(vl.drAmount), 0), COALESCE(SUM(vl.crAmount), 0)
+        FROM VoucherLine vl
+        JOIN vl.voucher v
+        WHERE v.status = 'POSTED'
+          AND v.deletedDate IS NULL
+          AND vl.deletedDate IS NULL
+          AND v.date <= :asOf
+          AND vl.ledgerAccount.code IN :codes
+        GROUP BY vl.ledgerAccount.code
+        """)
+    List<Object[]> balanceByCodeAsOf(@Param("asOf") LocalDate asOf, @Param("codes") List<String> codes);
 }

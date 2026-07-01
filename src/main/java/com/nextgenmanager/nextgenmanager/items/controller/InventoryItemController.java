@@ -10,6 +10,7 @@ import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemExportService;
 import io.minio.GetObjectResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,7 +66,7 @@ public class InventoryItemController {
     )
     @RequiresInventoryAccess
     public ResponseEntity<InventoryItem> addInventoryItem(
-            @RequestPart("inventoryItem") InventoryItem inventoryItem,
+            @Valid @RequestPart("inventoryItem") InventoryItem inventoryItem,
             @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) throws Exception {
         logger.debug("Received request to add inventory item");
 
@@ -153,7 +154,7 @@ public class InventoryItemController {
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN')")
     public ResponseEntity<InventoryItem> editInventoryItem(
             @PathVariable int id,
-            @RequestPart("inventoryItem") InventoryItem updatedItem,
+            @Valid @RequestPart("inventoryItem") InventoryItem updatedItem,
             @RequestPart(value = "attachments", required = false)  List<MultipartFile> attachments) throws Exception {
         logger.debug("Received request to edit inventory item with id: {}", id);
         updatedItem.setAttachments(attachments);

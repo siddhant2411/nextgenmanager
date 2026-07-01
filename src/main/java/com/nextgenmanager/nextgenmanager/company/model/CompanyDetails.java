@@ -37,6 +37,10 @@ public class CompanyDetails {
     @Column(length = 10)
     private String panNumber;
 
+    /** Tax Deduction & Collection Account Number — deductor identifier on the 26Q/27Q return. */
+    @Column(length = 15)
+    private String tan;
+
     @Column(length = 21)
     private String cinNumber;
 

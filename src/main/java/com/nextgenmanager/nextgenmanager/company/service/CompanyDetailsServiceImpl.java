@@ -19,7 +19,7 @@ public class CompanyDetailsServiceImpl implements CompanyDetailsService {
     public CompanyDetailsDTO get() {
         List<CompanyDetails> all = repository.findAll();
         if (all.isEmpty()) {
-            return new CompanyDetailsDTO(null, "", null, null, null, null, null,
+            return new CompanyDetailsDTO(null, "", null, null, null, null, null, null,
                     null, null, null, null, null, null, null, null, "India", "INR", 4, null,
                     null, null, null, null, null, null);
         }
@@ -36,6 +36,7 @@ public class CompanyDetailsServiceImpl implements CompanyDetailsService {
         entity.setTradeName(request.tradeName());
         entity.setGstNumber(request.gstNumber());
         entity.setPanNumber(request.panNumber());
+        entity.setTan(request.tan());
         entity.setCinNumber(request.cinNumber());
         entity.setPhone(request.phone());
         entity.setEmail(request.email());
@@ -65,6 +66,7 @@ public class CompanyDetailsServiceImpl implements CompanyDetailsService {
                 e.getTradeName(),
                 e.getGstNumber(),
                 e.getPanNumber(),
+                e.getTan(),
                 e.getCinNumber(),
                 e.getPhone(),
                 e.getEmail(),
