@@ -193,6 +193,36 @@ class InventoryPostingListenerTest {
     }
 
     @Test
+    void purchaseReturn_creditsStock_debitsGrIr() {
+        LedgerAccount stock = ledger(2010L), grIr = ledger(6030L);
+        when(ledgerRepo.findById(10L)).thenReturn(Optional.of(row(10L, "PURCHASE_RETURN", "DEBIT_NOTE", -5, 500)));
+        when(ledgers.stockLedgerFor(item)).thenReturn(stock);
+        when(ledgers.grIrClearing()).thenReturn(grIr);
+        stubPost();
+
+        listener.onInventoryMovement(new InventoryMovementPostedEvent(10L));
+
+        VoucherDraft d = captureDraft();
+        assertThat(crOf(d, 2010L)).isEqualByComparingTo("500.00");
+        assertThat(drOf(d, 6030L)).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    void salesReturn_debitsStock_creditsCogs() {
+        LedgerAccount fg = ledger(2012L), cogs = ledger(5020L);
+        when(ledgerRepo.findById(11L)).thenReturn(Optional.of(row(11L, "SALES_RETURN", "SALES_CREDIT_NOTE", 3, 600)));
+        when(ledgers.stockLedgerFor(item)).thenReturn(fg);
+        when(ledgers.cogs()).thenReturn(cogs);
+        stubPost();
+
+        listener.onInventoryMovement(new InventoryMovementPostedEvent(11L));
+
+        VoucherDraft d = captureDraft();
+        assertThat(drOf(d, 2012L)).isEqualByComparingTo("600.00");
+        assertThat(crOf(d, 5020L)).isEqualByComparingTo("600.00");
+    }
+
+    @Test
     void reserve_isNotAValueMovement_noVoucher() {
         when(ledgerRepo.findById(7L)).thenReturn(Optional.of(row(7L, "RESERVE", "WORK_ORDER", -5, 500)));
 

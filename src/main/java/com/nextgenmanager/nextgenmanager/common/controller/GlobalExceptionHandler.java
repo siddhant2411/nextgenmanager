@@ -15,6 +15,7 @@ import com.nextgenmanager.nextgenmanager.purchase.requisition.exception.Purchase
 import com.nextgenmanager.nextgenmanager.sales.exception.InsufficientStockForDeliveryException;
 import com.nextgenmanager.nextgenmanager.sales.exception.InvalidSalesOrderStateException;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -225,8 +226,18 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleInvalidJson(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        String message = "Malformed JSON request";
+        if (ex.getCause() instanceof InvalidFormatException ife && ife.getTargetType() != null && ife.getTargetType().isEnum()) {
+            List<com.fasterxml.jackson.databind.JsonMappingException.Reference> path = ife.getPath();
+            String field = path.isEmpty() ? "unknown" : path.get(path.size() - 1).getFieldName();
+            String bad   = String.valueOf(ife.getValue());
+            String valid = java.util.Arrays.stream(ife.getTargetType().getEnumConstants())
+                    .map(Object::toString)
+                    .collect(Collectors.joining(", "));
+            message = "Invalid value '" + bad + "' for field '" + field + "'. Allowed values: " + valid;
+        }
         return ResponseEntity.badRequest()
-                .body(buildError(HttpStatus.BAD_REQUEST, "Malformed JSON request", request));
+                .body(buildError(HttpStatus.BAD_REQUEST, message, request));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

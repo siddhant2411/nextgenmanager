@@ -1,5 +1,7 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.common.events.DocumentVoidedEvent;
 import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
@@ -35,19 +37,22 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
     private final TaxInvoiceRepository taxInvoiceRepo;
     private final SalesCreditNoteNumberGenerator numberGenerator;
     private final DomainEventPublisher domainEventPublisher;
+    private final InventoryTransactionService txService;
 
     public SalesCreditNoteServiceImpl(SalesCreditNoteRepository creditNoteRepo,
                                       ContactRepository contactRepo,
                                       InventoryItemRepository itemRepo,
                                       TaxInvoiceRepository taxInvoiceRepo,
                                       SalesCreditNoteNumberGenerator numberGenerator,
-                                      DomainEventPublisher domainEventPublisher) {
+                                      DomainEventPublisher domainEventPublisher,
+                                      InventoryTransactionService txService) {
         this.creditNoteRepo  = creditNoteRepo;
         this.contactRepo     = contactRepo;
         this.itemRepo        = itemRepo;
         this.taxInvoiceRepo  = taxInvoiceRepo;
         this.numberGenerator = numberGenerator;
         this.domainEventPublisher = domainEventPublisher;
+        this.txService       = txService;
     }
 
     @Override
@@ -123,8 +128,19 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
         if (cn.getStatus() != SalesCreditNoteStatus.DRAFT) {
             throw new IllegalStateException("Only DRAFT credit notes can be confirmed. Current status: " + cn.getStatus());
         }
-        // NOTE: physical stock restock is deferred to Phase 3 (perpetual inventory) so returned
-        // goods are valued at cost, not sale price.
+        // Restock returned goods at standard cost so perpetual inventory stays in sync.
+        // The companion SALES_RETURN inventory movement auto-posts Dr FG Stock / Cr COGS.
+        for (SalesCreditNoteItem line : cn.getItems()) {
+            InventoryTransactionDTO dto = new InventoryTransactionDTO();
+            dto.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
+            dto.setQuantity(line.getReturnedQty());   // positive = stock comes back
+            dto.setTransactionType("SALES_RETURN");
+            dto.setReferenceType("SALES_CREDIT_NOTE");
+            dto.setReferenceDocNo(cn.getCreditNoteNumber());
+            dto.setWarehouse(line.getWarehouseTo());
+            dto.setCreatedBy(cn.getCreatedBy());
+            txService.adjustStock(dto);
+        }
         cn.setStatus(SalesCreditNoteStatus.CONFIRMED);
         SalesCreditNote saved = creditNoteRepo.save(cn);
 

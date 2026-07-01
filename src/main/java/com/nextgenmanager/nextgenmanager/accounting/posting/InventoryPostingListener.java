@@ -62,6 +62,8 @@ public class InventoryPostingListener {
     private static final String TXN_DISPATCH = "SALES_DISPATCH";
     private static final String TXN_ADJUSTMENT = "ADJUSTMENT";
     private static final String TXN_RETURN = "RETURN";
+    private static final String TXN_PURCHASE_RETURN = "PURCHASE_RETURN";
+    private static final String TXN_SALES_RETURN = "SALES_RETURN";
     private static final String REF_WORK_ORDER = "WORK_ORDER";
     private static final String REF_OPENING_STOCK = "OPENING_STOCK";
 
@@ -136,6 +138,18 @@ public class InventoryPostingListener {
             lines.add(dr(ledgers.stockLedgerFor(item).getId(), amount, "Returned to store " + ref, null));
             lines.add(cr(ledgers.wip().getId(), amount, "WIP reversed " + ref, null));
             narration = "WO return " + ref;
+        } else if (TXN_PURCHASE_RETURN.equals(txn)) {
+            // Purchase return / debit note — mirror of GRN (Cr stock / Dr GR-IR clearing).
+            // The DebitNote voucher then Dr Vendor / Cr GR-IR / Cr Input GST; GR-IR nets to zero.
+            lines.add(cr(ledgers.stockLedgerFor(item).getId(), amount, "Purchase return " + ref, null));
+            lines.add(dr(ledgers.grIrClearing().getId(), amount, "GR/IR clearing " + ref, null));
+            narration = "Purchase return " + ref;
+        } else if (TXN_SALES_RETURN.equals(txn)) {
+            // Sales return / credit note — reverses the SALES_DISPATCH (Dr stock / Cr COGS).
+            // The SalesCreditNote voucher handles Sales / Output-GST / Customer reversal separately.
+            lines.add(dr(ledgers.stockLedgerFor(item).getId(), amount, "Sales return " + ref, null));
+            lines.add(cr(ledgers.cogs().getId(), amount, "COGS reversed " + ref, null));
+            narration = "Sales return " + ref;
         } else if (TXN_ADJUSTMENT.equals(txn)) {
             // Opening stock (migration cutover) credits Opening Balance Equity, not P&L; a regular
             // adjustment hits Inventory Adjustment Gain (income) / Write-off (expense) by direction.

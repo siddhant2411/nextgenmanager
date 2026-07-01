@@ -36,11 +36,12 @@ import static com.nextgenmanager.nextgenmanager.accounting.posting.PostingSuppor
 import static com.nextgenmanager.nextgenmanager.accounting.posting.PostingSupport.money;
 
 /**
- * Auto-posts the DEBIT_NOTE voucher when a purchase return is confirmed — the mirror of
- * a purchase, reversing the original Input GST credit:
+ * Auto-posts the DEBIT_NOTE voucher when a purchase return is confirmed.
+ * The companion {@code PURCHASE_RETURN} inventory movement posts Cr stock / Dr GR-IR;
+ * this voucher closes the vendor/GST side so GR-IR nets to zero:
  * <pre>
  *   Dr  Vendor sub-ledger               totalAmount
- *      Cr  Purchases - Raw Material        subtotal
+ *      Cr  GR/IR Clearing                 subtotal
  *      Cr  Input CGST+SGST (intra) / IGST (inter)   totalGstAmount
  *      Cr/Dr  Round-off                   balancing difference
  * </pre>
@@ -84,7 +85,7 @@ public class DebitNotePostingListener {
 
             List<VoucherLineDraft> lines = new ArrayList<>();
             lines.add(dr(party.getId(), total, "Being purchase return " + dn.getDebitNoteNumber(), null));
-            lines.add(cr(ledgers.purchasesRawMaterial().getId(), subtotal, "Purchase return " + dn.getDebitNoteNumber(), null));
+            lines.add(cr(ledgers.grIrClearing().getId(), subtotal, "Purchase return " + dn.getDebitNoteNumber(), null));
 
             if (totalGst.signum() > 0) {
                 GstTreatment treatment = gstResolver.deriveGstTreatment(vendor);

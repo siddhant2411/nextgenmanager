@@ -203,6 +203,13 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             throw new EntityNotFoundException("BOM not found with ID: " + dto.getBomId());
         }
 
+        if (bom.getBomStatus() != com.nextgenmanager.nextgenmanager.bom.model.BomStatus.APPROVED
+                && bom.getBomStatus() != com.nextgenmanager.nextgenmanager.bom.model.BomStatus.ACTIVE) {
+            throw new IllegalStateException(
+                    "Cannot create Work Order: BOM '" + bom.getBomName() +
+                    "' is " + bom.getBomStatus() + ". Only APPROVED or ACTIVE BOMs are allowed.");
+        }
+
         Routing routing = routingService.getRoutingEntityByBom(bom.getId());
         if (routing == null) {
             throw new EntityNotFoundException("No routing found for BOM ID: " + dto.getBomId());
@@ -2406,6 +2413,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     returnDto.setInventoryItemId(material.getComponent().getInventoryItemId());
                     returnDto.setQuantity(toReturn.doubleValue());
                     returnDto.setTransactionType("RETURN");
+                    returnDto.setReferenceType("WORK_ORDER");
                     returnDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
                     inventoryTransactionService.returnStock(returnDto);
 
