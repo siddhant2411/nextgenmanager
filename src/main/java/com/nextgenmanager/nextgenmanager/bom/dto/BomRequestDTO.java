@@ -25,6 +25,7 @@ public class BomRequestDTO {
     private String bomName;
     private InventoryItem parentInventoryItem;
     private List<BomPositionRequestDTO> positions;
+    private List<BomCostLineRequestDTO> costLines;
     private BomStatus bomStatus;
     private Date effectiveFrom;
     private Date effectiveTo;
@@ -55,6 +56,14 @@ public class BomRequestDTO {
                     .collect(Collectors.toList());
             mappedPositions.forEach(position -> position.setParentBom(entity));
             entity.setPositions(mappedPositions);
+        }
+
+        if (costLines != null) {
+            List<com.nextgenmanager.nextgenmanager.bom.model.BomCostLine> mappedCostLines = costLines.stream()
+                    .map(BomCostLineRequestDTO::toEntity)
+                    .collect(Collectors.toList());
+            mappedCostLines.forEach(costLine -> costLine.setParentBom(entity));
+            entity.setCostLines(mappedCostLines);
         }
 
         return entity;

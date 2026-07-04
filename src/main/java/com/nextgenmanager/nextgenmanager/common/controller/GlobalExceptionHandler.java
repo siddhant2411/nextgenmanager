@@ -7,6 +7,7 @@ import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
 import com.nextgenmanager.nextgenmanager.bom.service.BusinessException;
 import com.nextgenmanager.nextgenmanager.bom.service.InvalidDataException;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
+import com.nextgenmanager.nextgenmanager.Inventory.exception.NegativeStockConfirmationException;
 import com.nextgenmanager.nextgenmanager.production.helper.InvalidTransitionException;
 import com.nextgenmanager.nextgenmanager.purchase.exception.InvalidPurchaseOrderStateException;
 import com.nextgenmanager.nextgenmanager.purchase.exception.PurchaseOrderNotFoundException;
@@ -128,6 +129,23 @@ public class GlobalExceptionHandler {
         body.put("path", request.getRequestURI());
         body.put("storeRequestsCreated", ex.getShortfalls());
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+    }
+
+    @ExceptionHandler(NegativeStockConfirmationException.class)
+    public ResponseEntity<Map<String, Object>> handleNegativeStockConfirmation(
+            NegativeStockConfirmationException ex, HttpServletRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", OffsetDateTime.now());
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", "Negative Stock Confirmation Required");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getRequestURI());
+        body.put("requiresConfirmation", true);
+        body.put("itemCode", ex.getItemCode());
+        body.put("available", ex.getAvailable());
+        body.put("requested", ex.getRequested());
+        body.put("resultingBalance", ex.getResultingBalance());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(InvalidSalesOrderStateException.class)

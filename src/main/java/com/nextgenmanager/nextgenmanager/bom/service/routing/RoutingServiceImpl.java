@@ -162,6 +162,8 @@ public class RoutingServiceImpl implements RoutingService{
 
             op.setCostType(opDto.getCostType() != null ? opDto.getCostType() : CostType.CALCULATED);
             op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
+            op.setCostQuantity(opDto.getCostQuantity());
+            op.setCostRate(opDto.getCostRate());
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
             op.setInspection(opDto.getInspection());
@@ -230,6 +232,11 @@ public class RoutingServiceImpl implements RoutingService{
 
             op.setSequenceNumber(opDto.getSequenceNumber() != null ? opDto.getSequenceNumber() : seq++);
             op.setName(opDto.getName());
+            if (opDto.getProductionJob() != null) {
+                op.setProductionJob(productionJobService.getProductionJobEntityById(opDto.getProductionJob().getId()));
+            } else {
+                op.setProductionJob(null);
+            }
             if (opDto.getWorkCenter() != null) {
                 op.setWorkCenter(workCenterService.getWorkCenterEntityById(opDto.getWorkCenter().getId()));
             } else {
@@ -251,6 +258,8 @@ public class RoutingServiceImpl implements RoutingService{
 
             op.setCostType(opDto.getCostType() != null ? opDto.getCostType() : CostType.CALCULATED);
             op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
+            op.setCostQuantity(opDto.getCostQuantity());
+            op.setCostRate(opDto.getCostRate());
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
             op.setInspection(opDto.getInspection());

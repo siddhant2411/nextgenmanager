@@ -64,6 +64,22 @@ public class RoutingOperation {
     @Column(precision = 10, scale = 2)
     private BigDecimal fixedCostPerUnit;
 
+    /**
+     * RATE_TIMES_QTY only: how many eaches (holes / kg / tests) this BOM consumes of the operation.
+     * The per-each rate comes from {@link #costRate} if set, else the linked
+     * {@code ProductionJob.defaultPieceRate}. Operation cost = rate × costQuantity.
+     */
+    @Column(precision = 12, scale = 4)
+    private BigDecimal costQuantity;
+
+    /**
+     * RATE_TIMES_QTY only: optional per-operation override of the piece-rate. Leave null to inherit
+     * the shared {@code ProductionJob.defaultPieceRate} (recommended, so a rate change flows to all
+     * BOMs). Set only when this operation genuinely deviates from the standard rate.
+     */
+    @Column(precision = 12, scale = 4)
+    private BigDecimal costRate;
+
     private BigDecimal setupTime;
     private BigDecimal runTime;
     private Boolean inspection;

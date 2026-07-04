@@ -125,6 +125,8 @@ public class ProductionJobServiceImp implements ProductionJobService {
         existing.setJobName(productionJob.getJobName());
         existing.setDefaultSetupTime(productionJob.getDefaultSetupTime());
         existing.setDefaultRunTimePerUnit(productionJob.getDefaultRunTimePerUnit());
+        existing.setDefaultPieceRate(productionJob.getDefaultPieceRate());
+        existing.setPieceUnit(productionJob.getPieceUnit());
         existing.setDescription(productionJob.getDescription());
         existing.setActive(productionJob.isActive());
 

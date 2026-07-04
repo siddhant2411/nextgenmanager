@@ -4,7 +4,9 @@ import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource;
+import com.nextgenmanager.nextgenmanager.Inventory.exception.NegativeStockConfirmationException;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRepository;
+import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
@@ -37,11 +39,12 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
 
     @Override
     @Transactional
-    public InventoryRequest approveMaterialRequest(Long requestId, String approvedBy) {
+    public InventoryRequest approveMaterialRequest(Long requestId, String approvedBy, boolean force) {
         InventoryRequest mr = loadRequest(requestId);
         validatePendingOrPartial(mr);
 
         BigDecimal qty = mr.getRequestedQuantity();
+        guardNegativeStock(mr, qty, force);
         reserveStock(mr, qty);
 
         mr.setApprovalStatus(InventoryApprovalStatus.APPROVED);
@@ -57,7 +60,7 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
 
     @Override
     @Transactional
-    public InventoryRequest partialApproveMaterialRequest(Long requestId, BigDecimal approvedQty, String approvedBy) {
+    public InventoryRequest partialApproveMaterialRequest(Long requestId, BigDecimal approvedQty, String approvedBy, boolean force) {
         InventoryRequest mr = loadRequest(requestId);
         validatePendingOrPartial(mr);
 
@@ -65,7 +68,7 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
             throw new IllegalArgumentException("Approved quantity must be greater than zero");
         }
         if (approvedQty.compareTo(mr.getRequestedQuantity()) >= 0) {
-            return approveMaterialRequest(requestId, approvedBy);
+            return approveMaterialRequest(requestId, approvedBy, force);
         }
 
         // If approved qty covers the net required quantity (actual need, excluding scrap buffer),
@@ -77,6 +80,7 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
                 .orElse(null);
         boolean coversNetRequired = netRequired != null && approvedQty.compareTo(netRequired) >= 0;
 
+        guardNegativeStock(mr, approvedQty, force);
         reserveStock(mr, approvedQty);
 
         if (coversNetRequired) {
@@ -168,6 +172,40 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
         if (mr.getApprovalStatus() == InventoryApprovalStatus.REJECTED) {
             throw new IllegalStateException("Material Request " + mr.getId() + " is already REJECTED");
         }
+    }
+
+    /**
+     * Policy gate for stock-consuming approvals. If reserving {@code qty} would drive the item's
+     * available quantity below zero:
+     * <ul>
+     *   <li>batch/serial-tracked item → hard-block with an insufficient-stock error (tracked stock
+     *       can never go negative — you cannot reserve instances that do not exist);</li>
+     *   <li>otherwise and {@code force} is false → raise {@link NegativeStockConfirmationException}
+     *       so the approver can confirm the shortfall;</li>
+     *   <li>otherwise and {@code force} is true → allow, stock goes negative.</li>
+     * </ul>
+     */
+    private void guardNegativeStock(InventoryRequest mr, BigDecimal qty, boolean force) {
+        ProductInventorySettings settings = mr.getInventoryItem().getProductInventorySettings();
+        double available = settings.getAvailableQuantity();
+        double requested = qty.doubleValue();
+        if (requested <= available) return; // sufficient available stock — nothing to warn about
+
+        String itemCode = mr.getInventoryItem().getItemCode();
+        if (settings.isBatchTracked() || settings.isSerialTracked()) {
+            throw new IllegalStateException(String.format(
+                    "Insufficient stock to approve %s of %s (available %s). Negative stock is not allowed for batch/serial-tracked items.",
+                    fmt(requested), itemCode, fmt(available)));
+        }
+        if (!force) {
+            throw new NegativeStockConfirmationException(itemCode, available, requested);
+        }
+        logger.warn("MR {} approved with negative stock override — {} of {} against available {}",
+                mr.getId(), fmt(requested), itemCode, fmt(available));
+    }
+
+    private static String fmt(double d) {
+        return BigDecimal.valueOf(d).stripTrailingZeros().toPlainString();
     }
 
     private void reserveStock(InventoryRequest mr, BigDecimal qty) {

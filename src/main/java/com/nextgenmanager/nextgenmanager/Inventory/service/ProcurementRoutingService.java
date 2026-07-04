@@ -180,7 +180,7 @@ public class ProcurementRoutingService {
     @Transactional
     public Long decideWorkOrder(Long procurementOrderId) {
         InventoryProcurementOrder order = loadDecidable(procurementOrderId);
-        SalesOrder so = resolveSalesOrder(order);
+        SalesOrder so = resolveSalesOrder(order); // null for stock-maintained (reorder/manual) needs
         InventoryItem item = order.getInventoryItem();
         Bom bom = bomRepository.findActiveBomWithPositionsByParentItemId(item.getInventoryItemId())
                 .orElseThrow(() -> new IllegalStateException(
@@ -188,7 +188,9 @@ public class ProcurementRoutingService {
         Routing routing = routingRepository.findByBomId(bom.getId())
                 .orElseThrow(() -> new IllegalStateException(
                         "BOM of item " + item.getItemCode() + " has no routing — cannot create a Work Order."));
-        int woId = createWorkOrder(so, bom, routing, shortfallQty(order));
+        BigDecimal qty = shortfallQty(order);
+        int woId = so != null ? createWorkOrder(so, bom, routing, qty)
+                              : createWorkOrderForReorder(item, bom, routing, qty);
         order.setProcurementDecision(ProcurementDecision.WORK_ORDER);
         order.setOrderId((long) woId);
         procurementOrderRepository.save(order);
@@ -199,8 +201,11 @@ public class ProcurementRoutingService {
     @Transactional
     public Long decidePurchase(Long procurementOrderId) {
         InventoryProcurementOrder order = loadDecidable(procurementOrderId);
-        SalesOrder so = resolveSalesOrder(order);
-        Long prId = createPurchaseRequisition(so, order.getInventoryItem(), shortfallQty(order), order.getCreatedBy());
+        SalesOrder so = resolveSalesOrder(order); // null for stock-maintained (reorder/manual) needs
+        InventoryItem item = order.getInventoryItem();
+        BigDecimal qty = shortfallQty(order);
+        Long prId = so != null ? createPurchaseRequisition(so, item, qty, order.getCreatedBy())
+                               : createPurchaseRequisitionForReorder(item, qty, order.getCreatedBy());
         order.setProcurementDecision(ProcurementDecision.PURCHASE_ORDER);
         order.setOrderId(prId);
         procurementOrderRepository.save(order);
@@ -225,9 +230,17 @@ public class ProcurementRoutingService {
         return order;
     }
 
+    /**
+     * Resolves the Sales Order behind a make-to-order need, or {@code null} when the need is
+     * stock-maintained (reorder/manual — raw materials and finished goods held to stock, not tied
+     * to any SO). Only a {@code SALES_ORDER}-sourced request carries a real SO id; a present-but-
+     * missing SO id is still an error.
+     */
     private SalesOrder resolveSalesOrder(InventoryProcurementOrder order) {
-        Long soId = order.getInventoryRequest() != null ? order.getInventoryRequest().getSourceId() : null;
-        if (soId == null) throw new IllegalStateException("Procurement order " + order.getId() + " has no linked sales order.");
+        InventoryRequest req = order.getInventoryRequest();
+        Long soId = (req != null && req.getRequestSource() == InventoryRequestSource.SALES_ORDER)
+                ? req.getSourceId() : null;
+        if (soId == null) return null; // stock-maintained need — not tied to a sales order
         return salesOrderRepository.findById(soId)
                 .orElseThrow(() -> new IllegalStateException("Linked sales order " + soId + " not found."));
     }

@@ -45,25 +45,30 @@ public class WorkOrderMaterialRequestController {
         return ResponseEntity.ok(mrService.getPendingMaterialRequests(pageable));
     }
 
-    /** Full approval. */
+    /**
+     * Full approval. When approving would drive available stock negative (non batch/serial-tracked
+     * items), the call responds 409 {@code requiresConfirmation} unless {@code force=true} is passed.
+     */
     @PostMapping("/{requestId}/approve")
     public ResponseEntity<InventoryRequest> approve(
             @PathVariable Long requestId,
+            @RequestParam(defaultValue = "false") boolean force,
             Authentication auth) {
-        return ResponseEntity.ok(mrService.approveMaterialRequest(requestId, auth.getName()));
+        return ResponseEntity.ok(mrService.approveMaterialRequest(requestId, auth.getName(), force));
     }
 
-    /** Partial approval — body: { "approvedQuantity": 40.0 } */
+    /** Partial approval — body: { "approvedQuantity": 40.0 }; {@code force} confirms a negative-stock shortfall. */
     @PostMapping("/{requestId}/partial-approve")
     public ResponseEntity<InventoryRequest> partialApprove(
             @PathVariable Long requestId,
+            @RequestParam(defaultValue = "false") boolean force,
             @RequestBody Map<String, BigDecimal> body,
             Authentication auth) {
         BigDecimal qty = body.get("approvedQuantity");
         if (qty == null) {
             return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok(mrService.partialApproveMaterialRequest(requestId, qty, auth.getName()));
+        return ResponseEntity.ok(mrService.partialApproveMaterialRequest(requestId, qty, auth.getName(), force));
     }
 
     /** Rejection — body: { "reason": "Out of Stock" } */

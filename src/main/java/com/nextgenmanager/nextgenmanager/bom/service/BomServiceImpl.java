@@ -8,6 +8,7 @@ import com.nextgenmanager.nextgenmanager.bom.mapper.BomListMapper;
 import com.nextgenmanager.nextgenmanager.bom.mapper.BomMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomAttachment;
+import com.nextgenmanager.nextgenmanager.bom.model.BomCostLine;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.model.BomQaParameter;
 import com.nextgenmanager.nextgenmanager.bom.model.BomStatus;
@@ -218,6 +219,9 @@ public class BomServiceImpl implements BomService {
 
             }
         }
+
+        // Resolve / auto-create non-stock items for flat cost lines
+        attachCostLines(bom, bom.getCostLines());
 
         // Initial BOM setup (PLM standard)
         bom.setVersionNumber(0);            // Real version assigned on APPROVED
@@ -545,6 +549,16 @@ public class BomServiceImpl implements BomService {
         existingBom.getPositions().clear();
         if (bom.getPositions() != null) {
             existingBom.getPositions().addAll(bom.getPositions());
+        }
+
+        // Resolve / auto-create non-stock items, then replace cost lines (mirrors positions)
+        attachCostLines(existingBom, bom.getCostLines());
+        if (existingBom.getCostLines() == null) {
+            existingBom.setCostLines(new ArrayList<>());
+        }
+        existingBom.getCostLines().clear();
+        if (bom.getCostLines() != null) {
+            existingBom.getCostLines().addAll(bom.getCostLines());
         }
 
         Bom saved = bomRepository.save(existingBom);
@@ -1137,6 +1151,35 @@ public class BomServiceImpl implements BomService {
 
 
     // ----------------------------------------------------------
+    // BOM COST LINES (flat consumable costs — CONSUMABLE items priced per BOM)
+    // ----------------------------------------------------------
+
+    /**
+     * Resolves each cost line to its existing master {@link InventoryItem} (the BOM never creates
+     * items) and sets the owning BOM. A line without a valid item reference is rejected.
+     */
+    private void attachCostLines(Bom owner, List<BomCostLine> costLines) {
+        if (costLines == null) return;
+
+        for (BomCostLine line : costLines) {
+            if (line.getAmount() == null) {
+                line.setAmount(BigDecimal.ZERO);
+            }
+
+            InventoryItem item = line.getInventoryItem();
+            if (item == null || item.getInventoryItemId() == 0) {
+                throw new InvalidDataException("Cost line must reference an existing inventory item");
+            }
+
+            InventoryItem managed = inventoryItemRepository.findById(item.getInventoryItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Cost line inventory item not found: " + item.getInventoryItemId()));
+            line.setInventoryItem(managed);
+            line.setParentBom(owner);
+        }
+    }
+
+    // ----------------------------------------------------------
     // BOM COST BREAKDOWN
     // ----------------------------------------------------------
     @Override
@@ -1201,6 +1244,26 @@ public class BomServiceImpl implements BomService {
             }
         }
 
+        // ── Additional / Consumable Costs (flat cost lines) ──
+        List<BomCostLineDTO> additionalLines = new ArrayList<>();
+        BigDecimal totalAdditionalCost = BigDecimal.ZERO;
+
+        if (bom.getCostLines() != null) {
+            for (BomCostLine costLine : bom.getCostLines()) {
+                BigDecimal amount = costLine.getAmount() != null ? costLine.getAmount() : BigDecimal.ZERO;
+                InventoryItem item = costLine.getInventoryItem();
+                additionalLines.add(BomCostLineDTO.builder()
+                        .id(costLine.getId())
+                        .inventoryItemId(item != null ? item.getInventoryItemId() : null)
+                        .itemCode(item != null ? item.getItemCode() : null)
+                        .itemName(item != null ? item.getName() : null)
+                        .amount(amount.setScale(2, RoundingMode.HALF_UP))
+                        .position(costLine.getPosition())
+                        .build());
+                totalAdditionalCost = totalAdditionalCost.add(amount);
+            }
+        }
+
         return BomCostBreakdownDTO.builder()
                 .bomId(bomId)
                 .bomName(bom.getBomName())
@@ -1210,7 +1273,10 @@ public class BomServiceImpl implements BomService {
                 .totalMaterialCost(totalMaterialCost.setScale(2, RoundingMode.HALF_UP))
                 .operationCosts(operationLines)
                 .totalOperationCost(totalOperationCost.setScale(2, RoundingMode.HALF_UP))
-                .totalCost(totalMaterialCost.add(totalOperationCost).setScale(2, RoundingMode.HALF_UP))
+                .additionalCosts(additionalLines)
+                .totalAdditionalCost(totalAdditionalCost.setScale(2, RoundingMode.HALF_UP))
+                .totalCost(totalMaterialCost.add(totalOperationCost).add(totalAdditionalCost)
+                        .setScale(2, RoundingMode.HALF_UP))
                 .build();
     }
 
@@ -1220,6 +1286,9 @@ public class BomServiceImpl implements BomService {
      * CALCULATED: (machineCost + laborCost) × (1 + overhead%/100)
      *   machineCost = machineRate × totalTime
      *   laborCost   = laborRate × numberOfOperators × totalTime
+     *
+     * RATE_TIMES_QTY: costRate × costQuantity
+     *   costRate = operation override, else ProductionJob.defaultPieceRate
      *
      * FIXED_RATE / SUB_CONTRACTED: fixedCostPerUnit
      */
@@ -1288,6 +1357,20 @@ public class BomServiceImpl implements BomService {
                     .laborCost(laborCost.setScale(2, RoundingMode.HALF_UP))
                     .subtotal(subtotal.setScale(2, RoundingMode.HALF_UP))
                     .overheadCost(overheadCost.setScale(2, RoundingMode.HALF_UP));
+        } else if (costType == CostType.RATE_TIMES_QTY) {
+            // Piece-rate: rate × quantity. Rate = operation override, else the job's standard rate.
+            BigDecimal rate = op.getCostRate() != null
+                    ? op.getCostRate()
+                    : (op.getProductionJob() != null && op.getProductionJob().getDefaultPieceRate() != null
+                        ? op.getProductionJob().getDefaultPieceRate()
+                        : BigDecimal.ZERO);
+            BigDecimal qty = op.getCostQuantity() != null ? op.getCostQuantity() : BigDecimal.ZERO;
+
+            totalCost = rate.multiply(qty).setScale(2, RoundingMode.HALF_UP);
+
+            builder.costRate(rate)
+                    .costQuantity(qty)
+                    .costUnit(op.getProductionJob() != null ? op.getProductionJob().getPieceUnit() : null);
         } else {
             // FIXED_RATE or SUB_CONTRACTED
             totalCost = op.getFixedCostPerUnit() != null
