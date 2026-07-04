@@ -37,6 +37,18 @@ public class ProductionJob {
     @Column(precision = 10, scale = 2)
     private BigDecimal defaultRunTimePerUnit;
 
+    /**
+     * Standard piece-rate for this operation, in ₹ per each (per hole, per kg, per test, …).
+     * Stored once here so a rate change re-costs every routing operation that references this job
+     * (RATE_TIMES_QTY), the same way {@code LaborRole.costPerHour} drives hourly operations.
+     */
+    @Column(precision = 12, scale = 4)
+    private BigDecimal defaultPieceRate;
+
+    /** Display label for the piece unit: "hole", "kg", "test", … (costing is unit-agnostic). */
+    @Column(length = 30)
+    private String pieceUnit;
+
     @Column(length = 500)
     private String description;
 

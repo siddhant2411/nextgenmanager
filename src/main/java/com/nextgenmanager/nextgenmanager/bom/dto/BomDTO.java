@@ -18,6 +18,7 @@ public class BomDTO {
     private String bomName;
     private InventoryItemDTO parentInventoryItem;
     private List<BomPositionDTO> positions;
+    private List<BomCostLineDTO> costLines;
     private String bomStatus;
     private String revision;
     private Date effectiveFrom;

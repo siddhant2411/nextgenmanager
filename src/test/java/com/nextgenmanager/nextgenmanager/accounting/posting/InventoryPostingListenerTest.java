@@ -118,7 +118,7 @@ class InventoryPostingListenerTest {
     void workOrderComplete_debitsFinishedGoods_creditsWip() {
         LedgerAccount fg = ledger(2012L), wip = ledger(2011L);
         when(ledgerRepo.findById(3L)).thenReturn(Optional.of(row(3L, "PRODUCE", "WORK_ORDER", 4, 500)));
-        when(ledgers.stockLedgerFor(item)).thenReturn(fg);
+        when(ledgers.finishedGoodsStock()).thenReturn(fg);
         when(ledgers.wip()).thenReturn(wip);
         stubPost();
 

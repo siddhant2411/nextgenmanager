@@ -552,6 +552,19 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
 
         // ---- FINAL COMPLETION ----
+        // When the WO has no routing operations, operation-based completion is meaningless
+        // (it defaults to 0). Completion is then driven purely by materials, falling back to the
+        // planned quantity when there is no material-based signal either. Previously the 0 was
+        // folded into the min() below, forcing totalCompleted to 0 for operation-less work orders
+        // — so finished goods were never produced on completion.
+        boolean hasOperations = operations.stream().anyMatch(op -> op.getDeletedDate() == null);
+        if (!hasOperations) {
+            BigDecimal plannedQty = workOrder.getPlannedQuantity() != null
+                    ? workOrder.getPlannedQuantity()
+                    : BigDecimal.ZERO;
+            return materialCompletedUnits.orElse(plannedQty);
+        }
+
         return materialCompletedUnits
                 .map(operationCompletedUnits::min)
                 .orElse(operationCompletedUnits);

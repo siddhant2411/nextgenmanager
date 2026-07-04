@@ -16,6 +16,8 @@ public class ProductionJobResponseDTO {
     private String jobName;
     private BigDecimal defaultSetupTime;
     private BigDecimal defaultRunTimePerUnit;
+    private BigDecimal defaultPieceRate;
+    private String pieceUnit;
     private String description;
     private boolean active;
 }

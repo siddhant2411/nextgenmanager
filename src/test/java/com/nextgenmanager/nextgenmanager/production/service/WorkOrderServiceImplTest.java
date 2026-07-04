@@ -33,6 +33,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -136,6 +137,41 @@ class WorkOrderServiceImplTest {
 
         assertThat(workOrder.getCompletedQuantity()).isEqualByComparingTo("3");
         assertThat(material.getIssueStatus()).isEqualTo(MaterialIssueStatus.ISSUED);
+    }
+
+    @Test
+    void completedQuantity_isMaterialDriven_whenWorkOrderHasNoOperations() {
+        // Regression: an operation-less WO (BOM has no routing) must derive completion purely from
+        // materials. Previously calculateWorkOrderCompletedQuantity took min(material, operation=0),
+        // forcing the result to 0 → finished goods were never produced on completion.
+        WorkOrder workOrder = buildWorkOrder(1, "WO-NOOPS", new BigDecimal("10"), WorkOrderStatus.IN_PROGRESS);
+
+        WorkOrderMaterial material = buildMaterial(workOrder, 301L, new BigDecimal("20"));
+        material.setIssuedQuantity(new BigDecimal("20")); // fully issued: 20 / 20 × planned 10 = 10 units
+
+        when(workOrderOperationRepository.findByWorkOrder(workOrder)).thenReturn(Collections.emptyList());
+        when(workOrderMaterialRepository.findByWorkOrder(workOrder)).thenReturn(List.of(material));
+
+        BigDecimal completed = ReflectionTestUtils.invokeMethod(
+                service, "calculateWorkOrderCompletedQuantity", workOrder);
+
+        // No operations → completion is material-driven (10), NOT forced to 0 by the min().
+        assertThat(completed).isEqualByComparingTo("10");
+    }
+
+    @Test
+    void completedQuantity_fallsBackToPlanned_whenNoOperationsAndNoMaterials() {
+        // Operation-less AND material-less WO → completion falls back to the planned quantity,
+        // so the finished good is still produced (was 0 before the fix).
+        WorkOrder workOrder = buildWorkOrder(1, "WO-EMPTY", new BigDecimal("7"), WorkOrderStatus.IN_PROGRESS);
+
+        when(workOrderOperationRepository.findByWorkOrder(workOrder)).thenReturn(Collections.emptyList());
+        when(workOrderMaterialRepository.findByWorkOrder(workOrder)).thenReturn(Collections.emptyList());
+
+        BigDecimal completed = ReflectionTestUtils.invokeMethod(
+                service, "calculateWorkOrderCompletedQuantity", workOrder);
+
+        assertThat(completed).isEqualByComparingTo("7");
     }
 
     @Test

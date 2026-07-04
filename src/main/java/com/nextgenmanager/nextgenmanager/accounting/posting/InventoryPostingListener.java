@@ -40,7 +40,7 @@ import static com.nextgenmanager.nextgenmanager.accounting.posting.PostingSuppor
  * <pre>
  *   GRN                       Dr stock(item)            Cr GR/IR Clearing
  *   CONSUME (WORK_ORDER)      Dr WIP                     Cr stock(item)
- *   PRODUCE (WORK_ORDER)      Dr stock(item=FG)          Cr WIP
+ *   PRODUCE (WORK_ORDER)      Dr Finished Goods Stock    Cr WIP
  *   SALES_DISPATCH            Dr COGS                    Cr stock(item=FG)
  *   RETURN  (WORK_ORDER)      Dr stock(item)             Cr WIP
  *   ADJUSTMENT (+qty)         Dr stock(item)             Cr Inventory Adjustment Gain
@@ -126,7 +126,10 @@ public class InventoryPostingListener {
             lines.add(cr(ledgers.stockLedgerFor(item).getId(), amount, "Consumed " + ref, null));
             narration = "WO consume " + ref;
         } else if (TXN_PRODUCE.equals(txn) && fromWorkOrder) {
-            lines.add(dr(ledgers.stockLedgerFor(item).getId(), amount, "Finished goods " + ref, null));
+            // A work order's output is always a finished/semi-finished good, so it lands in Finished
+            // Goods Stock regardless of the item's master-data ItemType (which may be mis-set). Trusting
+            // stockLedgerFor(item) here mis-routed produce value into Raw Material Stock for mistyped items.
+            lines.add(dr(ledgers.finishedGoodsStock().getId(), amount, "Finished goods " + ref, null));
             lines.add(cr(ledgers.wip().getId(), amount, "WIP absorbed " + ref, null));
             narration = "WO complete " + ref;
         } else if (TXN_DISPATCH.equals(txn)) {

@@ -35,6 +35,11 @@ public class RoutingOperationDto {
     private CostType costType;
     private BigDecimal fixedCostPerUnit;
 
+    /** RATE_TIMES_QTY: eaches consumed by this BOM (holes / kg / tests). */
+    private BigDecimal costQuantity;
+    /** RATE_TIMES_QTY: optional per-operation rate override; null = inherit ProductionJob.defaultPieceRate. */
+    private BigDecimal costRate;
+
     private BigDecimal setupTime;
     private BigDecimal runTime;
 

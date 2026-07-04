@@ -38,6 +38,9 @@ public class Bom {
     @OneToMany(mappedBy = "parentBom", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BomPosition> positions;
 
+    @OneToMany(mappedBy = "parentBom", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BomCostLine> costLines;
+
     @Enumerated(EnumType.ORDINAL)
     @Column(nullable = false)
     private BomStatus bomStatus;

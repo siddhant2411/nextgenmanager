@@ -24,6 +24,10 @@ public class BomCostBreakdownDTO {
     private List<OperationCostLineDTO> operationCosts;
     private BigDecimal totalOperationCost;
 
+    // Additional / consumable flat costs (grease, cleaning, packing, …)
+    private List<BomCostLineDTO> additionalCosts;
+    private BigDecimal totalAdditionalCost;
+
     // Totals
-    private BigDecimal totalCost;            // material + operation
+    private BigDecimal totalCost;            // material + operation + additional
 }

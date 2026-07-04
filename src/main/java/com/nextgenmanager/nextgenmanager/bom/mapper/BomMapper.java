@@ -1,9 +1,11 @@
 package com.nextgenmanager.nextgenmanager.bom.mapper;
 
+import com.nextgenmanager.nextgenmanager.bom.dto.BomCostLineDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomPositionResponse;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.bom.model.BomCostLine;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -32,6 +34,13 @@ public class BomMapper {
                         bom.getPositions() != null ?
                                 bom.getPositions().stream()
                                         .map(pos -> toPositionDto(pos, activeBomMap))
+                                        .collect(Collectors.toList())
+                                : Collections.emptyList()
+                )
+                .costLines(
+                        bom.getCostLines() != null ?
+                                bom.getCostLines().stream()
+                                        .map(BomMapper::toCostLineDto)
                                         .collect(Collectors.toList())
                                 : Collections.emptyList()
                 )
@@ -82,6 +91,20 @@ public class BomMapper {
     }
 
 
+
+    public static BomCostLineDTO toCostLineDto(BomCostLine costLine) {
+        if (costLine == null) return null;
+
+        InventoryItem item = costLine.getInventoryItem();
+        return BomCostLineDTO.builder()
+                .id(costLine.getId())
+                .inventoryItemId(item != null ? item.getInventoryItemId() : null)
+                .itemCode(item != null ? item.getItemCode() : null)
+                .itemName(item != null ? item.getName() : null)
+                .amount(costLine.getAmount())
+                .position(costLine.getPosition())
+                .build();
+    }
 
     public static InventoryItemDTO toDto(InventoryItem item) {
         if (item == null) return null;
