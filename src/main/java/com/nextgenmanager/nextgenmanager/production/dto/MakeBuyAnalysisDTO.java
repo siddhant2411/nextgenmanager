@@ -91,10 +91,16 @@ public class MakeBuyAnalysisDTO {
         /** unitOperationCost × quantity. */
         private BigDecimal batchOperationCost;
 
-        /** unitMaterialCost + unitOperationCost. */
+        /** Blanket BOM overhead per unit (on material + conversion, excl. subcontract). */
+        private BigDecimal unitOverheadCost;
+
+        /** unitOverheadCost × quantity. */
+        private BigDecimal batchOverheadCost;
+
+        /** unitMaterialCost + unitOperationCost + unitOverheadCost. */
         private BigDecimal unitTotalCost;
 
-        /** batchMaterialCost + batchOperationCost. */
+        /** batchMaterialCost + batchOperationCost + batchOverheadCost. */
         private BigDecimal batchTotalCost;
 
         private List<MaterialCostLineDTO> materialLines;

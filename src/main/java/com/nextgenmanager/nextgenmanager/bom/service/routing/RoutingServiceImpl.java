@@ -164,6 +164,7 @@ public class RoutingServiceImpl implements RoutingService{
             op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
             op.setCostQuantity(opDto.getCostQuantity());
             op.setCostRate(opDto.getCostRate());
+            op.setApplyOverhead(Boolean.TRUE.equals(opDto.getApplyOverhead()));
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
             op.setInspection(opDto.getInspection());
@@ -260,6 +261,7 @@ public class RoutingServiceImpl implements RoutingService{
             op.setFixedCostPerUnit(opDto.getFixedCostPerUnit());
             op.setCostQuantity(opDto.getCostQuantity());
             op.setCostRate(opDto.getCostRate());
+            op.setApplyOverhead(Boolean.TRUE.equals(opDto.getApplyOverhead()));
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
             op.setInspection(opDto.getInspection());

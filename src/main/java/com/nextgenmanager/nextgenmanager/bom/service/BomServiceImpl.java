@@ -542,6 +542,7 @@ public class BomServiceImpl implements BomService {
         // Merge only editable fields into existingBom — protects approval/audit fields
         existingBom.setBomName(bom.getBomName());
         existingBom.setDescription(bom.getDescription());
+        existingBom.setOverheadPercentage(bom.getOverheadPercentage());
         existingBom.setParentInventoryItem(bom.getParentInventoryItem());
         existingBom.setEffectiveFrom(bom.getEffectiveFrom());
         existingBom.setEcoNumber(bom.getEcoNumber());
@@ -747,6 +748,7 @@ public class BomServiceImpl implements BomService {
             bomCopy.setBomName(originalBom.getBomName());
             bomCopy.setParentInventoryItem(originalBom.getParentInventoryItem());
             bomCopy.setDescription(originalBom.getDescription());
+            bomCopy.setOverheadPercentage(originalBom.getOverheadPercentage());
             bomCopy.setVersionGroup(originalBom.getVersionGroup());
 
             Bom newBom = addBom(bomCopy);
@@ -1235,12 +1237,16 @@ public class BomServiceImpl implements BomService {
         List<OperationCostLineDTO> operationLines = new ArrayList<>();
         BigDecimal totalOperationCost = BigDecimal.ZERO;
 
+        BigDecimal subcontractOperationCost = BigDecimal.ZERO;   // excluded from overhead base
         Routing routing = routingRepository.findByBomId(bomId).orElse(null);
         if (routing != null && routing.getOperations() != null) {
             for (RoutingOperation op : routing.getOperations()) {
                 OperationCostLineDTO opLine = calculateOperationCost(op);
                 operationLines.add(opLine);
                 totalOperationCost = totalOperationCost.add(opLine.getTotalCost());
+                if (opLine.getCostType() == CostType.SUB_CONTRACTED) {
+                    subcontractOperationCost = subcontractOperationCost.add(opLine.getTotalCost());
+                }
             }
         }
 
@@ -1264,6 +1270,23 @@ public class BomServiceImpl implements BomService {
             }
         }
 
+        // ── Blanket manufacturing overhead ──
+        // Applied once, at the rollup, to everything except subcontracted operations (their vendor
+        // price already carries overhead). Replaces the legacy per-work-center overhead.
+        // Blanket overhead applies at THIS level's rate to all direct cost (material — including
+        // sub-assembly material, since child standard costs are stored PRIME/without overhead —
+        // plus in-house operations and additional), excluding only subcontracted operations.
+        BigDecimal overheadPct = bom.getOverheadPercentage() != null ? bom.getOverheadPercentage() : BigDecimal.ZERO;
+        BigDecimal overheadBase = totalMaterialCost
+                .add(totalOperationCost).subtract(subcontractOperationCost)
+                .add(totalAdditionalCost);
+        BigDecimal overheadCost = overheadBase.multiply(overheadPct)
+                .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal grandTotal = totalMaterialCost.add(totalOperationCost)
+                .add(totalAdditionalCost).add(overheadCost);
+
         return BomCostBreakdownDTO.builder()
                 .bomId(bomId)
                 .bomName(bom.getBomName())
@@ -1275,8 +1298,10 @@ public class BomServiceImpl implements BomService {
                 .totalOperationCost(totalOperationCost.setScale(2, RoundingMode.HALF_UP))
                 .additionalCosts(additionalLines)
                 .totalAdditionalCost(totalAdditionalCost.setScale(2, RoundingMode.HALF_UP))
-                .totalCost(totalMaterialCost.add(totalOperationCost).add(totalAdditionalCost)
-                        .setScale(2, RoundingMode.HALF_UP))
+                .overheadPercentage(overheadPct)
+                .overheadBase(overheadBase.setScale(2, RoundingMode.HALF_UP))
+                .overheadCost(overheadCost)
+                .totalCost(grandTotal.setScale(2, RoundingMode.HALF_UP))
                 .build();
     }
 
@@ -1345,32 +1370,32 @@ public class BomServiceImpl implements BomService {
                     .multiply(totalTime);
             BigDecimal subtotal = machineCost.add(laborCost);
 
-            BigDecimal overheadPct = (op.getWorkCenter() != null && op.getWorkCenter().getOverheadPercentage() != null)
-                    ? op.getWorkCenter().getOverheadPercentage()
-                    : BigDecimal.ZERO;
-            BigDecimal overheadCost = subtotal.multiply(overheadPct)
-                    .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-
-            totalCost = subtotal.add(overheadCost).setScale(2, RoundingMode.HALF_UP);
+            // No per-operation overhead: overhead is a single blanket rate applied once at the BOM
+            // rollup (see getBomCostBreakdown). This line carries direct conversion cost only.
+            totalCost = subtotal.setScale(2, RoundingMode.HALF_UP);
 
             builder.machineCost(machineCost.setScale(2, RoundingMode.HALF_UP))
                     .laborCost(laborCost.setScale(2, RoundingMode.HALF_UP))
                     .subtotal(subtotal.setScale(2, RoundingMode.HALF_UP))
-                    .overheadCost(overheadCost.setScale(2, RoundingMode.HALF_UP));
+                    .overheadCost(BigDecimal.ZERO);
         } else if (costType == CostType.RATE_TIMES_QTY) {
             // Piece-rate: rate × quantity. Rate = operation override, else the job's standard rate.
+            // No per-operation overhead — the BOM blanket overhead covers it at the rollup.
             BigDecimal rate = op.getCostRate() != null
                     ? op.getCostRate()
                     : (op.getProductionJob() != null && op.getProductionJob().getDefaultPieceRate() != null
                         ? op.getProductionJob().getDefaultPieceRate()
                         : BigDecimal.ZERO);
             BigDecimal qty = op.getCostQuantity() != null ? op.getCostQuantity() : BigDecimal.ZERO;
+            BigDecimal subtotal = rate.multiply(qty);
 
-            totalCost = rate.multiply(qty).setScale(2, RoundingMode.HALF_UP);
+            totalCost = subtotal.setScale(2, RoundingMode.HALF_UP);
 
             builder.costRate(rate)
                     .costQuantity(qty)
-                    .costUnit(op.getProductionJob() != null ? op.getProductionJob().getPieceUnit() : null);
+                    .costUnit(op.getProductionJob() != null ? op.getProductionJob().getPieceUnit() : null)
+                    .subtotal(subtotal.setScale(2, RoundingMode.HALF_UP))
+                    .overheadCost(BigDecimal.ZERO);
         } else {
             // FIXED_RATE or SUB_CONTRACTED
             totalCost = op.getFixedCostPerUnit() != null

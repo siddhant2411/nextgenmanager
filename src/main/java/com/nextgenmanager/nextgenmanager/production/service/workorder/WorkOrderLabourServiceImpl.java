@@ -102,7 +102,10 @@ public class WorkOrderLabourServiceImpl implements WorkOrderLabourService {
         BigDecimal rate = resolveRate(req, role);
         entry.setCostRatePerHour(rate);
 
-        if (duration != null && rate != null) {
+        if (req.getTotalCost() != null) {
+            // Piece-rate (RATE_TIMES_QTY) operations post the cost directly — no time × rate basis.
+            entry.setTotalCost(req.getTotalCost().setScale(2, RoundingMode.HALF_UP));
+        } else if (duration != null && rate != null) {
             entry.setTotalCost(duration.divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP).multiply(rate).setScale(2, RoundingMode.HALF_UP));
         } else {
             entry.setTotalCost(null);

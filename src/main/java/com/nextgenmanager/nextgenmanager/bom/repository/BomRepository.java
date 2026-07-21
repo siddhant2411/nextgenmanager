@@ -40,6 +40,10 @@ public interface BomRepository extends JpaRepository<Bom,Integer>, JpaSpecificat
            "AND b.bomStatus = 3 AND b.isActiveVersion = true AND b.deletedDate IS NULL")
     List<Bom> findActiveBomsByParentItemIds(@Param("itemIds") List<Integer> itemIds);
 
+    @Query("SELECT b.parentInventoryItem.inventoryItemId FROM Bom b " +
+           "WHERE b.bomStatus = 3 AND b.isActiveVersion = true AND b.deletedDate IS NULL")
+    List<Integer> findAllActiveBomParentItemIds();
+
     @Query("SELECT b FROM Bom b " +
            "JOIN FETCH b.positions p " +
            "JOIN FETCH p.childInventoryItem ci " +

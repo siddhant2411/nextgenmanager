@@ -80,6 +80,15 @@ public class RoutingOperation {
     @Column(precision = 12, scale = 4)
     private BigDecimal costRate;
 
+    /**
+     * RATE_TIMES_QTY only: when true, the work center's overhead% is loaded on top of the
+     * piece-rate subtotal (rate × costQuantity). Defaults to false — a piece rate is treated as an
+     * all-in price unless this is explicitly enabled. Ignored for other cost types (CALCULATED
+     * always applies overhead; FIXED_RATE / SUB_CONTRACTED never do).
+     */
+    @Column(nullable = false)
+    private Boolean applyOverhead = false;
+
     private BigDecimal setupTime;
     private BigDecimal runTime;
     private Boolean inspection;

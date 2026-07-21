@@ -125,6 +125,7 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
         Long routingId = null;
         List<OperationCostLineDTO> opLines = new ArrayList<>();
 
+        BigDecimal unitSubcontractCost = BigDecimal.ZERO;   // excluded from overhead base
         Routing routing = routingRepository.findByBomId(bomId).orElse(null);
         if (routing != null && routing.getOperations() != null) {
             routingId = routing.getId();
@@ -132,14 +133,27 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
                 BigDecimal[] costs = quantityAwareOpCost(op, quantity);
                 unitSetupCost = unitSetupCost.add(costs[0]);
                 unitRunCost = unitRunCost.add(costs[1]);
+                if (op.getCostType() == CostType.SUB_CONTRACTED) {
+                    unitSubcontractCost = unitSubcontractCost.add(costs[0]).add(costs[1]);
+                }
                 opLines.add(buildOpLine(op, costs));
             }
         }
 
         BigDecimal unitOperationCost = unitSetupCost.add(unitRunCost).setScale(4, RoundingMode.HALF_UP);
         BigDecimal batchOperationCost = unitOperationCost.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal unitTotalCost = unitMaterialCost.add(unitOperationCost).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal batchTotalCost = batchMaterialCost.add(batchOperationCost).setScale(2, RoundingMode.HALF_UP);
+
+        // Blanket BOM overhead on material + conversion at this level's rate, excluding only
+        // subcontracted operations. Sub-assembly material is included (child costs are stored prime).
+        BigDecimal overheadPct = bomDto.getOverheadPercentage() != null ? bomDto.getOverheadPercentage() : BigDecimal.ZERO;
+        BigDecimal unitOverheadBase = unitMaterialCost
+                .add(unitOperationCost).subtract(unitSubcontractCost);
+        BigDecimal unitOverheadCost = unitOverheadBase.multiply(overheadPct)
+                .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+        BigDecimal batchOverheadCost = unitOverheadCost.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal unitTotalCost = unitMaterialCost.add(unitOperationCost).add(unitOverheadCost).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal batchTotalCost = batchMaterialCost.add(batchOperationCost).add(batchOverheadCost).setScale(2, RoundingMode.HALF_UP);
 
         return MakeAnalysis.builder()
                 .available(true)
@@ -151,6 +165,8 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
                 .unitRunCost(unitRunCost.setScale(4, RoundingMode.HALF_UP))
                 .unitOperationCost(unitOperationCost)
                 .batchOperationCost(batchOperationCost)
+                .unitOverheadCost(unitOverheadCost.setScale(4, RoundingMode.HALF_UP))
+                .batchOverheadCost(batchOverheadCost)
                 .unitTotalCost(unitTotalCost)
                 .batchTotalCost(batchTotalCost)
                 .materialLines(breakdown.getMaterialCosts())
@@ -179,6 +195,20 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
             return new BigDecimal[]{BigDecimal.ZERO, fixedCost};
         }
 
+        // Piece-rate: cost per produced unit = rate × eaches-consumed (costQuantity). No setup
+        // component and no per-op overhead — the BOM blanket overhead covers it at the rollup.
+        if (costType == CostType.RATE_TIMES_QTY) {
+            BigDecimal rate = op.getCostRate() != null
+                    ? op.getCostRate()
+                    : (op.getProductionJob() != null && op.getProductionJob().getDefaultPieceRate() != null
+                        ? op.getProductionJob().getDefaultPieceRate()
+                        : BigDecimal.ZERO);
+            BigDecimal eaches = op.getCostQuantity() != null ? op.getCostQuantity() : BigDecimal.ZERO;
+
+            BigDecimal unitPieceCost = rate.multiply(eaches).setScale(6, RoundingMode.HALF_UP);
+            return new BigDecimal[]{BigDecimal.ZERO, unitPieceCost};
+        }
+
         BigDecimal setupTime = op.getSetupTime() != null ? op.getSetupTime() : BigDecimal.ZERO;
         BigDecimal runTime = op.getRunTime() != null ? op.getRunTime() : BigDecimal.ZERO;
 
@@ -198,18 +228,13 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
 
         BigDecimal combinedRate = machineCostRate.add(laborCostRate.multiply(BigDecimal.valueOf(numOperators)));
 
-        BigDecimal overheadPct = (op.getWorkCenter() != null && op.getWorkCenter().getOverheadPercentage() != null)
-                ? op.getWorkCenter().getOverheadPercentage() : BigDecimal.ZERO;
-        BigDecimal overheadMultiplier = BigDecimal.ONE.add(
-                overheadPct.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
-
+        // No per-op overhead — the BOM blanket overhead is applied once at the make rollup.
         // Setup: one-time → amortize over batch
-        BigDecimal totalSetupCost = combinedRate.multiply(setupTime).multiply(overheadMultiplier);
+        BigDecimal totalSetupCost = combinedRate.multiply(setupTime);
         BigDecimal unitSetupCost = totalSetupCost.divide(quantity, 6, RoundingMode.HALF_UP);
 
         // Run: per unit
-        BigDecimal unitRunCost = combinedRate.multiply(runTime).multiply(overheadMultiplier)
-                .setScale(6, RoundingMode.HALF_UP);
+        BigDecimal unitRunCost = combinedRate.multiply(runTime).setScale(6, RoundingMode.HALF_UP);
 
         return new BigDecimal[]{unitSetupCost, unitRunCost};
     }
