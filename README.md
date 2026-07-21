@@ -126,6 +126,20 @@ India has over **6.3 crore MSMEs** that form the backbone of the manufacturing s
 </p>
 <p align="center"><em>Procurement pipeline: Manage purchase orders, vendor approvals, and receiving workflows.</em></p>
 
+- **Purchase Orders** — Vendor approvals, receiving workflows, and PO-to-GRN tracking.
+
+### Accounting & Compliance
+
+Full Indian-compliance accounting stack built directly into the ERP — no separate Tally sync required.
+
+- **Chart of Accounts & Vouchers** — Configurable CoA with a statutory voucher system (journal, payment, receipt, contra) and an approval framework.
+- **Auto-Posting from Operations** — Sales and purchase transactions post to the ledger automatically (AR/AP), keeping books in sync with the shop floor.
+- **Perpetual Inventory** — Real-time stock-to-GL reconciliation, so inventory value on the books always matches physical stock movement.
+- **GST Compliance** — GST register, HSN summary, and GSTR-1 / GSTR-3B return generation.
+- **TDS** — TDS at time of payment, section-wise tracking, and challan/26Q reporting.
+- **Opening Balances & Financial Years** — Mid-year opening balance entry and financial year period management.
+- **Accounting Reports** — Built-in reporting across ledgers, GST, and TDS.
+
 ---
 
 ## Installation
@@ -237,12 +251,12 @@ All endpoints are grouped by module and require a JWT bearer token obtained from
 ## Roadmap
 
 ### In Progress
-- [ ] **Inventory Integration** — Full stock tracking with goods receipt, goods issue, and stock ledger.
-- [ ] Purchase Order module completion.
+- [ ] Financial statements (P&L, Balance Sheet, Cash Flow), bank reconciliation, and FY year-end close.
+- [ ] Quality Control (QC) inspection workflows.
+- [ ] Save Filters for users
+- [ ] Complete MCP Support
 
 ### Planned
-- [ ] GST invoice generation (GSTR-1 compatible).
-- [ ] Quality Control (QC) inspection workflows.
 - [ ] Mobile-responsive PWA for shop floor use.
 
 ---
@@ -261,7 +275,7 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ## Support & Contact
 
-- **Email:** animetraversing2411@gmail.com
+- **Email:** siddhantmavani1@gmail.com
 - **GitHub Issues:** [Open an issue](https://github.com/siddhant2411/nextgenmanager/issues) for bugs or feature requests
 
 ---
