@@ -54,6 +54,7 @@ public class BomMapper {
                 .approvalDate(bom.getApprovalDate())
                 .approvalComments(bom.getApprovalComments())
                 .description(bom.getDescription())
+                .overheadPercentage(bom.getOverheadPercentage())
                 .isActive(bom.getIsActive())
                 .isDefault(bom.getIsDefault())
                 .creationDate(bom.getCreationDate())

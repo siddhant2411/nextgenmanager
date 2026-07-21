@@ -31,6 +31,7 @@ public class BomRequestDTO {
     private Date effectiveTo;
     private String revision;
     private String description;
+    private java.math.BigDecimal overheadPercentage;
     private Boolean isActive;
     private Boolean isDefault;
 
@@ -47,6 +48,7 @@ public class BomRequestDTO {
         entity.setEffectiveTo(effectiveTo);
         entity.setRevision(revision);
         entity.setDescription(description);
+        entity.setOverheadPercentage(overheadPercentage);
         entity.setIsActive(isActive);
         entity.setIsDefault(isDefault);
 

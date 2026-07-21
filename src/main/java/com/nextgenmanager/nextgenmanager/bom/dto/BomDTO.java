@@ -29,6 +29,7 @@ public class BomDTO {
     private Date approvalDate;
     private String approvalComments;
     private String description;
+    private java.math.BigDecimal overheadPercentage;
     private Boolean isActive;
     private Boolean isDefault;
     private Date creationDate;

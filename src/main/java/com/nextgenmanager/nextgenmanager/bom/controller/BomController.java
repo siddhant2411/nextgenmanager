@@ -58,6 +58,35 @@ public class BomController {
     @Autowired
     private BomQaParameterService bomQaParameterService;
 
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.bom.service.StandardCostRollupService standardCostRollupService;
+
+    /** Manually trigger a full multi-level standard-cost roll-up (also runs nightly). */
+    @PostMapping("/recost")
+    public ResponseEntity<?> recostAll() {
+        try {
+            int count = standardCostRollupService.rollUpAllStandardCosts();
+            return ResponseEntity.ok(Map.of("recomputedItems", count));
+        } catch (Exception e) {
+            logger.error("Standard-cost roll-up failed: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Standard-cost roll-up failed"));
+        }
+    }
+
+    /** Manually roll up a single item and its manufactured sub-tree. */
+    @PostMapping("/item/{itemId}/recost")
+    public ResponseEntity<?> recostItem(@PathVariable int itemId) {
+        try {
+            java.math.BigDecimal cost = standardCostRollupService.rollUpItemStandardCost(itemId);
+            return ResponseEntity.ok(Map.of("itemId", itemId, "standardCost", cost));
+        } catch (Exception e) {
+            logger.error("Standard-cost roll-up failed for item {}: {}", itemId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Standard-cost roll-up failed for item " + itemId));
+        }
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getBom(@PathVariable Integer id) {
         logger.info("Received request to fetch BOM with id: {}", id);

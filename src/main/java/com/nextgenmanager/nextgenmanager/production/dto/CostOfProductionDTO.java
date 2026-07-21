@@ -27,6 +27,7 @@ public class CostOfProductionDTO {
     private BigDecimal estimatedLabourCost;
     private BigDecimal estimatedMachineCost;
     private BigDecimal estimatedOverheadCost;
+    private BigDecimal estimatedSubcontractCost;   // flat (SUB_CONTRACTED + FIXED_RATE) operation cost
     private BigDecimal totalEstimatedCost;
     private BigDecimal estimatedCostPerUnit;
 
@@ -36,6 +37,7 @@ public class CostOfProductionDTO {
     private BigDecimal actualLabourCost;
     private BigDecimal actualMachineCost;
     private BigDecimal actualOverheadCost;
+    private BigDecimal actualSubcontractCost;      // flat (SUB_CONTRACTED + FIXED_RATE) operation cost
     private BigDecimal totalActualCost;
     private BigDecimal actualCostPerUnit;
 
@@ -45,6 +47,7 @@ public class CostOfProductionDTO {
     private BigDecimal labourVariance;
     private BigDecimal machineVariance;
     private BigDecimal overheadVariance;
+    private BigDecimal subcontractVariance;
     private BigDecimal totalVariance;
     private BigDecimal totalVariancePercentage;
 

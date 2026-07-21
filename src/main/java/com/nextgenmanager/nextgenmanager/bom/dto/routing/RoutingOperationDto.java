@@ -39,6 +39,8 @@ public class RoutingOperationDto {
     private BigDecimal costQuantity;
     /** RATE_TIMES_QTY: optional per-operation rate override; null = inherit ProductionJob.defaultPieceRate. */
     private BigDecimal costRate;
+    /** RATE_TIMES_QTY: when true, load the work center's overhead% on top of rate × costQuantity. */
+    private Boolean applyOverhead;
 
     private BigDecimal setupTime;
     private BigDecimal runTime;
