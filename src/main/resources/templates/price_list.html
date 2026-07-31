@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Price List</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 14mm 12mm 16mm 12mm;
+            @bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: Helvetica, Arial, sans-serif;
+                font-size: 8px;
+                color: #64748b;
+            }
+        }
+
+        body {
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 10px;
+            color: #1e293b;
+            margin: 0;
+        }
+
+        .header {
+            border-bottom: 2px solid #1565c0;
+            padding-bottom: 8px;
+            margin-bottom: 6px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 19px;
+            color: #0f2744;
+        }
+
+        .meta {
+            margin-top: 4px;
+            font-size: 9px;
+            color: #475569;
+        }
+
+        .meta span {
+            margin-right: 14px;
+        }
+
+        .meta b {
+            color: #0f2744;
+        }
+
+        .banner {
+            background-color: #fdecea;
+            border: 1px solid #f5c6c2;
+            color: #a32b20;
+            font-size: 9px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            padding: 5px 8px;
+            margin: 8px 0;
+        }
+
+        .validity {
+            background-color: #eef4fb;
+            border-left: 3px solid #1565c0;
+            padding: 5px 8px;
+            margin: 8px 0;
+            font-size: 9px;
+            color: #0f2744;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9px;
+            -fs-table-paginate: paginate;
+        }
+
+        thead {
+            display: table-header-group;
+        }
+
+        tr {
+            page-break-inside: avoid;
+        }
+
+        th {
+            background-color: #f1f5f9;
+            color: #334155;
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            text-align: left;
+            padding: 6px 5px;
+            border-bottom: 1px solid #cbd5e1;
+        }
+
+        td {
+            padding: 5px;
+            border-bottom: 1px solid #e8edf2;
+            vertical-align: top;
+        }
+
+        .num {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .code {
+            font-family: Courier, monospace;
+            font-size: 8.5px;
+            white-space: nowrap;
+        }
+
+        .floor {
+            font-weight: bold;
+            color: #0f2744;
+        }
+
+        .muted {
+            color: #94a3b8;
+        }
+
+        .warn {
+            color: #a32b20;
+            font-weight: bold;
+        }
+
+        .empty {
+            padding: 18px;
+            text-align: center;
+            color: #64748b;
+            font-style: italic;
+        }
+
+        .notes {
+            margin-top: 14px;
+            border-top: 1px solid #cbd5e1;
+            padding-top: 8px;
+            font-size: 8px;
+            color: #64748b;
+            line-height: 1.6;
+        }
+
+        .notes b {
+            color: #334155;
+        }
+    </style>
+
+    <!-- The internal sheet carries the cost columns too, which will not fit A4 portrait. -->
+    <style th:if="${internal}">
+        @page {
+            size: A4 landscape;
+        }
+
+        table {
+            font-size: 8.5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1 th:text="${title}">Price List</h1>
+    <div class="meta">
+        <span th:if="${customerName}">Prepared for: <b th:text="${customerName}">Customer</b></span>
+        <span>Generated: <b th:text="${generatedOn}">date</b></span>
+        <span>Currency: <b>Rs. (INR)</b></span>
+        <span th:if="${preparedBy}">Prepared by: <b th:text="${preparedBy}">user</b></span>
+    </div>
+</div>
+
+<div class="banner" th:if="${internal}">
+    INTERNAL — NOT FOR CIRCULATION. Contains cost, margin, floor pricing and discount authority.
+    Do not forward to customers.
+</div>
+
+<div class="validity">
+    Prices valid until <b th:text="${validUntil}">date</b>. Quotations issued after this date must be re-confirmed.
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th>Item Code</th>
+        <th>Product</th>
+        <th>Specification</th>
+        <th>UOM</th>
+        <th>HSN</th>
+        <th class="num" th:if="${internal}">Std Cost</th>
+        <th class="num" th:if="${internal}">Selling Cost</th>
+        <th class="num" th:if="${internal}">Last Pur. Cost</th>
+        <th class="num">List Price</th>
+        <th class="num" th:if="${internal}">Margin %</th>
+        <th class="num" th:if="${internal}">Floor Price</th>
+        <th class="num" th:if="${internal}">Max Disc %</th>
+        <th class="num">GST %</th>
+        <th class="num">Incl. GST</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="row : ${rows}">
+        <td class="code" th:text="${row.itemCode}">CODE</td>
+        <td th:text="${row.name}">Product</td>
+        <td th:text="${row.specification}">Spec</td>
+        <td th:text="${row.uom}">NOS</td>
+        <td th:text="${row.hsnCode}">HSN</td>
+
+        <td class="num" th:if="${internal}">
+            <span th:if="${row.standardCost != null}"
+                  th:text="${#numbers.formatDecimal(row.standardCost, 1, 'COMMA', 2, 'POINT')}">0.00</span>
+            <span th:if="${row.standardCost == null}" class="muted">Not set</span>
+        </td>
+
+        <td class="num" th:if="${internal}">
+            <span th:if="${row.sellingCost != null}"
+                  th:text="${#numbers.formatDecimal(row.sellingCost, 1, 'COMMA', 2, 'POINT')}">0.00</span>
+            <span th:if="${row.sellingCost != null and !row.sellingCostFromBom}" class="muted">*</span>
+            <span th:if="${row.sellingCost == null}" class="muted">Not set</span>
+        </td>
+
+        <td class="num" th:if="${internal}">
+            <span th:if="${row.lastPurchaseCost != null}"
+                  th:text="${#numbers.formatDecimal(row.lastPurchaseCost, 1, 'COMMA', 2, 'POINT')}">0.00</span>
+            <span th:if="${row.lastPurchaseCost == null}" class="muted">&#8212;</span>
+        </td>
+
+        <td class="num"
+            th:text="${#numbers.formatDecimal(row.listPrice, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+
+        <td class="num" th:if="${internal}">
+            <span th:if="${row.marginPercent != null}"
+                  th:classappend="${row.marginPercent < 0} ? 'warn'"
+                  th:text="${#numbers.formatDecimal(row.marginPercent, 1, 2)} + '%'">0.00%</span>
+            <span th:if="${row.marginPercent == null}" class="muted">&#8212;</span>
+        </td>
+
+        <td class="num floor" th:if="${internal}">
+            <span th:if="${row.floorPrice != null}"
+                  th:text="${#numbers.formatDecimal(row.floorPrice, 1, 'COMMA', 2, 'POINT')}">0.00</span>
+            <span th:if="${row.floorPrice == null}" class="muted">Not set</span>
+        </td>
+
+        <td class="num" th:if="${internal}">
+            <span th:if="${row.maxDiscountPercent != null}"
+                  th:text="${#numbers.formatDecimal(row.maxDiscountPercent, 1, 2)} + '%'">0.00%</span>
+            <span th:if="${row.maxDiscountPercent == null and row.floorInvalid}" class="warn">Check floor</span>
+            <span th:if="${row.maxDiscountPercent == null and !row.floorInvalid}" class="muted">&#8212;</span>
+        </td>
+
+        <td class="num">
+            <span th:if="${row.gstRate != null}"
+                  th:text="${#numbers.formatDecimal(row.gstRate, 1, 2)}">18.00</span>
+        </td>
+
+        <td class="num">
+            <span th:if="${row.priceInclGst != null}"
+                  th:text="${#numbers.formatDecimal(row.priceInclGst, 1, 'COMMA', 2, 'POINT')}">0.00</span>
+        </td>
+    </tr>
+    <tr th:if="${#lists.isEmpty(rows)}">
+        <td class="empty" th:attr="colspan=${internal} ? 13 : 8">No priced items matched this selection.</td>
+    </tr>
+    </tbody>
+</table>
+
+<div class="notes">
+    <b>Terms.</b> All prices in Indian Rupees (Rs.), Ex-Works, exclusive of GST unless the
+    &quot;Incl. GST&quot; column is used. Packing and freight extra at actuals unless otherwise agreed.
+    Prices are valid only up to the validity date shown above and are subject to change thereafter.
+    <span th:if="${internal}">
+        <br/>
+        <b>Std Cost</b> is the item's prime cost (material + conversion, excluding overhead).
+        <b>Selling Cost</b> is the fully loaded cost from the active BOM including overhead; a
+        <span class="muted">*</span> marks rows with no active BOM, where standard cost is shown instead.
+        <!-- Numeric entities only: the PDF renderer parses this as XML and knows no HTML entity names. -->
+        <b>Margin %</b> = (List Price &#8722; Selling Cost) &#247; List Price. A negative margin is shown in red.
+        <br/>
+        <b>Floor Price</b> is the lowest net price a sales person may authorise without further approval;
+        <b>Max Disc %</b> is the resulting maximum discount off list. Items showing
+        &quot;Not set&quot; have no configured floor — price against margin and obtain approval before discounting.
+    </span>
+</div>
+
+</body>
+</html>

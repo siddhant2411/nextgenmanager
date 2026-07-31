@@ -5,7 +5,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomDTO;
 import com.nextgenmanager.nextgenmanager.bom.dto.BomListDTO;
+import com.nextgenmanager.nextgenmanager.bom.dto.BOMRoutingRequestMapper;
+import com.nextgenmanager.nextgenmanager.bom.dto.BomStatusChangeRequest;
+import com.nextgenmanager.nextgenmanager.bom.dto.routing.RoutingDto;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.bom.model.BomStatus;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
+import com.nextgenmanager.nextgenmanager.bom.service.StandardCostRollupService;
+import com.nextgenmanager.nextgenmanager.bom.service.routing.RoutingService;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
@@ -20,12 +27,17 @@ import com.nextgenmanager.nextgenmanager.production.service.workorder.WorkOrderS
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class McpServerService {
@@ -37,27 +49,46 @@ public class McpServerService {
     private static final String TOOL_WORK_ORDER_GET = "work_order_get";
     private static final String TOOL_WORK_ORDER_LIST = "work_order_list";
     private static final String TOOL_WORK_ORDER_SUMMARY = "work_order_summary";
+    // Write tools (opt-in via mcp.server.write.enabled, admin role required)
+    private static final String TOOL_ITEM_CREATE = "item_create";
+    private static final String TOOL_ITEM_FIND_BY_CODE = "item_find_by_code";
+    private static final String TOOL_ITEM_RECOST = "item_recost";
+    private static final String TOOL_BOM_CREATE = "bom_create";
+    private static final String TOOL_BOM_ACTIVATE = "bom_activate";
+    private static final String TOOL_BOM_COST_BREAKDOWN = "bom_cost_breakdown";
+    private static final Set<String> WRITE_TOOLS = Set.of(
+            TOOL_ITEM_CREATE, TOOL_ITEM_FIND_BY_CODE, TOOL_ITEM_RECOST,
+            TOOL_BOM_CREATE, TOOL_BOM_ACTIVATE, TOOL_BOM_COST_BREAKDOWN);
     private static final String RESOURCE_URI_PREFIX = "nextgen://";
 
     private final String serverName;
     private final String serverVersion;
+    private final boolean writeEnabled;
     private final InventoryItemService inventoryItemService;
     private final BomService bomService;
     private final WorkOrderService workOrderService;
+    private final RoutingService routingService;
+    private final StandardCostRollupService standardCostRollupService;
     private final ObjectMapper objectMapper;
 
     public McpServerService(
             @Value("${mcp.server.name:nextgenmanager-mcp}") String serverName,
             @Value("${mcp.server.version:0.1.0}") String serverVersion,
+            @Value("${mcp.server.write.enabled:false}") boolean writeEnabled,
             InventoryItemService inventoryItemService,
             BomService bomService,
             WorkOrderService workOrderService,
+            RoutingService routingService,
+            StandardCostRollupService standardCostRollupService,
             ObjectMapper objectMapper) {
         this.serverName = serverName;
         this.serverVersion = serverVersion;
+        this.writeEnabled = writeEnabled;
         this.inventoryItemService = inventoryItemService;
         this.bomService = bomService;
         this.workOrderService = workOrderService;
+        this.routingService = routingService;
+        this.standardCostRollupService = standardCostRollupService;
         this.objectMapper = objectMapper;
     }
 
@@ -119,7 +150,7 @@ public class McpServerService {
     }
 
     private Map<String, Object> listTools() {
-        return Map.of("tools", List.of(
+        List<Map<String, Object>> tools = new ArrayList<>(List.of(
                 tool(TOOL_INVENTORY_SEARCH, "Search inventory items by text or pagination.",
                         schema(
                                 integerProperty("page", "Page number, starting at 0."),
@@ -151,6 +182,29 @@ public class McpServerService {
                 tool(TOOL_WORK_ORDER_SUMMARY, "Get work order summary metrics.",
                         schema())
         ));
+
+        if (writeEnabled) {
+            tools.add(tool(TOOL_ITEM_FIND_BY_CODE, "Resolve an inventory item id (and type/standardCost) by exact item code. Use before referencing a child item in a BOM.",
+                    schemaRequired(List.of("itemCode"), stringProperty("itemCode", "Exact item code, e.g. STRBDY80001."))));
+            tools.add(tool(TOOL_ITEM_CREATE, "Create an inventory item. Pass the full InventoryItem JSON (same shape as POST /api/inventory_item/add's 'inventoryItem' part: itemCode, name, uom, itemType, productSpecification, productInventorySettings, productFinanceSettings). De-duplicates on itemCode; supports dryRun.",
+                    schemaRequired(List.of("item"),
+                            objectProperty("item", "Full InventoryItem object graph."),
+                            booleanProperty("dryRun", "If true, validate and echo the payload without persisting."))));
+            tools.add(tool(TOOL_BOM_CREATE, "Create a DRAFT BOM with its positions and routing in one call. Pass a BOMRoutingRequestMapper JSON ({bom:{...positions[]}, routing:{...operations[]}}), the same body as POST /api/bom. Child/parent items are referenced by inventoryItemId. Activate separately with bom_activate.",
+                    schemaRequired(List.of("bomRouting"),
+                            objectProperty("bomRouting", "BOMRoutingRequestMapper object: {bom, routing}."))));
+            tools.add(tool(TOOL_BOM_ACTIVATE, "Activate a DRAFT BOM (transition to ACTIVE, superseding any prior active BOM for the same parent item).",
+                    schemaRequired(List.of("bomId"),
+                            integerProperty("bomId", "BOM id to activate."),
+                            stringProperty("changeReason", "Optional change reason."),
+                            stringProperty("approvalComments", "Optional approval comments."))));
+            tools.add(tool(TOOL_ITEM_RECOST, "Roll up and persist an item's standard cost from its active BOM + manufactured sub-tree. Returns the computed standardCost — use it to verify an entry.",
+                    schemaRequired(List.of("itemId"), integerProperty("itemId", "Inventory item id to recost."))));
+            tools.add(tool(TOOL_BOM_COST_BREAKDOWN, "Get the line-by-line cost breakdown for a BOM (materials + operations + overhead). Use to verify an entry against expected numbers.",
+                    schemaRequired(List.of("bomId"), integerProperty("bomId", "BOM id."))));
+        }
+
+        return Map.of("tools", tools);
     }
 
     private Map<String, Object> listResources() {
@@ -177,6 +231,10 @@ public class McpServerService {
         String toolName = requireString(params, "name");
         JsonNode argumentsNode = params != null ? params.path("arguments") : null;
 
+        if (WRITE_TOOLS.contains(toolName)) {
+            assertWriteAllowed(toolName);
+        }
+
         Object payload = switch (toolName) {
             case TOOL_INVENTORY_SEARCH -> inventorySearch(argumentsNode);
             case TOOL_INVENTORY_GET -> inventoryGet(argumentsNode);
@@ -185,6 +243,12 @@ public class McpServerService {
             case TOOL_WORK_ORDER_GET -> workOrderGet(argumentsNode);
             case TOOL_WORK_ORDER_LIST -> workOrderList(argumentsNode);
             case TOOL_WORK_ORDER_SUMMARY -> workOrderSummary();
+            case TOOL_ITEM_FIND_BY_CODE -> itemFindByCode(argumentsNode);
+            case TOOL_ITEM_CREATE -> itemCreate(argumentsNode);
+            case TOOL_BOM_CREATE -> bomCreate(argumentsNode);
+            case TOOL_BOM_ACTIVATE -> bomActivate(argumentsNode);
+            case TOOL_ITEM_RECOST -> itemRecost(argumentsNode);
+            case TOOL_BOM_COST_BREAKDOWN -> bomCostBreakdown(argumentsNode);
             default -> null;
         };
 
@@ -193,6 +257,141 @@ public class McpServerService {
         }
 
         return toolResult(payload);
+    }
+
+    // ---------------------------------------------------------------------
+    // Write tools (opt-in) — thin wrappers over the same services the REST
+    // controllers use, reusing the exact DTOs so behaviour matches /api/*.
+    // ---------------------------------------------------------------------
+
+    private void assertWriteAllowed(String toolName) {
+        if (!writeEnabled) {
+            throw new IllegalArgumentException(
+                    "MCP write tools are disabled. Set mcp.server.write.enabled=true to enable them.");
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean allowed = auth != null && auth.getAuthorities() != null && auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(a -> a.equals("ROLE_SUPER_ADMIN") || a.equals("ROLE_ADMIN")
+                        || a.equals("ROLE_INVENTORY_ADMIN") || a.equals("ROLE_PRODUCTION_ADMIN"));
+        if (!allowed) {
+            throw new IllegalArgumentException("MCP write tool '" + toolName
+                    + "' requires an admin role (SUPER_ADMIN, ADMIN, INVENTORY_ADMIN or PRODUCTION_ADMIN).");
+        }
+    }
+
+    private Object itemFindByCode(JsonNode argumentsNode) {
+        String code = requireString(argumentsNode, "itemCode");
+        Page<InventoryItemDTO> page = inventoryItemService.getAllInventoryItems(0, 50, "inventoryItemId", "asc", code);
+        for (InventoryItemDTO dto : page.getContent()) {
+            if (code.equalsIgnoreCase(dto.getItemCode())) {
+                return normalize(dto);
+            }
+        }
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("status", "not_found");
+        res.put("itemCode", code);
+        return res;
+    }
+
+    private Object itemCreate(JsonNode argumentsNode) {
+        JsonNode itemNode = argumentsNode != null ? argumentsNode.get("item") : null;
+        if (itemNode == null || itemNode.isNull()) {
+            throw new IllegalArgumentException("item is required");
+        }
+        InventoryItem item;
+        try {
+            item = objectMapper.treeToValue(itemNode, InventoryItem.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid item payload: " + e.getOriginalMessage());
+        }
+        boolean dryRun = argumentsNode.path("dryRun").asBoolean(false);
+
+        // Idempotent: if the code already exists, return the existing id instead of erroring.
+        if (item.getItemCode() != null && !item.getItemCode().isBlank()
+                && inventoryItemService.checkItemCodeExists(item.getItemCode())) {
+            Integer existingId = findItemIdByExactCode(item.getItemCode());
+            Map<String, Object> res = new LinkedHashMap<>();
+            res.put("status", "exists");
+            res.put("itemCode", item.getItemCode());
+            res.put("inventoryItemId", existingId);
+            return res;
+        }
+
+        if (dryRun) {
+            Map<String, Object> res = new LinkedHashMap<>();
+            res.put("status", "dryRun");
+            res.put("wouldCreate", normalize(item));
+            return res;
+        }
+
+        InventoryItem saved = inventoryItemService.addInventoryItem(item);
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("status", "created");
+        res.put("inventoryItemId", saved.getInventoryItemId());
+        res.put("itemCode", saved.getItemCode());
+        return res;
+    }
+
+    private Object bomCreate(JsonNode argumentsNode) {
+        JsonNode node = argumentsNode != null ? argumentsNode.get("bomRouting") : null;
+        if (node == null || node.isNull()) {
+            throw new IllegalArgumentException("bomRouting is required");
+        }
+        BOMRoutingRequestMapper mapper;
+        try {
+            mapper = objectMapper.treeToValue(node, BOMRoutingRequestMapper.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid bomRouting payload: " + e.getOriginalMessage());
+        }
+
+        Bom bom = bomService.addBom(mapper.toBomEntity());
+        RoutingDto routingDto = null;
+        if (mapper.getRouting() != null) {
+            routingDto = routingService.createOrUpdateRouting(bom.getId(), mapper.getRouting(), "SYSTEM");
+        }
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("status", "created");
+        res.put("bomId", bom.getId());
+        res.put("bomName", bom.getBomName());
+        res.put("bomStatus", bom.getBomStatus() != null ? bom.getBomStatus().name() : null);
+        res.put("routingId", routingDto != null ? routingDto.getId() : null);
+        return res;
+    }
+
+    private Object bomActivate(JsonNode argumentsNode) {
+        int bomId = requireInt(argumentsNode, "bomId");
+        BomStatusChangeRequest request = new BomStatusChangeRequest();
+        request.setId(bomId);
+        request.setNextStatus(BomStatus.ACTIVE);
+        request.setChangeReason(getString(argumentsNode, "changeReason", "Activated via MCP"));
+        request.setApprovalComments(getString(argumentsNode, "approvalComments", ""));
+        return normalize(bomService.changeBomStatus(bomId, request));
+    }
+
+    private Object itemRecost(JsonNode argumentsNode) {
+        int itemId = requireInt(argumentsNode, "itemId");
+        BigDecimal cost = standardCostRollupService.rollUpItemStandardCost(itemId);
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("itemId", itemId);
+        res.put("standardCost", cost);
+        return res;
+    }
+
+    private Object bomCostBreakdown(JsonNode argumentsNode) {
+        int bomId = requireInt(argumentsNode, "bomId");
+        return normalize(bomService.getBomCostBreakdown(bomId));
+    }
+
+    private Integer findItemIdByExactCode(String code) {
+        Page<InventoryItemDTO> page = inventoryItemService.getAllInventoryItems(0, 50, "inventoryItemId", "asc", code);
+        for (InventoryItemDTO dto : page.getContent()) {
+            if (code.equalsIgnoreCase(dto.getItemCode())) {
+                return dto.getInventoryItemId();
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> readResource(JsonNode params) {
@@ -336,6 +535,18 @@ public class McpServerService {
 
     private Map<String, Object> stringProperty(String name, String description) {
         return property(name, Map.of("type", "string", "description", description));
+    }
+
+    private Map<String, Object> numberProperty(String name, String description) {
+        return property(name, Map.of("type", "number", "description", description));
+    }
+
+    private Map<String, Object> booleanProperty(String name, String description) {
+        return property(name, Map.of("type", "boolean", "description", description));
+    }
+
+    private Map<String, Object> objectProperty(String name, String description) {
+        return property(name, Map.of("type", "object", "description", description, "additionalProperties", true));
     }
 
     private Map<String, Object> property(String name, Map<String, Object> value) {
