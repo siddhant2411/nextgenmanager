@@ -5,9 +5,11 @@ import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.PriceListExportRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemExportService;
+import com.nextgenmanager.nextgenmanager.items.service.PriceListExportService;
 import io.minio.GetObjectResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -24,6 +26,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import org.springframework.security.core.Authentication;
@@ -46,6 +49,9 @@ public class InventoryItemController {
 
     @Autowired
     private InventoryItemExportService inventoryItemExportService;
+
+    @Autowired
+    private PriceListExportService priceListExportService;
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItemController.class);
 
@@ -271,6 +277,42 @@ public class InventoryItemController {
                     .body(fileBytes);
         } catch (Exception e) {
             logger.error("Error generating product catalog export: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Exports a sales price list for the selected (or filtered) items as PDF or Excel.
+     *
+     * <p>{@code audience=CUSTOMER} discloses list price and GST only and is safe to send out.
+     * {@code audience=INTERNAL} additionally discloses cost, margin, floor price and maximum
+     * discount, and is therefore restricted to roles that may already see finance data.
+     * Manufacturing cost never appears on the customer variant.
+     */
+    @PostMapping("/export/price-list")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_SALES_ADMIN','ROLE_SALES_MANAGER')")
+    public ResponseEntity<byte[]> exportPriceList(@RequestBody PriceListExportRequest request) {
+        if (request.isInternal() && !canViewFinance()) {
+            logger.warn("Rejected INTERNAL price list export: caller lacks finance visibility");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        try {
+            boolean excel = request.isExcel();
+            byte[] fileBytes = excel
+                    ? priceListExportService.generateExcel(request)
+                    : priceListExportService.generatePdf(request);
+
+            String filename = "Price_List_" + LocalDate.now() + (excel ? ".xlsx" : ".pdf");
+            String contentType = excel
+                    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    : MediaType.APPLICATION_PDF_VALUE;
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            logger.error("Error generating price list export: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
