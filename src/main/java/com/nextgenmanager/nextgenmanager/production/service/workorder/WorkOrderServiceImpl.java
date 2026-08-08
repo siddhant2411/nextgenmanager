@@ -112,6 +112,9 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     @Autowired
     private WorkOrderQaService workOrderQaService;
 
+    @Autowired
+    private WorkOrderNumberGenerator workOrderNumberGenerator;
+
 
 
     @Override
@@ -480,8 +483,13 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
 
     private String generateWorkOrderNumber() {
-        Long seq = workOrderRepository.getNextWorkOrderSequence();
-        return "WO-" + seq;
+        return workOrderNumberGenerator.next();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String nextNumber() {
+        return workOrderNumberGenerator.preview();
     }
 
     private BigDecimal calculateWorkOrderCompletedQuantity(WorkOrder workOrder) {

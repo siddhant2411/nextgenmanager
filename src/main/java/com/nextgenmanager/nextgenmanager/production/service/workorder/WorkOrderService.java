@@ -17,6 +17,9 @@ public interface WorkOrderService {
 
     public Page<WorkOrderListDTO> getAllWorkOrders(FilterRequest filterRequest);
 
+    /** Preview the next work order number without consuming the sequence. */
+    public String nextNumber();
+
 
     public WorkOrderDTO updateWorkOrder(int workOrderId, WorkOrderRequestDTO dto);
 

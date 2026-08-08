@@ -23,6 +23,7 @@ import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrd
 import com.nextgenmanager.nextgenmanager.production.service.audit.WorkOrderAuditService;
 import com.nextgenmanager.nextgenmanager.bom.service.routing.RoutingService;
 import com.nextgenmanager.nextgenmanager.production.service.workorder.TestTemplateService;
+import com.nextgenmanager.nextgenmanager.production.service.workorder.WorkOrderNumberGenerator;
 import com.nextgenmanager.nextgenmanager.production.service.workorder.WorkOrderServiceImpl;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
@@ -73,6 +74,8 @@ class WorkOrderServiceImplTest {
     private WorkOrderMapper workOrderMapper;
     @Mock
     private WorkOrderListMapper workOrderListMapper;
+    @Mock
+    private WorkOrderNumberGenerator workOrderNumberGenerator;
 
     @InjectMocks
     private WorkOrderServiceImpl service;
@@ -413,7 +416,7 @@ class WorkOrderServiceImplTest {
         when(workOrderRepository.findById(22)).thenReturn(Optional.of(parent));
         when(workCenterRepository.findById(33)).thenReturn(Optional.of(headerCenter));
         when(testTemplateService.getActiveTemplatesForItem(77)).thenReturn(List.of(template));
-        when(workOrderRepository.getNextWorkOrderSequence()).thenReturn(42L);
+        when(workOrderNumberGenerator.next()).thenReturn("WO/2025-26/0042");
         when(workOrderRepository.save(any(WorkOrder.class))).thenAnswer(invocation -> {
             WorkOrder saved = invocation.getArgument(0);
             if (saved.getId() == 0) {
@@ -476,7 +479,7 @@ class WorkOrderServiceImplTest {
         when(bomService.getBom(dto.getBomId())).thenReturn(bom);
         when(routingService.getRoutingEntityByBom(bom.getId())).thenReturn(routing);
         when(testTemplateService.getActiveTemplatesForItem(88)).thenReturn(Collections.emptyList());
-        when(workOrderRepository.getNextWorkOrderSequence()).thenReturn(2L);
+        when(workOrderNumberGenerator.next()).thenReturn("WO/2025-26/0002");
         when(workOrderRepository.save(any(WorkOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(workOrderMapper.toDTO(any(WorkOrder.class))).thenReturn(new WorkOrderDTO());
 

@@ -41,6 +41,9 @@ public class RejectionServiceImpl implements RejectionService {
     @Autowired
     private WorkOrderOperationRepository workOrderOperationRepository;
 
+    @Autowired
+    private WorkOrderNumberGenerator workOrderNumberGenerator;
+
     @Override
     @Transactional
     public void disposeRejection(DispositionRequestDTO dto) {
@@ -218,10 +221,8 @@ public class RejectionServiceImpl implements RejectionService {
     }
 
     private WorkOrder buildReworkWorkOrder(WorkOrder parent, BigDecimal qty) {
-        Long seq = workOrderRepository.getNextWorkOrderSequence();
-
         WorkOrder rework = new WorkOrder();
-        rework.setWorkOrderNumber("WO-" + seq);
+        rework.setWorkOrderNumber(workOrderNumberGenerator.next());
         rework.setParentWorkOrder(parent);
         rework.setBom(parent.getBom());
         rework.setRouting(parent.getRouting());

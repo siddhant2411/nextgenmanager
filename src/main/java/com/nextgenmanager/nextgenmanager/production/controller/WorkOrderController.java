@@ -1146,6 +1146,16 @@ public class WorkOrderController {
         }
     }
 
+    @Operation(
+        summary = "Preview the next Work Order number",
+        description = "Returns the next work order number in WO/{FY}/{####} format without consuming the sequence."
+    )
+    @GetMapping("/next-number")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<String> nextNumber() {
+        return ResponseEntity.ok(workOrderService.nextNumber());
+    }
+
     // ============================================================================
     // SCHEDULING ENDPOINTS
     // ============================================================================

@@ -46,6 +46,9 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
      */
     private static final double MAKE_PREFERENCE_MARGIN = 0.05;
 
+    /** Routing setup/run times are stored in minutes; all cost rates are per hour. */
+    private static final BigDecimal SIXTY_MINUTES = BigDecimal.valueOf(60);
+
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
 
@@ -178,9 +181,12 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
      * Quantity-aware operation cost per unit.
      *
      * For CALCULATED operations:
-     *   setupCost  = rate × setupTime × (1 + overhead%)          ← one-time, amortized
-     *   runCost    = rate × runTime × (1 + overhead%)             ← per unit (variable)
+     *   setupCost  = rate × setupHours × (1 + overhead%)          ← one-time, amortized
+     *   runCost    = rate × runHours × (1 + overhead%)            ← per unit (variable)
      *   rate       = machineCostPerHour + (laborCostPerHour × numOperators)
+     *
+     * setupTime/runTime are stored in MINUTES (see RoutingOperation) while the rates are
+     * per HOUR, so both are converted before being priced.
      *
      * For FIXED_RATE / SUB_CONTRACTED:
      *   entire fixedCostPerUnit treated as run cost (no setup component)
@@ -209,8 +215,11 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
             return new BigDecimal[]{BigDecimal.ZERO, unitPieceCost};
         }
 
-        BigDecimal setupTime = op.getSetupTime() != null ? op.getSetupTime() : BigDecimal.ZERO;
-        BigDecimal runTime = op.getRunTime() != null ? op.getRunTime() : BigDecimal.ZERO;
+        // Stored in minutes; rates below are per hour.
+        BigDecimal setupHours = (op.getSetupTime() != null ? op.getSetupTime() : BigDecimal.ZERO)
+                .divide(SIXTY_MINUTES, 6, RoundingMode.HALF_UP);
+        BigDecimal runHours = (op.getRunTime() != null ? op.getRunTime() : BigDecimal.ZERO)
+                .divide(SIXTY_MINUTES, 6, RoundingMode.HALF_UP);
 
         // Combined rate: machine + labor
         BigDecimal machineCostRate = BigDecimal.ZERO;
@@ -230,11 +239,11 @@ public class MakeBuyAnalysisServiceImpl implements MakeBuyAnalysisService {
 
         // No per-op overhead — the BOM blanket overhead is applied once at the make rollup.
         // Setup: one-time → amortize over batch
-        BigDecimal totalSetupCost = combinedRate.multiply(setupTime);
+        BigDecimal totalSetupCost = combinedRate.multiply(setupHours);
         BigDecimal unitSetupCost = totalSetupCost.divide(quantity, 6, RoundingMode.HALF_UP);
 
         // Run: per unit
-        BigDecimal unitRunCost = combinedRate.multiply(runTime).setScale(6, RoundingMode.HALF_UP);
+        BigDecimal unitRunCost = combinedRate.multiply(runHours).setScale(6, RoundingMode.HALF_UP);
 
         return new BigDecimal[]{unitSetupCost, unitRunCost};
     }
