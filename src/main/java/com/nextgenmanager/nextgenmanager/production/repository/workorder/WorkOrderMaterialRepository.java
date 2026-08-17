@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.production.repository.workorder;
 
 import com.nextgenmanager.nextgenmanager.production.enums.MaterialIssueStatus;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -41,6 +42,16 @@ public interface WorkOrderMaterialRepository extends JpaRepository<WorkOrderMate
 
     Optional<WorkOrderMaterial> findByInventoryRequestId(Long inventoryRequestId);
 
+    /**
+     * @deprecated scoped to the work order, so on a multi-line work order it returns one row per
+     *             line that consumes the item. Callers that then mutate every row double-count.
+     *             Use {@link #findByWorkOrderLineAndItemId}.
+     */
+    @Deprecated
     @Query("SELECT m FROM WorkOrderMaterial m WHERE m.workOrder = :wo AND m.component.inventoryItemId = :itemId AND m.deletedDate IS NULL")
     List<WorkOrderMaterial> findByWorkOrderAndItemId(@Param("wo") WorkOrder workOrder, @Param("itemId") Long itemId);
+
+    /** The material rows for one item within a single line. */
+    @Query("SELECT m FROM WorkOrderMaterial m WHERE m.workOrderLine = :line AND m.component.inventoryItemId = :itemId AND m.deletedDate IS NULL")
+    List<WorkOrderMaterial> findByWorkOrderLineAndItemId(@Param("line") WorkOrderLine line, @Param("itemId") Long itemId);
 }

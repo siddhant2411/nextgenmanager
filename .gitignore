@@ -75,3 +75,4 @@ application-docker.properties
 
 /bulk_import/
 /scratch/
+/graphify-out/

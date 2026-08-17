@@ -16,6 +16,18 @@ public class WorkOrderMaterialDTO {
 
     private Long id;
 
+    // ---- Owning line ----
+    // Each line explodes its own BOM, and two BOMs may share a raw material, so the same
+    // component can legitimately appear once per line with its own quantities.
+
+    private Long workOrderLineId;
+
+    private Integer lineNumber;
+
+    private String lineItemCode;
+
+    private String lineItemName;
+
     private InventoryItemDTO component;
 
     private BigDecimal netRequiredQuantity;

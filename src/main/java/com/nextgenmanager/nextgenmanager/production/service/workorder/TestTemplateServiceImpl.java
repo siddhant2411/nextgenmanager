@@ -8,6 +8,7 @@ import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderTestResultDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.TestResult;
 import com.nextgenmanager.nextgenmanager.production.model.TestTemplate;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderTestResult;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.TestTemplateRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
+import java.util.Objects;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -170,9 +172,19 @@ public class TestTemplateServiceImpl implements TestTemplateService {
         report.setWorkOrderId(workOrderId);
         report.setWorkOrderNumber(wo.getWorkOrderNumber());
 
-        if (wo.getBom() != null && wo.getBom().getParentInventoryItem() != null) {
-            report.setProductName(wo.getBom().getParentInventoryItem().getName());
-            report.setProductCode(wo.getBom().getParentInventoryItem().getItemCode());
+        // A work order can make several items, so the report names all of them rather than
+        // silently reporting line 1's item as though it were the only one.
+        List<InventoryItem> producedItems = wo.activeLines().stream()
+                .map(WorkOrderLine::getInventoryItem)
+                .filter(Objects::nonNull)
+                .toList();
+        if (!producedItems.isEmpty()) {
+            report.setProductName(producedItems.stream()
+                    .map(InventoryItem::getName).filter(Objects::nonNull)
+                    .collect(Collectors.joining(", ")));
+            report.setProductCode(producedItems.stream()
+                    .map(InventoryItem::getItemCode).filter(Objects::nonNull)
+                    .collect(Collectors.joining(", ")));
         }
 
         report.setTotalTests(total);

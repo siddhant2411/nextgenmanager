@@ -9,9 +9,11 @@ import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.model.RejectionEntry;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import com.nextgenmanager.nextgenmanager.production.repository.RejectionEntryRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderOperationRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderLineRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
@@ -40,6 +42,12 @@ public class RejectionServiceImpl implements RejectionService {
 
     @Autowired
     private WorkOrderOperationRepository workOrderOperationRepository;
+
+    @Autowired
+    private WorkOrderNumberGenerator workOrderNumberGenerator;
+
+    @Autowired
+    private WorkOrderLineRepository workOrderLineRepository;
 
     @Override
     @Transactional
@@ -109,6 +117,7 @@ public class RejectionServiceImpl implements RejectionService {
             case REWORK:
                 WorkOrder reworkWO = buildReworkWorkOrder(workOrder, disposeQty);
                 workOrderRepository.save(reworkWO);
+                buildReworkLine(reworkWO, rejection, disposeQty);
                 target.setChildWorkOrder(reworkWO);
                 logger.info("Rework WO {} created for rejection {} on WO {} — {} units",
                         reworkWO.getWorkOrderNumber(), target.getId(), workOrder.getWorkOrderNumber(), disposeQty);
@@ -205,9 +214,12 @@ public class RejectionServiceImpl implements RejectionService {
                 workOrderOperationRepository.save(dep);
             }
         } else {
-            // Legacy sequential mode — push to next-by-sequence op
+            // Legacy sequential mode — push to next-by-sequence op WITHIN THE SAME LINE.
+            // Scoping to the work order would hand this line's good quantity to whichever other
+            // line happened to own the next sequence number.
             WorkOrderOperation nextOp = workOrderOperationRepository
-                    .findTopByWorkOrderAndSequenceGreaterThanOrderBySequenceAsc(workOrder, source.getSequence());
+                    .findTopByWorkOrderLineAndSequenceGreaterThanOrderBySequenceAsc(
+                            source.getWorkOrderLine(), source.getSequence());
             if (nextOp != null) {
                 BigDecimal current = nextOp.getAvailableInputQuantity() != null
                         ? nextOp.getAvailableInputQuantity() : BigDecimal.ZERO;
@@ -217,11 +229,45 @@ public class RejectionServiceImpl implements RejectionService {
         }
     }
 
-    private WorkOrder buildReworkWorkOrder(WorkOrder parent, BigDecimal qty) {
-        Long seq = workOrderRepository.getNextWorkOrderSequence();
+    /**
+     * Gives the rework work order its own line, mirroring the line the rejection came from.
+     *
+     * <p>Without this the rework work order would carry no lines at all, and completion — which
+     * produces stock line by line — would silently yield nothing. The item, BOM and routing are
+     * taken from the rejected operation's own line so a rework off a multi-line work order
+     * reworks the right item rather than line 1's.
+     */
+    private void buildReworkLine(WorkOrder rework, RejectionEntry rejection, BigDecimal qty) {
+        WorkOrderLine sourceLine = rejection.getOperation() != null
+                ? rejection.getOperation().getWorkOrderLine()
+                : null;
+        if (sourceLine == null) {
+            List<WorkOrderLine> parentLines = rejection.getWorkOrder().activeLines();
+            sourceLine = parentLines.isEmpty() ? null : parentLines.get(0);
+        }
+        if (sourceLine == null) {
+            logger.warn("Rework WO {} has no source line to copy — it will produce no stock",
+                    rework.getWorkOrderNumber());
+            return;
+        }
 
+        WorkOrderLine line = new WorkOrderLine();
+        line.setWorkOrder(rework);
+        line.setLineNumber(1);
+        line.setInventoryItem(sourceLine.getInventoryItem());
+        line.setBom(sourceLine.getBom());
+        line.setRouting(sourceLine.getRouting());
+        line.setPlannedQuantity(qty);
+        line.setCompletedQuantity(BigDecimal.ZERO);
+        line.setScrappedQuantity(BigDecimal.ZERO);
+        line.setStatus(WorkOrderStatus.CREATED);
+        line.setSalesOrderItemId(sourceLine.getSalesOrderItemId());
+        workOrderLineRepository.save(line);
+    }
+
+    private WorkOrder buildReworkWorkOrder(WorkOrder parent, BigDecimal qty) {
         WorkOrder rework = new WorkOrder();
-        rework.setWorkOrderNumber("WO-" + seq);
+        rework.setWorkOrderNumber(workOrderNumberGenerator.next());
         rework.setParentWorkOrder(parent);
         rework.setBom(parent.getBom());
         rework.setRouting(parent.getRouting());

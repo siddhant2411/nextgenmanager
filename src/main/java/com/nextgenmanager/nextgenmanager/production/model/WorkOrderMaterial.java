@@ -31,6 +31,14 @@ public class WorkOrderMaterial {
     @JoinColumn(name = "workOrderId", nullable = false)
     private WorkOrder workOrder;
 
+    /**
+     * The work order line this material belongs to — the real owner. Nullable only until the
+     * V151 backfill is enforced; treat it as required in new code.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workOrderLineId")
+    private WorkOrderLine workOrderLine;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "componentId", nullable = false)
     private InventoryItem component;

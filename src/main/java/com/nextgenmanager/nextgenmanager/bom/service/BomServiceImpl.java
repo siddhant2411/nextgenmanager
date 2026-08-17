@@ -113,6 +113,9 @@ public class BomServiceImpl implements BomService {
 
     private static final String UPLOAD_DIR = "files/bom/";
 
+    /** Routing setup/run times are stored in minutes; all cost rates are per hour. */
+    private static final BigDecimal SIXTY_MINUTES = BigDecimal.valueOf(60);
+
     private static final Map<String, String> JOIN_FIELD_MAP = Map.of(
             "parentItemCode", "parentInventoryItem.itemCode",
             "parentItemName", "parentInventoryItem.name",
@@ -1309,8 +1312,13 @@ public class BomServiceImpl implements BomService {
      * Calculates cost for a single routing operation based on its CostType.
      *
      * CALCULATED: (machineCost + laborCost) × (1 + overhead%/100)
-     *   machineCost = machineRate × totalTime
-     *   laborCost   = laborRate × numberOfOperators × totalTime
+     *   machineCost = machineRate × totalHours
+     *   laborCost   = laborRate × numberOfOperators × totalHours
+     *
+     * setupTime/runTime are stored in MINUTES (see RoutingOperation), while every rate on
+     * MachineDetails / WorkCenter / LaborRole is per HOUR — hence the ÷60 before costing.
+     * A BOM carries no lot size, so this is the cost of a lot of one: totalTime = setup +
+     * run × 1. The work order applies the same formula against its own plannedQuantity.
      *
      * RATE_TIMES_QTY: costRate × costQuantity
      *   costRate = operation override, else ProductionJob.defaultPieceRate
@@ -1364,10 +1372,12 @@ public class BomServiceImpl implements BomService {
         BigDecimal totalCost;
 
         if (costType == CostType.CALCULATED) {
-            BigDecimal machineCost = machineCostRate.multiply(totalTime);
+            // Rates are ₹/hour; totalTime is in minutes.
+            BigDecimal totalHours = totalTime.divide(SIXTY_MINUTES, 6, RoundingMode.HALF_UP);
+            BigDecimal machineCost = machineCostRate.multiply(totalHours);
             BigDecimal laborCost = laborCostRate
                     .multiply(BigDecimal.valueOf(numOperators))
-                    .multiply(totalTime);
+                    .multiply(totalHours);
             BigDecimal subtotal = machineCost.add(laborCost);
 
             // No per-operation overhead: overhead is a single blanket rate applied once at the BOM

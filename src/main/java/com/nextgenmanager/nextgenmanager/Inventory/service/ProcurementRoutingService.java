@@ -23,6 +23,7 @@ import com.nextgenmanager.nextgenmanager.purchase.requisition.service.PurchaseRe
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
+import java.util.ArrayList;
+import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderLineRequestDTO;
 
 /**
  * Routes order-linked (MAKE_TO_ORDER) procurement shortfalls to the right supply document,
@@ -62,6 +65,14 @@ public class ProcurementRoutingService {
     private final BomRepository bomRepository;
     private final RoutingRepository routingRepository;
 
+    /**
+     * When true, a sales order's manufactured shortfalls become ONE work order with a line per
+     * item instead of one work order each. Off by default: it changes long-standing auto-routing
+     * behaviour, so it is opted into per deployment.
+     */
+    @Value("${nextgen.production.batch-work-orders-per-sales-order:false}")
+    private boolean batchWorkOrdersPerSalesOrder;
+
     @Transactional
     public void routeForSalesOrder(Long salesOrderId) {
         SalesOrder so = salesOrderRepository.findById(salesOrderId).orElse(null);
@@ -73,21 +84,108 @@ public class ProcurementRoutingService {
         List<InventoryRequest> needs = inventoryRequestRepository
                 .findBySourceIdAndRequestSource(salesOrderId, InventoryRequestSource.SALES_ORDER);
 
+        List<InventoryProcurementOrder> pending = new ArrayList<>();
         for (InventoryRequest need : needs) {
-            List<InventoryProcurementOrder> orders =
-                    procurementOrderRepository.findByInventoryRequestId(need.getId());
-            for (InventoryProcurementOrder order : orders) {
+            for (InventoryProcurementOrder order : procurementOrderRepository.findByInventoryRequestId(need.getId())) {
                 if (order.getInventoryProcurementStatus() != InventoryProcurementStatus.CREATED) continue;
                 if (order.getProcurementDecision() != ProcurementDecision.UNDECIDED) continue;
-                try {
-                    routeOne(order, so);
-                } catch (Exception e) {
-                    // Leave UNDECIDED for the Planning Desk; never break the chain.
-                    log.error("Procurement routing failed for order {} (item {}) — left UNDECIDED for the desk",
-                            order.getId(),
-                            order.getInventoryItem() != null ? order.getInventoryItem().getItemCode() : "?", e);
-                }
+                pending.add(order);
             }
+        }
+
+        // With batching on, everything this SO needs to make becomes ONE work order with a line
+        // per item instead of a separate work order each. Anything ambiguous or purchased still
+        // falls through to the per-order routing below.
+        if (batchWorkOrdersPerSalesOrder) {
+            List<InventoryProcurementOrder> batched = routeManufacturedAsOneWorkOrder(pending, so);
+            pending.removeAll(batched);
+        }
+
+        for (InventoryProcurementOrder order : pending) {
+            try {
+                routeOne(order, so);
+            } catch (Exception e) {
+                // Leave UNDECIDED for the Planning Desk; never break the chain.
+                log.error("Procurement routing failed for order {} (item {}) — left UNDECIDED for the desk",
+                        order.getId(),
+                        order.getInventoryItem() != null ? order.getInventoryItem().getItemCode() : "?", e);
+            }
+        }
+    }
+
+    /**
+     * Creates a single multi-line work order covering every unambiguously-manufactured need of
+     * this sales order.
+     *
+     * <p>Only needs that {@link #routeOne} would itself have sent to a work order are taken:
+     * manufactured-and-not-purchased, with an active BOM and a routing. Ambiguous items are left
+     * for the Planning Desk exactly as before. If fewer than two qualify there is nothing to
+     * batch and the caller's per-order path handles them, so behaviour for a single-item sales
+     * order is unchanged.
+     *
+     * @return the orders that were folded into the batch work order
+     */
+    private List<InventoryProcurementOrder> routeManufacturedAsOneWorkOrder(
+            List<InventoryProcurementOrder> pending, SalesOrder so) {
+
+        List<InventoryProcurementOrder> eligible = new ArrayList<>();
+        List<WorkOrderLineRequestDTO> lines = new ArrayList<>();
+
+        for (InventoryProcurementOrder order : pending) {
+            InventoryItem item = order.getInventoryItem();
+            if (item == null) continue;
+
+            ProductInventorySettings settings = item.getProductInventorySettings();
+            boolean manufactured = settings != null && settings.isManufactured();
+            boolean purchased = settings != null && settings.isPurchased();
+            if (!manufactured || purchased) continue;
+
+            BigDecimal shortfall = shortfallQty(order);
+            if (shortfall.signum() <= 0) continue;
+
+            Bom bom = bomRepository.findActiveBomWithPositionsByParentItemId(item.getInventoryItemId()).orElse(null);
+            Routing routing = bom != null ? routingRepository.findByBomId(bom.getId()).orElse(null) : null;
+            if (bom == null || routing == null) continue;
+
+            WorkOrderLineRequestDTO line = new WorkOrderLineRequestDTO();
+            line.setBomId(bom.getId());
+            line.setRoutingId(routing.getId());
+            line.setPlannedQuantity(shortfall);
+            line.setDueDate(toDate(so.getDeliveryDate()));
+            eligible.add(order);
+            lines.add(line);
+        }
+
+        if (eligible.size() < 2) {
+            return List.of();
+        }
+
+        try {
+            WorkOrderRequestDTO dto = new WorkOrderRequestDTO();
+            dto.setLines(lines);
+            dto.setSalesOrderId(so.getId().intValue());
+            dto.setSourceType(WorkOrderSourceType.SALES_ORDER);
+            dto.setPriority(WorkOrderPriority.NORMAL);
+            dto.setDueDate(toDate(so.getDeliveryDate()));
+            dto.setRemarks("Auto-created from SO " + so.getOrderNumber()
+                    + " (make-to-order, " + lines.size() + " items)");
+
+            WorkOrderDTO wo = workOrderService.addWorkOrder(dto);
+
+            for (InventoryProcurementOrder order : eligible) {
+                order.setProcurementDecision(ProcurementDecision.WORK_ORDER);
+                order.setOrderId((long) wo.getId());
+                procurementOrderRepository.save(order);
+            }
+            log.info("Auto-routed {} manufactured items of SO {} into one Work Order {}",
+                    lines.size(), so.getOrderNumber(), wo.getId());
+            return eligible;
+
+        } catch (Exception e) {
+            // Fall back to one work order per need rather than stranding the whole sales order.
+            log.error("Batched work order for SO {} failed — falling back to per-item routing",
+                    so.getOrderNumber(), e);
+            return List.of();
         }
     }
 
