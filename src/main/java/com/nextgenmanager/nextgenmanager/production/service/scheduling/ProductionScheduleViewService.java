@@ -189,9 +189,11 @@ public class ProductionScheduleViewService {
                 sOp.setWorkOrderStatus(op.getWorkOrder().getWorkOrderStatus().name());
             }
 
-            if (op.getWorkOrder().getBom() != null && op.getWorkOrder().getBom().getParentInventoryItem() != null) {
-                sOp.setItemCode(op.getWorkOrder().getBom().getParentInventoryItem().getItemCode());
-                sOp.setItemName(op.getWorkOrder().getBom().getParentInventoryItem().getName());
+            // The operation's own line names the item it makes. Reading it from the work order's
+            // BOM would report line 1's item for every operation on a multi-line work order.
+            if (op.getWorkOrderLine() != null && op.getWorkOrderLine().getInventoryItem() != null) {
+                sOp.setItemCode(op.getWorkOrderLine().getInventoryItem().getItemCode());
+                sOp.setItemName(op.getWorkOrderLine().getInventoryItem().getName());
             }
         }
 

@@ -4,7 +4,10 @@ import com.nextgenmanager.nextgenmanager.production.dto.CostOfProductionDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.MaterialCostLineItemDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.OperationCostLineItemDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.CostType;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLabourEntry;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
@@ -20,6 +23,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class CostOfProductionServiceImpl implements CostOfProductionService {
@@ -58,8 +63,16 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
         // Blanket manufacturing overhead: a single per-BOM % at this level's rate on everything except
         // subcontracted operations (their vendor price already carries overhead). Sub-assembly material
         // is included (child standard costs are stored prime). Replaces per-work-center overhead.
-        BigDecimal overheadPct = wo.getBom() != null && wo.getBom().getOverheadPercentage() != null
-                ? wo.getBom().getOverheadPercentage() : BigDecimal.ZERO;
+        // Blanket overhead % comes from the BOM of the line being made. This report is still
+        // work-order-wide, so with several lines it uses the first line's rate; giving the report
+        // a per-line breakdown is a DTO/UI change tracked with the multi-line UI work.
+        BigDecimal overheadPct = wo.activeLines().stream()
+                .map(WorkOrderLine::getBom)
+                .filter(Objects::nonNull)
+                .map(Bom::getOverheadPercentage)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(BigDecimal.ZERO);
         BigDecimal estSubOnly = sumByType(opLines, OperationCostLineItemDTO::getEstimatedTotalCost, CostType.SUB_CONTRACTED);
         BigDecimal actSubOnly = sumByType(opLines, OperationCostLineItemDTO::getActualTotalCost, CostType.SUB_CONTRACTED);
         BigDecimal estOvhd = estMat.add(estLabour).add(estMachine).add(estSub).subtract(estSubOnly)
@@ -81,12 +94,18 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
                 ? totalVar.divide(totalEst, SCALE, RM).multiply(BigDecimal.valueOf(100)).setScale(2, RM)
                 : BigDecimal.ZERO;
 
-        String itemName = "";
-        String itemCode = "";
-        if (wo.getBom() != null && wo.getBom().getParentInventoryItem() != null) {
-            itemName = wo.getBom().getParentInventoryItem().getName();
-            itemCode = wo.getBom().getParentInventoryItem().getItemCode();
-        }
+        // Every item the work order makes, so a multi-line order is not reported as if it made
+        // only the first one.
+        List<InventoryItem> producedItems = wo.activeLines().stream()
+                .map(WorkOrderLine::getInventoryItem)
+                .filter(Objects::nonNull)
+                .toList();
+        String itemName = producedItems.stream()
+                .map(InventoryItem::getName).filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
+        String itemCode = producedItems.stream()
+                .map(InventoryItem::getItemCode).filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
 
         return CostOfProductionDTO.builder()
                 .workOrderNumber(wo.getWorkOrderNumber())

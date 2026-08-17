@@ -46,9 +46,15 @@ public class WorkOrderDTO {
 
     private WorkOrderSourceType sourceType;
 
+    /** The items this work order makes, one line each. */
+    private List<WorkOrderLineDTO> lines;
+
     private List<WorkOrderMaterialDTO> materials;
 
     private List<WorkOrderOperationDTO> operations;
+
+    /** Free-text reference, populated only when sourceType is MANUAL. */
+    private String referenceDocument;
 
     private String remarks;
 

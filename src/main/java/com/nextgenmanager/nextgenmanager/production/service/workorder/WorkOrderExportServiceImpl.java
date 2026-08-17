@@ -5,9 +5,11 @@ import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ProductSpecification;
 import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
@@ -54,11 +56,9 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
 
         Context context = new Context();
 
-        Bom bom = wo.getBom();
-        String parentCode = bom != null && bom.getParentInventoryItem() != null
-                ? bom.getParentInventoryItem().getItemCode() : "N/A";
-        String parentName = bom != null && bom.getParentInventoryItem() != null
-                ? bom.getParentInventoryItem().getName() : "N/A";
+        Bom bom = firstLineBom(wo);
+        String parentCode = producedItemCodes(wo);
+        String parentName = producedItemNames(wo);
         String bomCode = bom != null
                 ? (bom.getBomName() != null ? bom.getBomName() : "BOM #" + bom.getId()) : "N/A";
         String bomRevision = bom != null ? String.valueOf(bom.getRevision()) : "N/A";
@@ -95,12 +95,10 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
     @Override
     public byte[] generateOperationInstructionCards(Integer workOrderId) throws Exception {
         WorkOrder wo = findWorkOrder(workOrderId);
-        Bom bom = wo.getBom();
+        Bom bom = firstLineBom(wo);
 
-        String parentCode = bom != null && bom.getParentInventoryItem() != null
-                ? bom.getParentInventoryItem().getItemCode() : "N/A";
-        String parentName = bom != null && bom.getParentInventoryItem() != null
-                ? bom.getParentInventoryItem().getName() : "N/A";
+        String parentCode = producedItemCodes(wo);
+        String parentName = producedItemNames(wo);
 
         String dueDate = wo.getDueDate() != null
                 ? new java.text.SimpleDateFormat("dd-MMM-yyyy").format(wo.getDueDate()) : "N/A";
@@ -184,12 +182,10 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
     @Override
     public byte[] generateMaterialPickList(Integer workOrderId) throws Exception {
         WorkOrder wo = findWorkOrder(workOrderId);
-        Bom bom = wo.getBom();
+        Bom bom = firstLineBom(wo);
 
-        String parentCode = bom != null && bom.getParentInventoryItem() != null
-                ? bom.getParentInventoryItem().getItemCode() : "N/A";
-        String parentName = bom != null && bom.getParentInventoryItem() != null
-                ? bom.getParentInventoryItem().getName() : "N/A";
+        String parentCode = producedItemCodes(wo);
+        String parentName = producedItemNames(wo);
 
         String dueDate = wo.getDueDate() != null
                 ? new java.text.SimpleDateFormat("dd-MMM-yyyy").format(wo.getDueDate()) : "N/A";
@@ -218,10 +214,9 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
     @Override
     public byte[] generateMoveTickets(Integer workOrderId) throws Exception {
         WorkOrder wo = findWorkOrder(workOrderId);
-        Bom bom = wo.getBom();
+        Bom bom = firstLineBom(wo);
 
-        String parentCode = bom != null && bom.getParentInventoryItem() != null
-                ? bom.getParentInventoryItem().getItemCode() : "N/A";
+        String parentCode = producedItemCodes(wo);
 
         String dueDate = wo.getDueDate() != null
                 ? new java.text.SimpleDateFormat("dd-MMM-yyyy").format(wo.getDueDate()) : "N/A";
@@ -276,6 +271,39 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
     private WorkOrder findWorkOrder(Integer id) {
         return workOrderRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Work order not found: " + id));
+    }
+
+    // ─── Produced-item resolution ─────────────────────────────────────────────
+    // A work order makes one item per line, so these read the lines rather than the work
+    // order's BOM. Where a document has a single item field, all produced items are listed
+    // so a multi-line work order is never misreported as making only line 1's item.
+    // Giving each line its own page/section is a document-layout change, not a data one.
+
+    private String producedItemCodes(WorkOrder wo) {
+        return joinLines(wo, i -> i.getItemCode());
+    }
+
+    private String producedItemNames(WorkOrder wo) {
+        return joinLines(wo, i -> i.getName());
+    }
+
+    private String joinLines(WorkOrder wo, java.util.function.Function<InventoryItem, String> field) {
+        String joined = wo.activeLines().stream()
+                .map(WorkOrderLine::getInventoryItem)
+                .filter(Objects::nonNull)
+                .map(field)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
+        return joined.isEmpty() ? "N/A" : joined;
+    }
+
+    /** The first line's BOM — used for header fields (revision, drawing) that are not yet per-line. */
+    private Bom firstLineBom(WorkOrder wo) {
+        return wo.activeLines().stream()
+                .map(WorkOrderLine::getBom)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
     }
 
     private List<Map<String, Object>> buildMaterialRows(WorkOrder wo) {

@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
 
 @Data
@@ -20,6 +21,13 @@ public class WorkOrderRequestDTO {
     private Integer salesOrderId;
 
     private Integer parentWorkOrderId;
+
+    /**
+     * The items to manufacture, one line each. When empty, the flat {@link #bomId} /
+     * {@link #routingId} / {@link #plannedQuantity} fields below are treated as a single line,
+     * so existing single-item callers keep working unchanged.
+     */
+    private List<WorkOrderLineRequestDTO> lines;
 
     private Integer bomId;
 
@@ -36,6 +44,9 @@ public class WorkOrderRequestDTO {
     private BigDecimal scrappedQuantity;
 
     private WorkOrderSourceType sourceType;
+
+    /** Free-text reference, used only when sourceType is MANUAL. */
+    private String referenceDocument;
 
     private String remarks;
 

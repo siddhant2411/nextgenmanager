@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.production.repository.workorder;
 
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -29,13 +30,37 @@ public interface WorkOrderOperationRepository extends JpaRepository<WorkOrderOpe
             OperationStatus status
     );
 
+    /**
+     * @deprecated scoped to the work order, so on a multi-line work order it can return an
+     *             operation belonging to a DIFFERENT line. Use
+     *             {@link #findTopByWorkOrderLineAndSequenceLessThanOrderBySequenceDesc}.
+     */
+    @Deprecated
     WorkOrderOperation findTopByWorkOrderAndSequenceLessThanOrderBySequenceDesc(
             WorkOrder workOrder,
             Integer sequence
     );
 
+    /**
+     * @deprecated scoped to the work order, so on a multi-line work order it can return an
+     *             operation belonging to a DIFFERENT line. Use
+     *             {@link #findTopByWorkOrderLineAndSequenceGreaterThanOrderBySequenceAsc}.
+     */
+    @Deprecated
     WorkOrderOperation findTopByWorkOrderAndSequenceGreaterThanOrderBySequenceAsc(
             WorkOrder workOrder,
+            Integer sequence
+    );
+
+    /** The operation immediately upstream of {@code sequence} within the same line. */
+    WorkOrderOperation findTopByWorkOrderLineAndSequenceLessThanOrderBySequenceDesc(
+            WorkOrderLine workOrderLine,
+            Integer sequence
+    );
+
+    /** The operation immediately downstream of {@code sequence} within the same line. */
+    WorkOrderOperation findTopByWorkOrderLineAndSequenceGreaterThanOrderBySequenceAsc(
+            WorkOrderLine workOrderLine,
             Integer sequence
     );
 

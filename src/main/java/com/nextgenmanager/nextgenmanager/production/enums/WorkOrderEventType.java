@@ -14,5 +14,6 @@ public enum WorkOrderEventType {
     CLOSED,
     SHORT_CLOSED,
     MATERIAL_RETURNED,
+    SPLIT,
     CANCELLED
 }

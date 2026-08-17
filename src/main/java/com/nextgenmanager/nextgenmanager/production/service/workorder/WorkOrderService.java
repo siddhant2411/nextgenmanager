@@ -25,6 +25,15 @@ public interface WorkOrderService {
 
     public WorkOrderDTO releaseWorkOrder(int workOrderId, boolean forceRelease);
 
+    /**
+     * Moves quantity off a work order into a new one, returning the work order that was created.
+     * See the implementation for the rules governing produced units and issued material.
+     */
+    public WorkOrderDTO splitWorkOrder(int workOrderId, WorkOrderSplitRequestDTO dto);
+
+    /** Every work order linked to this one — what it came out of, and what came out of it. */
+    public List<RelatedWorkOrderDTO> getRelatedWorkOrders(int workOrderId);
+
     public void startOperation(Long operationId);
 
     /**

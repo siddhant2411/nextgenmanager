@@ -18,6 +18,18 @@ public class WorkOrderOperationDTO {
 
     private Long id;
 
+    // ---- Owning line ----
+    // Sequence numbers restart per line, so "10" alone is ambiguous on a multi-item work order.
+    // The item this operation is making is what tells the two apart.
+
+    private Long workOrderLineId;
+
+    private Integer lineNumber;
+
+    private String lineItemCode;
+
+    private String lineItemName;
+
     private RoutingOperationDto routingOperation;
 
     private Integer sequence;

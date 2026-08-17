@@ -1,7 +1,7 @@
 package com.nextgenmanager.nextgenmanager.items.service;
 
-import com.nextgenmanager.nextgenmanager.items.dto.ItemVendorPriceDTO;
-import com.nextgenmanager.nextgenmanager.items.dto.ItemVendorPriceRequestDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.ItemVendorPriceDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.ItemVendorPriceRequestDTO;
 import com.nextgenmanager.nextgenmanager.items.model.ItemVendorPrice;
 import com.nextgenmanager.nextgenmanager.items.model.ItemVendorPriceHistory;
 import com.nextgenmanager.nextgenmanager.items.model.PriceType;

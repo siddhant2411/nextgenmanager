@@ -430,6 +430,72 @@ public class WorkOrderController {
     }
 
     /**
+     * Split quantity off a work order into a new one.
+     *
+     * <p>Quantities are stated per line. Produced units and issued material stay with the source;
+     * the new work order is created in CREATED status and raises its own material requests.
+     *
+     * @return the newly created work order
+     */
+    @PostMapping("/{id}/split")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> splitWorkOrder(
+        @Parameter(name = "id", description = "Work Order ID", required = true, example = "1")
+        @PathVariable int id,
+        @RequestBody WorkOrderSplitRequestDTO splitRequest) {
+        try {
+            logger.debug("Splitting WorkOrder id: {}", id);
+
+            WorkOrderDTO created = workOrderService.splitWorkOrder(id, splitRequest);
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(created);
+
+        } catch (EntityNotFoundException e) {
+            logger.warn("Split failed for WorkOrder id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+
+        } catch (IllegalArgumentException e) {
+            logger.warn("Invalid split request for WorkOrder id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+
+        } catch (IllegalStateException e) {
+            logger.warn("Cannot split WorkOrder id {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage()));
+
+        } catch (Exception e) {
+            logger.error("Error splitting WorkOrder id: {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to split WorkOrder: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Work orders linked to this one — what it came out of, and what came out of it, whether the
+     * link was made by hand or by a split.
+     */
+    @GetMapping("/{id}/related")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> getRelatedWorkOrders(
+        @Parameter(name = "id", description = "Work Order ID", required = true, example = "1")
+        @PathVariable int id) {
+        try {
+            return ResponseEntity.ok(workOrderService.getRelatedWorkOrders(id));
+
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "WorkOrder not found with ID: " + id));
+
+        } catch (Exception e) {
+            logger.error("Error loading related work orders for id: {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to load related work orders: " + e.getMessage()));
+        }
+    }
+
+    /**
      * Start an Operation
      * Transitions an operation to IN_PROGRESS status.
      */

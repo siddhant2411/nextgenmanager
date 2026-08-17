@@ -15,6 +15,8 @@ import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrd
 import org.springframework.security.core.context.SecurityContextHolder;
 import com.nextgenmanager.nextgenmanager.production.model.*;
 import com.nextgenmanager.nextgenmanager.production.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,8 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class JobWorkChallanServiceImpl implements JobWorkChallanService {
+
+    private static final Logger logger = LoggerFactory.getLogger(JobWorkChallanServiceImpl.class);
 
     @Autowired private JobWorkChallanRepository challanRepo;
     @Autowired private JobWorkChallanLineRepository lineRepo;
@@ -310,6 +314,27 @@ public class JobWorkChallanServiceImpl implements JobWorkChallanService {
     private void consumeMaterials(JobWorkChallan challan, List<JobWorkChallanLineReceiptDTO> lines) {
         if (challan.getWorkOrder() == null || lines == null) return;
         WorkOrder wo = challan.getWorkOrder();
+
+        // Consumption belongs to ONE line of the work order. Looking material up by work order
+        // would return a row per line that uses the item, and the loop below mutates every row
+        // it is given — so on a multi-line work order sharing a raw material the receipt would
+        // be consumed once per line.
+        WorkOrderLine challanLine = challan.getWorkOrderOperation() != null
+                ? challan.getWorkOrderOperation().getWorkOrderLine()
+                : null;
+        if (challanLine == null) {
+            List<WorkOrderLine> woLines = wo.activeLines();
+            if (woLines.size() == 1) {
+                challanLine = woLines.get(0);
+            } else {
+                logger.error("Challan {} is not linked to an operation and work order {} has {} "
+                                + "lines — cannot tell which line consumed the material, so it is "
+                                + "left for manual issue rather than consumed against every line.",
+                        challan.getChallanNumber(), wo.getWorkOrderNumber(), woLines.size());
+                return;
+            }
+        }
+        final WorkOrderLine line = challanLine;
         for (JobWorkChallanLineReceiptDTO lineReceipt : lines) {
             BigDecimal received = lineReceipt.getQuantityReceived() != null
                     ? lineReceipt.getQuantityReceived() : BigDecimal.ZERO;
@@ -322,9 +347,10 @@ public class JobWorkChallanServiceImpl implements JobWorkChallanService {
             challan.getLines().stream()
                     .filter(l -> l.getId().equals(lineReceipt.getLineId()) && l.getItem() != null)
                     .findFirst()
-                    .ifPresent(line -> {
+                    .ifPresent(challanLineItem -> {
                         List<WorkOrderMaterial> mats = workOrderMaterialRepo
-                                .findByWorkOrderAndItemId(wo, (long) line.getItem().getInventoryItemId());
+                                .findByWorkOrderLineAndItemId(
+                                        line, (long) challanLineItem.getItem().getInventoryItemId());
                         for (WorkOrderMaterial mat : mats) {
                             // Backflush: auto-issue the material (was never manually issued)
                             if (wo.isAllowBackflush()) {

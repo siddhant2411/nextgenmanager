@@ -2,8 +2,8 @@ package com.nextgenmanager.nextgenmanager.items.service;
 
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
-import com.nextgenmanager.nextgenmanager.items.dto.ItemVendorPriceDTO;
-import com.nextgenmanager.nextgenmanager.items.dto.ItemVendorPriceRequestDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.ItemVendorPriceDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.ItemVendorPriceRequestDTO;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemVendorPrice;
 import com.nextgenmanager.nextgenmanager.items.model.PriceType;

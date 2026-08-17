@@ -1,4 +1,4 @@
-package com.nextgenmanager.nextgenmanager.items.dto;
+package com.nextgenmanager.nextgenmanager.items.DTO;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nextgenmanager.nextgenmanager.items.model.PriceType;

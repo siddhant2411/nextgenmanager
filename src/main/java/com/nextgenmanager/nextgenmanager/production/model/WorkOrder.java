@@ -17,6 +17,7 @@ import org.hibernate.annotations.Where;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import com.nextgenmanager.nextgenmanager.bom.model.routing.Routing;
@@ -66,6 +67,16 @@ public class WorkOrder {
     @JoinColumn(name = "routeId", referencedColumnName = "id")
     private Routing routing;
 
+    /**
+     * The finished items this work order produces, one line each.
+     * Ordered by {@code lineNumber} so callers get a stable, user-visible sequence.
+     */
+    @OneToMany(mappedBy = "workOrder", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("lineNumber ASC")
+    private List<WorkOrderLine> lines = new ArrayList<>();
+
+    /** Set when this work order was created by splitting another. Distinct from {@link #parentWorkOrder}. */
+    private Integer splitFromWorkOrderId;
 
     @OneToMany(mappedBy = "workOrder", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WorkOrderMaterial> materials;
@@ -78,6 +89,15 @@ public class WorkOrder {
 
     @Enumerated(EnumType.STRING)
     private WorkOrderSourceType sourceType;
+
+    /**
+     * Free-text reference for a MANUAL source — a job card, an email, a customer's PO number.
+     *
+     * <p>Only MANUAL uses it. A SALES_ORDER or PARENT_WORK_ORDER source is referenced by the
+     * {@link #salesOrder} / {@link #parentWorkOrder} relations, which point at a real record;
+     * a manual order has nothing to point at, so the reference is whatever the operator types.
+     */
+    private String referenceDocument;
 
     private String remarks;
 
@@ -126,6 +146,49 @@ public class WorkOrder {
     private Date updatedDate;
 
     private Date deletedDate;
+
+    // ─── Single-line compatibility shim ───────────────────────────────────────
+    // Transitional. Every work order currently has exactly one line (backfilled by V150), so
+    // these accessors let the ~23 call sites that still read the work order's BOM / routing /
+    // planned quantity keep working unchanged. They deliberately THROW on a multi-line work
+    // order rather than silently answering for line 1 — a wrong-but-plausible answer here would
+    // mean producing the wrong item or costing against the wrong BOM. Multi-line creation stays
+    // blocked until every caller is line-aware, at which point this whole block is deleted.
+
+    /** Live, non-deleted lines in line-number order. */
+    public List<WorkOrderLine> activeLines() {
+        if (lines == null) return List.of();
+        return lines.stream().filter(l -> l.getDeletedDate() == null).toList();
+    }
+
+    public boolean isMultiLine() {
+        return activeLines().size() > 1;
+    }
+
+    /**
+     * The one and only line of a single-line work order.
+     *
+     * @throws IllegalStateException if this work order does not have exactly one active line —
+     *         the caller must be rewritten to iterate {@link #activeLines()}.
+     */
+    public WorkOrderLine soleLine() {
+        List<WorkOrderLine> active = activeLines();
+        if (active.size() != 1) {
+            throw new IllegalStateException(
+                    "WorkOrder " + workOrderNumber + " has " + active.size()
+                            + " active lines; this caller assumes exactly one and must be made "
+                            + "line-aware (iterate activeLines()).");
+        }
+        return active.get(0);
+    }
+
+    // The header's bomId / routeId / plannedQuantity columns are kept as a MIRROR of line 1 while
+    // every work order is single-line, and are dropped in V152. Lombok's generated getters are
+    // left to read the fields directly on purpose: routing them through activeLines() would force
+    // a lazy load of the lines collection on every call, which risks LazyInitializationException
+    // in the DTO mappers and adds a query to ~23 existing call sites. The "exactly one line"
+    // guarantee is instead enforced where it belongs — in the service layer, which refuses to
+    // build a multi-line work order until every consumer has been made line-aware.
 
     // ─── Yield Metrics (computed, not persisted) ──────────────────────────────
 
