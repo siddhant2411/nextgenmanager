@@ -95,4 +95,17 @@ public class CoaController {
     public ResponseEntity<List<LedgerAccountDto>> ensureContactLedger(@PathVariable int contactId) {
         return ResponseEntity.ok(coaService.ensureContactLedgers(contactId));
     }
+
+    /**
+     * Bulk party-ledger sweep, for data imports.
+     *
+     * <p>POST with a body of contact ids to target those, or with no body to sweep
+     * every GST-registered contact. Idempotent — contacts that already have their
+     * ledgers are counted and skipped.
+     */
+    @PostMapping("/contacts/ensure-ledgers")
+    public ResponseEntity<BulkLedgerResultDto> ensureContactLedgersBulk(
+            @RequestBody(required = false) List<Integer> contactIds) {
+        return ResponseEntity.ok(coaService.ensureContactLedgersBulk(contactIds));
+    }
 }

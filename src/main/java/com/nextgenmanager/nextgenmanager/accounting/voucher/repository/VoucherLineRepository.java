@@ -55,7 +55,7 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
      * Returns Object[]{ledgerAccountId, date, drAmount, crAmount}.
      */
     @Query("""
-        SELECT vl.ledgerAccount.id, v.date, vl.drAmount, vl.crAmount
+        SELECT vl.ledgerAccount.id, v.date, vl.drAmount, vl.crAmount, v.voucherType
         FROM VoucherLine vl
         JOIN vl.voucher v
         WHERE vl.ledgerAccount.subLedgerType = :type

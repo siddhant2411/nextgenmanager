@@ -12,7 +12,11 @@ public interface PurchaseOrderService {
 
     PurchaseOrderDto getById(Long id);
 
-    Page<PurchaseOrderListDto> list(String status, String approvalStatus, Integer vendorId, Pageable pageable);
+    /** Lists POs matching every supplied filter. A null filter means no filter. */
+    Page<PurchaseOrderListDto> list(PurchaseOrderFilter filter, Pageable pageable);
+
+    /** Point lookup by the PO number a human quotes. 404s when there is no such active PO. */
+    PurchaseOrderDto getByNumber(String purchaseOrderNumber);
 
     /** Returns all POs in SENT or PARTIALLY_RECEIVED status, with daysOverdue populated where applicable. */
     List<PurchaseOrderListDto> getPendingReceipt();

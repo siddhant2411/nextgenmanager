@@ -1,11 +1,14 @@
 package com.nextgenmanager.nextgenmanager.purchase.controller;
 
+import com.nextgenmanager.nextgenmanager.bom.service.InvalidDataException;
 import com.nextgenmanager.nextgenmanager.purchase.dto.*;
 import com.nextgenmanager.nextgenmanager.purchase.service.PurchaseOrderService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -31,13 +34,46 @@ public class PurchaseOrderController {
         return ResponseEntity.ok(service.create(dto));
     }
 
+    /**
+     * Lists purchase orders. Every filter supplied narrows the result; see
+     * {@link PurchaseOrderFilter} for the full set.
+     *
+     * <p>Unknown parameters are rejected rather than ignored. Spring binds query parameters by
+     * name and silently drops the rest, so {@code ?poNo=7} used to come back as page one of the
+     * entire table -- twenty unrelated POs presented as the answer to a search for one. A typo is
+     * a 400 naming the parameter now.
+     */
     @GetMapping
     public ResponseEntity<Page<PurchaseOrderListDto>> list(
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String approvalStatus,
-            @RequestParam(required = false) Integer vendorId,
+            @ModelAttribute PurchaseOrderFilter filter,
+            HttpServletRequest request,
             @PageableDefault(size = 20, sort = "createdDate") Pageable pageable) {
-        return ResponseEntity.ok(service.list(status, approvalStatus, vendorId, pageable));
+        rejectUnknownParams(request);
+        return ResponseEntity.ok(service.list(filter, pageable));
+    }
+
+    private static void rejectUnknownParams(HttpServletRequest request) {
+        List<String> unknown = request.getParameterMap().keySet().stream()
+                .filter(name -> !PurchaseOrderFilter.KNOWN_PARAMS.contains(name))
+                .sorted()
+                .toList();
+        if (!unknown.isEmpty()) {
+            throw new InvalidDataException("Unknown query parameter(s): " + String.join(", ", unknown)
+                    + ". Supported: " + PurchaseOrderFilter.KNOWN_PARAMS.stream()
+                    .sorted().collect(Collectors.joining(", ")));
+        }
+    }
+
+    /**
+     * Fetches one PO by the number people quote, rather than by surrogate id.
+     *
+     * <p>The number travels as a query parameter because it contains slashes --
+     * {@code PO/2026-27/0007}. As a path variable it would either split across segments or need
+     * percent-encoding that the container rejects by default.
+     */
+    @GetMapping("/by-number")
+    public ResponseEntity<PurchaseOrderDto> getByNumber(@RequestParam String number) {
+        return ResponseEntity.ok(service.getByNumber(number));
     }
 
     @GetMapping("/{id}")

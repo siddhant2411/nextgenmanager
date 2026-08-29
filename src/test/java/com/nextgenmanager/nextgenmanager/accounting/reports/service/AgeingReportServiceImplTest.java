@@ -3,8 +3,11 @@ package com.nextgenmanager.nextgenmanager.accounting.reports.service;
 import com.nextgenmanager.nextgenmanager.accounting.coa.model.LedgerAccount;
 import com.nextgenmanager.nextgenmanager.accounting.coa.model.SubLedgerType;
 import com.nextgenmanager.nextgenmanager.accounting.coa.repository.LedgerAccountRepository;
+import com.nextgenmanager.nextgenmanager.accounting.opening.model.OpeningBalance;
+import com.nextgenmanager.nextgenmanager.accounting.opening.repository.OpeningBalanceRepository;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.AgeingReportDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.AgeingRowDto;
+import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.repository.VoucherLineRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +29,7 @@ class AgeingReportServiceImplTest {
 
     @Mock private VoucherLineRepository voucherLineRepo;
     @Mock private LedgerAccountRepository ledgerRepo;
+    @Mock private OpeningBalanceRepository openingBalanceRepo;
 
     @InjectMocks private AgeingReportServiceImpl service;
 
@@ -40,7 +44,21 @@ class AgeingReportServiceImplTest {
     }
 
     private Object[] line(long ledgerId, LocalDate date, String dr, String cr) {
-        return new Object[]{ ledgerId, date, new BigDecimal(dr), new BigDecimal(cr) };
+        return line(ledgerId, date, dr, cr, VoucherType.JOURNAL);
+    }
+
+    private Object[] line(long ledgerId, LocalDate date, String dr, String cr, VoucherType type) {
+        return new Object[]{ ledgerId, date, new BigDecimal(dr), new BigDecimal(cr), type };
+    }
+
+    /** A cutover open item carrying its original bill date (V162). */
+    private OpeningBalance openItem(LedgerAccount ledger, String amount, String drCr, LocalDate billDate) {
+        OpeningBalance ob = new OpeningBalance();
+        ob.setLedgerAccount(ledger);
+        ob.setAmount(new BigDecimal(amount));
+        ob.setDrCr(drCr);
+        ob.setBillDate(billDate);
+        return ob;
     }
 
     @Test
@@ -103,5 +121,68 @@ class AgeingReportServiceImplTest {
         assertThat(row.getDays90Plus()).isEqualByComparingTo("500.00");   // 2000 - 1500 payment
         assertThat(row.getCurrent()).isEqualByComparingTo("1000.00");
         assertThat(row.getTotal()).isEqualByComparingTo("1500.00");
+    }
+
+    // ─── V162: cutover open items age by their ORIGINAL bill date ────────────
+
+    @Test
+    void cutoverBills_ageByBillDate_notByOpeningVoucherDate() {
+        LedgerAccount acme = ledger(3001L, "C-3001", "Acme Pvt Ltd");
+        when(ledgerRepo.findBySubLedgerTypeAndDeletedDateIsNull(SubLedgerType.CUSTOMER))
+                .thenReturn(List.of(acme));
+        // The GL sees ONE opening line dated at the cutover -- which on its own would read "current".
+        when(voucherLineRepo.partyLedgerLines(SubLedgerType.CUSTOMER, AS_OF)).thenReturn(List.<Object[]>of(
+                line(3001L, LocalDate.of(2025, 6, 1), "2500.00", "0.00", VoucherType.OPENING)
+        ));
+        // The open items behind it are old, and one is recent.
+        when(openingBalanceRepo.datedOpenItems(SubLedgerType.CUSTOMER, AS_OF)).thenReturn(List.of(
+                openItem(acme, "2000.00", "DR", LocalDate.of(2022, 3, 8)),   // ancient -> 90+
+                openItem(acme, "500.00",  "DR", LocalDate.of(2025, 6, 5))    // recent  -> current
+        ));
+
+        AgeingRowDto row = service.debtorsAgeing(AS_OF).getRows().get(0);
+
+        assertThat(row.getDays90Plus()).isEqualByComparingTo("2000.00");
+        assertThat(row.getCurrent()).isEqualByComparingTo("500.00");
+        // Ties to the ledger: the OPENING line was replaced, not added to.
+        assertThat(row.getTotal()).isEqualByComparingTo("2500.00");
+    }
+
+    @Test
+    void cutoverBills_laterReceiptStillAllocatesOldestFirst() {
+        LedgerAccount acme = ledger(3001L, "C-3001", "Acme Pvt Ltd");
+        when(ledgerRepo.findBySubLedgerTypeAndDeletedDateIsNull(SubLedgerType.CUSTOMER))
+                .thenReturn(List.of(acme));
+        when(voucherLineRepo.partyLedgerLines(SubLedgerType.CUSTOMER, AS_OF)).thenReturn(List.of(
+                line(3001L, LocalDate.of(2025, 6, 1), "2500.00", "0.00", VoucherType.OPENING),
+                line(3001L, LocalDate.of(2025, 6, 10), "0.00", "2000.00", VoucherType.RECEIPT)
+        ));
+        when(openingBalanceRepo.datedOpenItems(SubLedgerType.CUSTOMER, AS_OF)).thenReturn(List.of(
+                openItem(acme, "2000.00", "DR", LocalDate.of(2022, 3, 8)),
+                openItem(acme, "500.00",  "DR", LocalDate.of(2025, 6, 5))
+        ));
+
+        AgeingRowDto row = service.debtorsAgeing(AS_OF).getRows().get(0);
+
+        // The receipt clears the 2022 bill first, leaving only the recent one.
+        assertThat(row.getDays90Plus()).isEqualByComparingTo("0.00");
+        assertThat(row.getCurrent()).isEqualByComparingTo("500.00");
+        assertThat(row.getTotal()).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    void partyWithoutCutoverItems_isUnaffected() {
+        LedgerAccount acme = ledger(3001L, "C-3001", "Acme Pvt Ltd");
+        when(ledgerRepo.findBySubLedgerTypeAndDeletedDateIsNull(SubLedgerType.CUSTOMER))
+                .thenReturn(List.of(acme));
+        // An OPENING line with no dated items behind it must still count, aged at the voucher date.
+        when(voucherLineRepo.partyLedgerLines(SubLedgerType.CUSTOMER, AS_OF)).thenReturn(List.<Object[]>of(
+                line(3001L, LocalDate.of(2025, 6, 1), "800.00", "0.00", VoucherType.OPENING)
+        ));
+
+        AgeingRowDto row = service.debtorsAgeing(AS_OF).getRows().get(0);
+
+        assertThat(row.getCurrent()).isEqualByComparingTo("800.00");
+        assertThat(row.getTotal()).isEqualByComparingTo("800.00");
     }
 }

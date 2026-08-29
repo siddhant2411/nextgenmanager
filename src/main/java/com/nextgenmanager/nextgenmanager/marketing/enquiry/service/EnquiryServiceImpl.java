@@ -1,19 +1,25 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
+import com.nextgenmanager.nextgenmanager.bom.service.InvalidDataException;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.common.model.AppUser;
 import com.nextgenmanager.nextgenmanager.common.repository.AppUserRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryConversationDTO;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryFilter;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkAssignRequest;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkDeleteRequest;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiredProducts;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryCloseOutcome;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryConversationRecord;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryPriority;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryType;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryCloseReasonRepository;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryConversationRecordRepository;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProducts;
@@ -42,6 +48,12 @@ public class EnquiryServiceImpl implements EnquiryService {
 
     @Autowired
     EnquiryRepository enquiryRepository;
+
+    @Autowired
+    EnquiryCloseReasonRepository closeReasonRepository;
+
+    @Autowired
+    EnquiryConversationRecordRepository conversationRepository;
 
     @Autowired
     InventoryItemRepository inventoryItemRepository;
@@ -83,82 +95,149 @@ public class EnquiryServiceImpl implements EnquiryService {
         }
     }
 
+    /**
+     * Positional indices into the native projection in EnquiryRepository.ENQUIRY_COLUMNS.
+     * Named because reading record[23] and hoping is how a product summary ends up in the city.
+     */
+    private static final int C_ID = 0, C_ENQ_NO = 1, C_ENQ_DATE = 2, C_COMPANY = 3,
+            C_LAST_CONTACTED = 4, C_DAYS_FOLLOWUP = 5, C_CLOSED_DATE = 6, C_STATUS = 7,
+            C_EXPECTED_REVENUE = 8, C_OPPORTUNITY = 9, C_PHONE = 10, C_EMAIL = 11,
+            C_PRIORITY = 12, C_CITY = 13, C_STATE = 14, C_ASSIGNED_NAME = 15,
+            C_NEXT_FOLLOWUP = 16, C_CONTACT_ID = 17, C_ASSIGNED_ID = 18, C_SOURCE = 19,
+            C_REASON_CODE = 20, C_OUTCOME = 21, C_REASON_TEXT = 22, C_PRODUCT_SUMMARY = 23,
+            C_PRODUCT_COUNT = 24, C_CONVERSATION_COUNT = 25, C_LAST_CONVERSATION = 26,
+            C_QUOTATION_COUNT = 27, C_PROBABILITY = 28, C_SALES_ORDER_COUNT = 29,
+            C_BOOKED_AMOUNT = 30, C_AI_GENERATED = 31, C_AI_CONFIDENCE = 32,
+            C_AI_REQUIRES_REVIEW = 33, C_GMAIL_THREAD_ID = 34;
+
     @Override
-    public Page<EnquiryTableDTO> getAllActiveEnquiry(int page, int size, String sortBy, String sortDir, String enqNo, String companyName, LocalDate lastContactedDate,
-                                                     LocalDate enqDate, LocalDate closedDate, Integer daysForNetFollowUp,
-                                                     String dateComparisonTypeLastContacted,
-                                                     String dateComparisonTypeEnqDate,
-                                                     String dateComparisonTypeClosedDate) {
+    public Page<EnquiryTableDTO> getAllActiveEnquiry(int page, int size, String sortBy, String sortDir,
+                                                     EnquiryFilter filter) {
         logger.info("Fetching all active Enquiries");
+        EnquiryFilter f = (filter != null ? filter : new EnquiryFilter()).normalized();
+
         Pageable pageable = PageRequest.of(page, size,
                 sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending());
 
-        Page<Object[]> allActiveEnquires = enquiryRepository.getActiveEnquiries(pageable, enqNo, companyName, lastContactedDate, daysForNetFollowUp, enqDate,
-                closedDate, dateComparisonTypeLastContacted, dateComparisonTypeEnqDate, dateComparisonTypeClosedDate);
+        // Enums go to the native query as their names: binding an enum to a varchar column in a
+        // native query is provider-dependent, binding its name is not.
+        Page<Object[]> rows = enquiryRepository.getActiveEnquiries(
+                pageable,
+                f.getEnqNo(), f.getEnqNoContains(), f.getCompanyName(),
+                f.getStatus() != null ? f.getStatus().name() : null,
+                f.getPriority() != null ? f.getPriority().name() : null,
+                f.getOutcome() != null ? f.getOutcome().name() : null,
+                f.getCloseReasonCode(), f.getEnquirySource(), f.getAssignedToId(),
+                f.getDaysForNextFollowup(), f.getEnqDateFrom(), f.getEnqDateTo(),
+                f.getLastContactedDate(), f.getEnqDate(), f.getClosedDate(),
+                f.getLastContactedDateComp(), f.getEnqDateComp(), f.getClosedDateComp(),
+                f.getAiGenerated(), f.getAiRequiresReview(),
+                f.getGmailThreadId(), f.getGmailMessageId());
 
-        return allActiveEnquires.map(record -> {
-            try {
-                Long enquiryId = ((Number) record[0]).longValue();
-                String fetchedEnqNo = record[1].toString();
-                LocalDate fetchedEnqDate = record[2] != null ? ((java.sql.Date) record[2]).toLocalDate() : null;
-                String fetchedCompanyName = record[3] != null ? record[3].toString() : "N/A";
-                LocalDate fetchedLastContactedDate = record[4] != null ? ((java.sql.Date) record[4]).toLocalDate() : null;
-                int fetchedDaysNextToContact = record[5] != null ? (int) record[5] : 0;
-                LocalDate fetchedClosedDate = null;
-                if (record[6] != null) {
-                    fetchedClosedDate = ((java.sql.Date) record[6]).toLocalDate();
-                }
+        return rows.map(this::toTableDto);
+    }
 
-                com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus fetchedStatus = null;
-                if (record[7] != null) {
-                    try {
-                        fetchedStatus = com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.valueOf(record[7].toString());
-                    } catch (IllegalArgumentException e) {
-                        logger.warn("Invalid status found: {}", record[7]);
-                    }
-                }
-                java.math.BigDecimal fetchedExpectedRevenue = java.math.BigDecimal.ZERO;
-                if (record[8] != null) {
-                    fetchedExpectedRevenue = new java.math.BigDecimal(record[8].toString());
-                }
-                String fetchedOpportunityName = record[9] != null ? record[9].toString() : null;
-                String fetchedPhone = record[10] != null ? record[10].toString() : null;
-                String fetchedEmail = record[11] != null ? record[11].toString() : null;
-                
-                // Dynamic follow-up calculation
-                LocalDate nextFollowupDate = record[16] != null ? ((java.sql.Date) record[16]).toLocalDate() : null;
-                int daysRemaining = 0;
-                if (nextFollowupDate != null) {
-                    daysRemaining = (int) java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), nextFollowupDate);
-                } else if (record[5] != null) {
-                    // Fallback to stored days if nextFollowupDate is missing
-                    daysRemaining = (int) record[5];
-                }
+    private EnquiryTableDTO toTableDto(Object[] r) {
+        try {
+            LocalDate nextFollowupDate = asLocalDate(r[C_NEXT_FOLLOWUP]);
 
-                return new EnquiryTableDTO(
-                        enquiryId,
-                        fetchedEnqNo,
-                        fetchedEnqDate,
-                        fetchedCompanyName,
-                        fetchedLastContactedDate,
-                        daysRemaining,
-                        nextFollowupDate,
-                        fetchedClosedDate,
-                        fetchedStatus,
-                        fetchedExpectedRevenue,
-                        fetchedOpportunityName,
-                        fetchedPhone,
-                        fetchedEmail,
-                        record[12] != null ? EnquiryPriority.valueOf(record[12].toString()) : EnquiryPriority.WARM,
-                        record[15] != null ? record[15].toString() : null,
-                        record[13] != null ? record[13].toString() : null,
-                        record[14] != null ? record[14].toString() : null
-                );
-            } catch (Exception e) {
-                logger.error("Error mapping enquiry data: {}", e.getMessage());
-                throw new RuntimeException(e);
-            }
-        });
+            // Days remaining is recomputed from the date rather than read from the stored column,
+            // which is a snapshot taken when the enquiry was last saved and goes stale overnight.
+            int daysRemaining = nextFollowupDate != null
+                    ? (int) java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), nextFollowupDate)
+                    : asInt(r[C_DAYS_FOLLOWUP], 0);
+
+            return EnquiryTableDTO.builder()
+                    .id(asLong(r[C_ID]))
+                    .enqNo(asString(r[C_ENQ_NO]))
+                    .enqDate(asLocalDate(r[C_ENQ_DATE]))
+                    .companyName(r[C_COMPANY] != null ? r[C_COMPANY].toString() : "N/A")
+                    .lastContactedDate(asLocalDate(r[C_LAST_CONTACTED]))
+                    .daysForNextFollowup(daysRemaining)
+                    .nextFollowupDate(nextFollowupDate)
+                    .closedDate(asLocalDate(r[C_CLOSED_DATE]))
+                    .status(asEnum(EnquiryStatus.class, r[C_STATUS], null))
+                    .expectedRevenue(asBigDecimal(r[C_EXPECTED_REVENUE]))
+                    .opportunityName(asString(r[C_OPPORTUNITY]))
+                    .phone(asString(r[C_PHONE]))
+                    .email(asString(r[C_EMAIL]))
+                    .priority(asEnum(EnquiryPriority.class, r[C_PRIORITY], EnquiryPriority.WARM))
+                    .assignedToName(asString(r[C_ASSIGNED_NAME]))
+                    .city(asString(r[C_CITY]))
+                    .state(asString(r[C_STATE]))
+                    .contactId(asLong(r[C_CONTACT_ID]))
+                    .assignedToId(asLong(r[C_ASSIGNED_ID]))
+                    .enquirySource(asString(r[C_SOURCE]))
+                    .closeReasonCode(asString(r[C_REASON_CODE]))
+                    .closeOutcome(asEnum(EnquiryCloseOutcome.class, r[C_OUTCOME], null))
+                    .closeReasonText(asString(r[C_REASON_TEXT]))
+                    .productSummary(asString(r[C_PRODUCT_SUMMARY]))
+                    .productCount(asInt(r[C_PRODUCT_COUNT], 0))
+                    .conversationCount(asInt(r[C_CONVERSATION_COUNT], 0))
+                    .lastConversationDate(asLocalDate(r[C_LAST_CONVERSATION]))
+                    .quotationCount(asInt(r[C_QUOTATION_COUNT], 0))
+                    .probability(asInt(r[C_PROBABILITY], 0))
+                    .salesOrderCount(asInt(r[C_SALES_ORDER_COUNT], 0))
+                    .bookedAmount(asBigDecimal(r[C_BOOKED_AMOUNT]))
+                    .aiGenerated(asBoolean(r[C_AI_GENERATED]))
+                    .aiConfidence(asBigDecimal(r[C_AI_CONFIDENCE]))
+                    .aiRequiresReview(asBoolean(r[C_AI_REQUIRES_REVIEW]))
+                    .gmailThreadId(asString(r[C_GMAIL_THREAD_ID]))
+                    .build();
+        } catch (Exception e) {
+            logger.error("Error mapping enquiry row: {}", e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    // JDBC hands back whatever the driver felt like for a given column type, so the projection is
+    // read through converters rather than casts. A ClassCastException here would take down the
+    // whole list page for one unexpected column type.
+
+    private static String asString(Object v) {
+        return v != null ? v.toString() : null;
+    }
+
+    private static Long asLong(Object v) {
+        return v instanceof Number n ? n.longValue() : null;
+    }
+
+    // Postgres hands a BOOLEAN back as Boolean, but the same projection read through H2 in a test
+    // arrives as a Number, and some drivers give the string. All three mean the same thing.
+    private static Boolean asBoolean(Object v) {
+        if (v == null) return null;
+        if (v instanceof Boolean b) return b;
+        if (v instanceof Number n) return n.intValue() != 0;
+        return Boolean.parseBoolean(v.toString());
+    }
+
+    private static int asInt(Object v, int fallback) {
+        return v instanceof Number n ? n.intValue() : fallback;
+    }
+
+    private static BigDecimal asBigDecimal(Object v) {
+        if (v == null) return BigDecimal.ZERO;
+        if (v instanceof BigDecimal b) return b;
+        return new BigDecimal(v.toString());
+    }
+
+    private static LocalDate asLocalDate(Object v) {
+        if (v == null) return null;
+        if (v instanceof LocalDate d) return d;
+        if (v instanceof java.sql.Date d) return d.toLocalDate();
+        if (v instanceof java.sql.Timestamp t) return t.toLocalDateTime().toLocalDate();
+        if (v instanceof java.util.Date d) return d.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+        return LocalDate.parse(v.toString());
+    }
+
+    private static <T extends Enum<T>> T asEnum(Class<T> type, Object v, T fallback) {
+        if (v == null) return fallback;
+        try {
+            return Enum.valueOf(type, v.toString());
+        } catch (IllegalArgumentException e) {
+            logger.warn("Unrecognised {} value in enquiry row: {}", type.getSimpleName(), v);
+            return fallback;
+        }
     }
 
     @Override
@@ -203,6 +282,7 @@ public class EnquiryServiceImpl implements EnquiryService {
         existingEnquiry.setStatus(updatedEnquiry.getStatus());
         existingEnquiry.setOpportunityName(updatedEnquiry.getOpportunityName());
         existingEnquiry.setCloseReason(updatedEnquiry.getCloseReason());
+        existingEnquiry.setCloseReasonCode(resolveCloseReason(updatedEnquiry.getCloseReasonCode()));
         existingEnquiry.setClosedDate(updatedEnquiry.getClosedDate());
         existingEnquiry.setExpectedRevenue(updatedEnquiry.getExpectedRevenue());
         existingEnquiry.setProbability(updatedEnquiry.getProbability());
@@ -216,14 +296,52 @@ public class EnquiryServiceImpl implements EnquiryService {
         existingEnquiry.setDescription(updatedEnquiry.getDescription());
     }
 
+    /**
+     * The close-reason screen posts the whole master row back, so what arrives is a detached copy
+     * that may carry a stale description or outcome. Only its identity is trusted; the row itself
+     * is re-read from the master. A code that does not resolve is rejected rather than dropped --
+     * silently ignoring it is how an enquiry ends up closed with no reportable reason.
+     */
+    private com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryCloseReason resolveCloseReason(
+            com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryCloseReason submitted) {
+        if (submitted == null) return null;
+        if (submitted.getId() != null) {
+            return closeReasonRepository.findById(submitted.getId())
+                    .orElseThrow(() -> new InvalidDataException("Unknown close reason id: " + submitted.getId()));
+        }
+        if (submitted.getCode() != null && !submitted.getCode().isBlank()) {
+            return closeReasonRepository.findByCodeIgnoreCase(submitted.getCode().trim())
+                    .orElseThrow(() -> new InvalidDataException("Unknown close reason code: " + submitted.getCode()));
+        }
+        return null;
+    }
+
     private void updateConversationRecords(Enquiry existingEnquiry, List<EnquiryConversationRecord> updatedRecords) {
         existingEnquiry.getEnquiryConversationRecords().clear();
 
+        LocalDate latest = null;
         if (updatedRecords != null) {
             for (EnquiryConversationRecord record : updatedRecords) {
                 record.setEnquiry(existingEnquiry);
+                // A record saved through the enquiry screen happened today unless it says otherwise.
+                if (record.getConversationDate() == null) {
+                    record.setConversationDate(LocalDate.now());
+                }
+                if (record.getDeletedDate() == null) {
+                    LocalDate on = effectiveDate(record);
+                    if (on != null && (latest == null || on.isAfter(latest))) latest = on;
+                }
                 existingEnquiry.getEnquiryConversationRecords().add(record);
             }
+        }
+
+        // When there is a log, the log wins: a caller that edits the conversation list and leaves
+        // lastContactedDate alone would otherwise leave the two contradicting each other, and
+        // lastContactedDate is what the follow-up reporting reads. An empty log keeps whatever
+        // updateBasicFields already set, so a date typed by hand on an enquiry with no recorded
+        // conversations is not silently erased.
+        if (latest != null) {
+            existingEnquiry.setLastContactedDate(latest);
         }
     }
 
@@ -290,6 +408,24 @@ public class EnquiryServiceImpl implements EnquiryService {
                     enquiredProduct.setInventoryItem(null);
                 }
             }
+
+            newEnquiry.setCloseReasonCode(resolveCloseReason(newEnquiry.getCloseReasonCode()));
+
+            // Same rule as the update path: conversations dated from the log, lastContactedDate
+            // derived from it rather than taken on trust.
+            if (newEnquiry.getEnquiryConversationRecords() != null) {
+                LocalDate latest = null;
+                for (EnquiryConversationRecord record : newEnquiry.getEnquiryConversationRecords()) {
+                    record.setEnquiry(newEnquiry);
+                    if (record.getConversationDate() == null) {
+                        record.setConversationDate(LocalDate.now());
+                    }
+                    LocalDate on = effectiveDate(record);
+                    if (on != null && (latest == null || on.isAfter(latest))) latest = on;
+                }
+                if (latest != null) newEnquiry.setLastContactedDate(latest);
+            }
+
             return enquiryRepository.save(newEnquiry);
         } catch (Exception e) {
             logger.error("Error creating enquiry: {}", e.getMessage(), e);
@@ -326,12 +462,61 @@ public class EnquiryServiceImpl implements EnquiryService {
             } else {
                 enquiry.setClosedDate(LocalDate.now());
                 enquiry.setCloseReason(closeReason);
+                // The UI sends a code from the close-reason master; anything else is still
+                // accepted and kept as free text, so older callers do not break.
+                if (closeReason != null && !closeReason.isBlank()) {
+                    closeReasonRepository.findByCodeIgnoreCase(closeReason.trim())
+                            .ifPresent(enquiry::setCloseReasonCode);
+                }
                 enquiryRepository.save(enquiry);
             }
         } catch (Exception e) {
             logger.error("Error while closing enquiry with id: {}", id);
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    @Transactional
+    public Enquiry applyAiReview(Long id,
+            com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.AiReviewDecisionDTO decision) {
+        if (decision == null || decision.getDecision() == null) {
+            throw new InvalidDataException("decision is required and must be ACCEPT or REJECT");
+        }
+
+        Enquiry enquiry = enquiryRepository.getActiveEnquiryById(id);
+        if (enquiry == null) {
+            throw new ResourceNotFoundException("Enquiry with id:" + id + " does not exist");
+        }
+        // Reviewing something no machine wrote is a client bug, not a no-op to swallow: it means
+        // the desk is pointed at the wrong row, and clearing a flag that was never set would hide
+        // that.
+        if (!enquiry.isAiGenerated()) {
+            throw new InvalidDataException(
+                    "Enquiry " + enquiry.getEnqNo() + " was not raised by the AI Lead Agent");
+        }
+
+        boolean reject = decision.getDecision()
+                == com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.AiReviewDecisionDTO.Decision.REJECT;
+
+        // Decided either way. The flag means "waiting on a human", and a human has now answered.
+        enquiry.setAiRequiresReview(false);
+        if (reject) {
+            enquiry.setStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.JUNK);
+        }
+
+        // The verdict goes in the conversation trail rather than only into the flag, so six months
+        // later the register still says who accepted the lead and why.
+        EnquiryConversationRecord record = new EnquiryConversationRecord();
+        record.setEnquiry(enquiry);
+        record.setConversationType(EnquiryConversationRecord.ConversationType.NOTE);
+        record.setConversationDate(LocalDate.now());
+        String notes = decision.getNotes() != null ? decision.getNotes().trim() : "";
+        record.setConversation("AI lead review: " + decision.getDecision()
+                + (notes.isEmpty() ? "" : " — " + notes));
+        conversationRepository.save(record);
+
+        return enquiryRepository.save(enquiry);
     }
 
     @Override
@@ -374,35 +559,89 @@ public class EnquiryServiceImpl implements EnquiryService {
         }
     }
 
-    @Override
-    public com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquirySummaryDTO getEnquirySummary() {
-        logger.info("Calculating Enquiry Summary");
-        try {
-            long totalLeads = enquiryRepository.countByDeletedDateIsNull();
-            long newLeads = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.NEW);
-            long contacted = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.CONTACTED);
-            long followUp = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.FOLLOW_UP);
-            long won = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.CONVERTED);
-            long lost = enquiryRepository.countByStatus(com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus.LOST);
-            long overdue = enquiryRepository.countOverdueFollowups();
-            java.math.BigDecimal totalRevenue = enquiryRepository.sumExpectedRevenue();
-            java.math.BigDecimal wonRevenue = enquiryRepository.sumWonRevenue();
 
-            return com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquirySummaryDTO.builder()
-                    .totalLeads(totalLeads)
-                    .newLeads(newLeads)
-                    .contacted(contacted)
-                    .followUp(followUp)
-                    .won(won)
-                    .lost(lost)
-                    .overdueFollowups(overdue)
-                    .totalExpectedRevenue(totalRevenue != null ? totalRevenue : java.math.BigDecimal.ZERO)
-                    .wonRevenue(wonRevenue != null ? wonRevenue : java.math.BigDecimal.ZERO)
-                    .build();
-        } catch (Exception e) {
-            logger.error("Error while calculating Enquiry summary: {}", e.getMessage());
-            throw new RuntimeException("Failed to calculate Enquiry summary", e);
+    // ------------------------------------------------------------------ conversation log
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EnquiryConversationDTO> getConversations(Long enquiryId) {
+        requireEnquiry(enquiryId);
+        return conversationRepository.findActiveByEnquiryId(enquiryId).stream()
+                .map(EnquiryConversationDTO::from)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public EnquiryConversationDTO addConversation(Long enquiryId, EnquiryConversationDTO request) {
+        Enquiry enquiry = requireEnquiry(enquiryId);
+        if (request == null || request.getConversation() == null || request.getConversation().isBlank()) {
+            throw new InvalidDataException("conversation text is required");
         }
+
+        EnquiryConversationRecord record = new EnquiryConversationRecord();
+        record.setEnquiry(enquiry);
+        record.setConversation(request.getConversation().trim());
+        record.setConversationType(request.getConversationType() != null
+                ? request.getConversationType()
+                : EnquiryConversationRecord.ConversationType.NOTE);
+        record.setConversationDate(request.getConversationDate() != null
+                ? request.getConversationDate()
+                : LocalDate.now());
+        EnquiryConversationRecord saved = conversationRepository.save(record);
+
+        touchLastContacted(enquiry);
+        enquiryRepository.save(enquiry);
+
+        return EnquiryConversationDTO.from(saved);
+    }
+
+    @Override
+    @Transactional
+    public void deleteConversation(Long enquiryId, Long conversationId) {
+        Enquiry enquiry = requireEnquiry(enquiryId);
+        EnquiryConversationRecord record = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation " + conversationId + " not found"));
+        if (record.getEnquiry() == null || !enquiryId.equals(record.getEnquiry().getId())) {
+            throw new ResourceNotFoundException(
+                    "Conversation " + conversationId + " does not belong to enquiry " + enquiryId);
+        }
+        record.setDeletedDate(new Date());
+        conversationRepository.save(record);
+
+        // Deleting the newest entry has to walk lastContactedDate back, or the enquiry keeps
+        // claiming a contact that no longer has a record behind it.
+        touchLastContacted(enquiry);
+        enquiryRepository.save(enquiry);
+    }
+
+    /**
+     * Sets lastContactedDate from the conversation log rather than trusting a caller to maintain
+     * it. The column existed from the start and nothing ever wrote to it, which is why the
+     * register could not answer how many of the enquiries that went silent were ever chased.
+     */
+    private void touchLastContacted(Enquiry enquiry) {
+        conversationRepository.findActiveByEnquiryId(enquiry.getId()).stream()
+                .map(EnquiryServiceImpl::effectiveDate)
+                .filter(Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .ifPresentOrElse(enquiry::setLastContactedDate, () -> enquiry.setLastContactedDate(null));
+    }
+
+    private static LocalDate effectiveDate(EnquiryConversationRecord r) {
+        if (r.getConversationDate() != null) return r.getConversationDate();
+        if (r.getCreationDate() != null) {
+            return r.getCreationDate().toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+        }
+        return null;
+    }
+
+    private Enquiry requireEnquiry(Long enquiryId) {
+        Enquiry enquiry = enquiryRepository.getActiveEnquiryById(enquiryId);
+        if (enquiry == null) {
+            throw new ResourceNotFoundException("Enquiry with id " + enquiryId + " not found");
+        }
+        return enquiry;
     }
 
     @Override

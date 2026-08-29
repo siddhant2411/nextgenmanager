@@ -20,6 +20,7 @@ public record PurchaseOrderListDto(
         PurchaseOrderApprovalStatus approvalStatus,
         String currency,
         BigDecimal grandTotal,
+        String reference,
         int itemCount,
         Date createdDate,
         Integer daysOverdue

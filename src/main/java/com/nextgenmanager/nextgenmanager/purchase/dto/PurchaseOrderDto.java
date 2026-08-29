@@ -61,6 +61,9 @@ public record PurchaseOrderDto(
         String quotationNumber,
         Date quotationDate,
 
+        /** External reference -- where this PO came from outside the ERP. */
+        String reference,
+
         // Email tracking
         Date sentToVendorAt,
         String sentToVendorEmail,

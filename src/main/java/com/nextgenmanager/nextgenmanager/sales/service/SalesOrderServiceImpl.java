@@ -11,6 +11,8 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
 import com.nextgenmanager.nextgenmanager.items.model.ReplenishmentStrategy;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationStatus;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.QuotationRepository;
@@ -52,6 +54,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final SalesOrderRepository salesOrderRepository;
     private final ContactRepository contactRepository;
     private final QuotationRepository quotationRepository;
+    private final EnquiryRepository enquiryRepository;
     private final InventoryItemRepository inventoryItemRepository;
     private final InventoryInstanceService inventoryInstanceService;
     private final SalesOrderMapper salesOrderMapper;
@@ -72,6 +75,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         SalesOrder so = new SalesOrder();
         so.setCustomer(customer);
         so.setQuotation(quotation);
+        so.setEnquiry(resolveEnquiry(dto.getEnquiryId(), quotation));
         so.setOrderDate(dto.getOrderDate());
         so.setCurrency(dto.getCurrency());
         so.setPaymentTerms(dto.getPaymentTerms());
@@ -130,7 +134,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                     .orElseThrow(() -> new InvalidSalesOrderStateException("Customer not found: " + dto.getCustomerId()));
             existing.setCustomer(customer);
         }
-        existing.setQuotation(resolveQuotation(dto.getQuotationId()));
+        Quotation quotation = resolveQuotation(dto.getQuotationId());
+        existing.setQuotation(quotation);
+        existing.setEnquiry(resolveEnquiry(dto.getEnquiryId(), quotation));
 
         existing.setOrderDate(dto.getOrderDate());
         existing.setCurrency(dto.getCurrency());
@@ -208,6 +214,20 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     // ---------- helpers ----------
+
+    /**
+     * A quotation always wins: an order linked to a quotation belongs to that quotation's enquiry,
+     * whatever the caller passed. The explicit id is only consulted for orders that never had a
+     * quotation, which on a real register is most of them.
+     */
+    private Enquiry resolveEnquiry(Long enquiryId, Quotation quotation) {
+        if (quotation != null && quotation.getEnquiry() != null) {
+            return quotation.getEnquiry();
+        }
+        if (enquiryId == null || enquiryId <= 0) return null;
+        return enquiryRepository.findById(enquiryId)
+                .orElseThrow(() -> new SalesOrderNotFoundException("Enquiry not found: " + enquiryId));
+    }
 
     private Quotation resolveQuotation(Long quotationId) {
         if (quotationId == null || quotationId <= 0) return null;
@@ -588,6 +608,11 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         d.setCurrency(order.getCurrency());
         d.setPhone(order.getCustomer() != null ? order.getCustomer().getPhone() : null);
         d.setEmail(order.getCustomer() != null ? order.getCustomer().getEmail() : null);
+        d.setEnquiryId(order.getEnquiry() != null ? order.getEnquiry().getId() : null);
+        d.setEnquiryNumber(order.getEnquiry() != null ? order.getEnquiry().getEnqNo() : null);
+        d.setQuotationId(order.getQuotation() != null ? order.getQuotation().getId() : null);
+        d.setQuotationNumber(order.getQuotation() != null ? order.getQuotation().getQtnNo() : null);
+        d.setReference(order.getReference());
         return d;
     }
 
