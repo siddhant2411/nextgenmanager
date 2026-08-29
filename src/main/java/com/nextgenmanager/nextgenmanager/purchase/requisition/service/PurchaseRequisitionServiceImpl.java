@@ -255,6 +255,8 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
                 null, "INR", BigDecimal.ONE,
                 null, null, null, null, null,
                 null, null,   // quotationNumber, quotationDate
+                "PR " + pr.getPrNumber(),   // reference -- the requisition this PO came from
+                null,                       // gstTreatment: derive it from the vendor
                 poItems,
                 null,
                 "Generated from requisition " + pr.getPrNumber(),

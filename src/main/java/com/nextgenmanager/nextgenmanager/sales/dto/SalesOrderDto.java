@@ -34,6 +34,11 @@ public class SalesOrderDto {
     private Long quotationId;
     private String quotationNumber;             // convenience if needed
 
+    // The enquiry behind the order. Present even when quotationId is null -- an order taken by
+    // phone still belongs to the enquiry that produced it.
+    private Long enquiryId;
+    private String enquiryNumber;
+
     // Status
     @Enumerated(EnumType.STRING)
     private SalesOrderStatus status;                       // from SalesOrderStatus enum

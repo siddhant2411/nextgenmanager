@@ -29,4 +29,13 @@ public interface CoaService {
 
     /** Ensures ledger accounts exist for a contact based on its ContactType; creates missing ones. */
     List<LedgerAccountDto> ensureContactLedgers(int contactId);
+
+    /**
+     * Bulk form of {@link #ensureContactLedgers(int)} for data imports.
+     *
+     * @param contactIds specific contacts, or null/empty to sweep every contact
+     *                   that carries a GSTIN
+     * @return per-contact outcome; one contact failing does not abort the rest
+     */
+    BulkLedgerResultDto ensureContactLedgersBulk(List<Integer> contactIds);
 }

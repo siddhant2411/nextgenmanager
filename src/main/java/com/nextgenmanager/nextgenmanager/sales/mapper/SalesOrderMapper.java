@@ -12,11 +12,14 @@ public interface SalesOrderMapper {
     @Mapping(target = "customerName", source = "customer.companyName")
     @Mapping(target = "quotationId", source = "quotation.id")
     @Mapping(target = "quotationNumber", source = "quotation.qtnNo")
+    @Mapping(target = "enquiryId", source = "enquiry.id")
+    @Mapping(target = "enquiryNumber", source = "enquiry.enqNo")
     @Mapping(target = "items", source = "items")
     SalesOrderDto toDTO(SalesOrder entity);
 
     @Mapping(target = "customer", ignore = true)
     @Mapping(target = "quotation", ignore = true)
+    @Mapping(target = "enquiry", ignore = true)
     @Mapping(target = "items", ignore = true)
     @Mapping(target = "creationDate", ignore = true)
     @Mapping(target = "updatedDate", ignore = true)

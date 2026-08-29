@@ -3,8 +3,11 @@ package com.nextgenmanager.nextgenmanager.accounting.reports.service;
 import com.nextgenmanager.nextgenmanager.accounting.coa.model.LedgerAccount;
 import com.nextgenmanager.nextgenmanager.accounting.coa.model.SubLedgerType;
 import com.nextgenmanager.nextgenmanager.accounting.coa.repository.LedgerAccountRepository;
+import com.nextgenmanager.nextgenmanager.accounting.opening.model.OpeningBalance;
+import com.nextgenmanager.nextgenmanager.accounting.opening.repository.OpeningBalanceRepository;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.AgeingReportDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.AgeingRowDto;
+import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.repository.VoucherLineRepository;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
@@ -32,6 +35,7 @@ public class AgeingReportServiceImpl implements AgeingReportService {
 
     private final VoucherLineRepository voucherLineRepo;
     private final LedgerAccountRepository ledgerRepo;
+    private final OpeningBalanceRepository openingBalanceRepo;
 
     @Override
     public AgeingReportDto debtorsAgeing(LocalDate asOf) {
@@ -57,9 +61,19 @@ public class AgeingReportServiceImpl implements AgeingReportService {
             byLedger.computeIfAbsent((Long) r[0], k -> new ArrayList<>()).add(r);
         }
 
+        // Cutover open items (V162), each carrying its ORIGINAL bill date. Where a party has these,
+        // they replace that party's OPENING voucher line — the line is their sum, so counting both
+        // would double the balance. Parties without them age off the voucher date exactly as before.
+        Map<Long, List<OpeningBalance>> openingItems = new LinkedHashMap<>();
+        for (OpeningBalance ob : openingBalanceRepo.datedOpenItems(type, asOf)) {
+            openingItems.computeIfAbsent(ob.getLedgerAccount().getId(), k -> new ArrayList<>()).add(ob);
+        }
+
         List<AgeingRowDto> rows = new ArrayList<>();
         for (Map.Entry<Long, List<Object[]>> e : byLedger.entrySet()) {
-            AgeingRowDto row = computeParty(e.getKey(), e.getValue(), asOf, debtors, meta.get(e.getKey()));
+            AgeingRowDto row = computeParty(e.getKey(), e.getValue(),
+                    openingItems.getOrDefault(e.getKey(), List.of()),
+                    asOf, debtors, meta.get(e.getKey()));
             if (row.getTotal().signum() != 0) rows.add(row);   // hide fully-settled parties
         }
         rows.sort(Comparator.comparing(AgeingRowDto::getTotal).reversed());
@@ -74,12 +88,26 @@ public class AgeingReportServiceImpl implements AgeingReportService {
         OpenItem(LocalDate date, BigDecimal remaining) { this.date = date; this.remaining = remaining; }
     }
 
-    private AgeingRowDto computeParty(Long ledgerId, List<Object[]> lines, LocalDate asOf,
+    private AgeingRowDto computeParty(Long ledgerId, List<Object[]> lines,
+                                      List<OpeningBalance> cutoverItems, LocalDate asOf,
                                       boolean debtors, LedgerAccount meta) {
         LinkedList<OpenItem> open = new LinkedList<>();
         BigDecimal advance = BigDecimal.ZERO;   // payments not yet matched to a charge
 
+        // Seed the FIFO queue with the carried-over bills at their real dates, oldest first, so a
+        // three-year-old invoice lands in 90+ on day one instead of reading as "current".
+        // A cutover row on the opposite side (an unadjusted advance) seeds the advance pool.
+        boolean seeded = !cutoverItems.isEmpty();
+        for (OpeningBalance ob : cutoverItems) {
+            boolean isCharge = debtors == "DR".equalsIgnoreCase(ob.getDrCr());
+            if (isCharge) open.add(new OpenItem(ob.getBillDate(), nz(ob.getAmount())));
+            else          advance = advance.add(nz(ob.getAmount()));
+        }
+        open.sort(Comparator.comparing(oi -> oi.date));
+
         for (Object[] l : lines) {
+            // The OPENING line is the sum of the rows just seeded — skip it or the party doubles.
+            if (seeded && VoucherType.OPENING == l[4]) continue;
             LocalDate date = (LocalDate) l[1];
             BigDecimal dr = nz((BigDecimal) l[2]);
             BigDecimal cr = nz((BigDecimal) l[3]);

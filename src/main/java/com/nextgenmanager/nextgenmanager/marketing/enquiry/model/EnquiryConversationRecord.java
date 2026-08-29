@@ -7,6 +7,7 @@ import lombok.Data;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.time.LocalDate;
 import java.util.Date;
 
 @Entity
@@ -19,7 +20,13 @@ public class EnquiryConversationRecord {
     private Long id;
 
     private String conversation;
-    
+
+    /**
+     * When the contact actually happened, which is not the same as when the row was written.
+     * Left null for notes typed as they occur; readers fall back to creationDate.
+     */
+    private LocalDate conversationDate;
+
     @Enumerated(EnumType.STRING)
     private ConversationType conversationType = ConversationType.NOTE;
 

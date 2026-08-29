@@ -6,6 +6,7 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkImportResultDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.*;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryCloseReasonRepository;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -40,9 +41,33 @@ public class EnquiryImportService {
     // 11:probability(0-100), 12:priority(HOT/WARM/COLD),
     // 13:status(NEW/CONTACTED/etc), 14:enqDate(yyyy-MM-dd),
     // 15:nextFollowupDate(yyyy-MM-dd),
-    // 16:item1, 17:item1_qty, 18:item2, 19:item2_qty, ... (pairs, up to item15)
-    private static final int ITEM_START_COL = 16;
+    // 16:closeReasonCode, 17:closeReasonText, 18:closedDate(yyyy-MM-dd),
+    // 19:description, 20:conversationLog,
+    // 21:item1, 22:item1_qty, 23:item2, 24:item2_qty, ... (pairs, up to item15)
+    //
+    // Adding description and conversationLog moved ITEM_START_COL 19 -> 21. Any import template
+    // downloaded before this change is stale -- re-download from GET /api/enquiry/import-template.
+    private static final int ITEM_START_COL = 21;
     private static final int MAX_ITEMS = 15;
+
+    /**
+     * Separates one logged contact from the next inside the conversationLog cell. A register's
+     * follow-up history is one row per enquiry in the source sheet, so it has to arrive packed
+     * into a single cell and be unpacked here.
+     */
+    private static final String CONVERSATION_SEPARATOR = ";;";
+
+    /** Within one entry: date | type | text. Type is optional and defaults to NOTE. */
+    private static final String CONVERSATION_FIELD_SEPARATOR = "\\|";
+
+    /**
+     * Statuses that mean the enquiry is finished. A closed enquiry must not be given a
+     * follow-up date: importing a year of history would otherwise stack up hundreds of
+     * overdue reminders dated in the past and bury the handful that are still live.
+     */
+    private static final java.util.Set<EnquiryStatus> TERMINAL_STATUSES = java.util.Set.of(
+        EnquiryStatus.CLOSED, EnquiryStatus.CONVERTED, EnquiryStatus.LOST, EnquiryStatus.JUNK
+    );
 
     private record ItemEntry(String value, BigDecimal qty) {}
 
@@ -50,6 +75,7 @@ public class EnquiryImportService {
     @Autowired private ContactRepository contactRepository;
     @Autowired private InventoryItemRepository inventoryItemRepository;
     @Autowired private EnquiryNumberGenerator enquiryNumberGenerator;
+    @Autowired private EnquiryCloseReasonRepository closeReasonRepository;
 
     @Transactional
     public BulkImportResultDTO importFromFile(MultipartFile file) throws Exception {
@@ -85,6 +111,8 @@ public class EnquiryImportService {
                         getCellString(row, 7), getCellString(row, 8), getCellString(row, 9),
                         getCellString(row, 10), getCellString(row, 11), getCellString(row, 12),
                         getCellString(row, 13), getCellString(row, 14), getCellString(row, 15),
+                        getCellString(row, 16), getCellString(row, 17), getCellString(row, 18),
+                        getCellString(row, 19), getCellString(row, 20),
                         items
                     );
                     enquiryRepository.save(e);
@@ -126,6 +154,8 @@ public class EnquiryImportService {
                         col(cols, 5), col(cols, 6), col(cols, 7), col(cols, 8),
                         col(cols, 9), col(cols, 10), col(cols, 11), col(cols, 12),
                         col(cols, 13), col(cols, 14), col(cols, 15),
+                        col(cols, 16), col(cols, 17), col(cols, 18),
+                        col(cols, 19), col(cols, 20),
                         items
                     );
                     enquiryRepository.save(e);
@@ -151,7 +181,10 @@ public class EnquiryImportService {
                 "contactPersonPhone", "contactPersonEmail", "city", "state",
                 "enquirySource", "referenceNumber", "expectedRevenue",
                 "probability(0-100)", "priority(HOT/WARM/COLD)",
-                "status(NEW/CONTACTED/etc)", "enqDate(yyyy-MM-dd)", "nextFollowupDate(yyyy-MM-dd)"
+                "status(NEW/CONTACTED/etc)", "enqDate(yyyy-MM-dd)", "nextFollowupDate(yyyy-MM-dd)",
+                "closeReasonCode", "closeReasonText", "closedDate(yyyy-MM-dd)",
+                "description",
+                "conversationLog(date|TYPE|text ;; ...)"
             ));
             for (int i = 1; i <= MAX_ITEMS; i++) {
                 headers.add("item" + i);
@@ -174,10 +207,16 @@ public class EnquiryImportService {
             Row sample = sheet.createRow(1);
             String today = LocalDate.now().toString();
             String followup = LocalDate.now().plusDays(7).toString();
+            // Close columns are blank on the sample: it is a live NEW enquiry, and a closed one
+            // would model the wrong thing for anyone copying the row.
+            String contacted = LocalDate.now().minusDays(3).toString();
             String[] sampleData = {
                 "", "Machine Enquiry - ABC Co", "ABC Company Ltd", "Rahul Sharma", "+91 9876543210",
                 "rahul@abc.com", "Mumbai", "Maharashtra", "IndiaMart", "REF-001",
                 "50000", "60", "WARM", "NEW", today, followup,
+                "", "", "",
+                "Asked for a revised drawing before quoting.",
+                contacted + "|EMAIL|Sent acknowledgement ;; " + today + "|CALL|Discussed specification",
                 "ITEM-001", "3", "ITEM-002", "", "Custom Gear Box", "2"
             };
             for (int i = 0; i < sampleData.length; i++) sample.createCell(i).setCellValue(sampleData[i]);
@@ -197,6 +236,8 @@ public class EnquiryImportService {
             String city, String state, String enquirySource, String referenceNumber,
             String expectedRevenue, String probability, String priority,
             String status, String enqDate, String nextFollowupDate,
+            String closeReasonCode, String closeReasonText, String closedDate,
+            String description, String conversationLog,
             List<ItemEntry> items) {
 
         LocalDate parsedEnqDate = parseDate(enqDate);
@@ -259,9 +300,27 @@ public class EnquiryImportService {
         }
 
         e.setEnqDate(parsedEnqDate != null ? parsedEnqDate : LocalDate.now());
+
+        // A finished enquiry gets no follow-up date at all. Only live ones fall back to the
+        // seven-day default, so the follow-up list stays a list of things still worth chasing.
         LocalDate parsedFollowup = parseDate(nextFollowupDate);
-        e.setNextFollowupDate(parsedFollowup != null ? parsedFollowup : e.getEnqDate().plusDays(7));
-        e.setDaysForNextFollowup(7);
+        if (TERMINAL_STATUSES.contains(e.getStatus())) {
+            e.setNextFollowupDate(parsedFollowup);
+            e.setDaysForNextFollowup(0);
+        } else {
+            e.setNextFollowupDate(parsedFollowup != null ? parsedFollowup : e.getEnqDate().plusDays(7));
+            e.setDaysForNextFollowup(7);
+        }
+
+        e.setClosedDate(parseDate(closedDate));
+        e.setCloseReason(trim(closeReasonText));
+        String trimmedReasonCode = trim(closeReasonCode);
+        if (trimmedReasonCode != null) {
+            closeReasonRepository.findByCodeIgnoreCase(trimmedReasonCode).ifPresentOrElse(
+                e::setCloseReasonCode,
+                () -> { throw new ImportRowException("unknown closeReasonCode: " + trimmedReasonCode); }
+            );
+        }
 
         List<EnquiredProducts> products = new ArrayList<>();
         for (ItemEntry item : items) {
@@ -277,9 +336,77 @@ public class EnquiryImportService {
             products.add(ep);
         }
         e.setEnquiredProducts(products);
-        e.setEnquiryConversationRecords(new ArrayList<>());
+
+        e.setDescription(trim(description));
+
+        List<EnquiryConversationRecord> conversations = parseConversationLog(conversationLog, e);
+        e.setEnquiryConversationRecords(conversations);
+
+        // lastContactedDate comes from the log rather than a column of its own. A register that
+        // records thirteen rounds of chasing and then claims the customer was never contacted is
+        // the exact failure this import exists to stop.
+        conversations.stream()
+                .map(EnquiryConversationRecord::getConversationDate)
+                .filter(java.util.Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .ifPresent(e::setLastContactedDate);
 
         return e;
+    }
+
+    /**
+     * Unpacks the conversationLog cell: entries separated by ";;", each "date|TYPE|text" where
+     * the type is optional.
+     *
+     *   2026-03-04|EMAIL|Mail done ;; 2026-03-18|CALL|Called, asked for revised drawing
+     *
+     * An entry with no parseable date is still loaded -- the note is worth keeping even when the
+     * sheet lost the date -- but a malformed date is never guessed at. Rows that are entirely
+     * blank are skipped rather than becoming empty records.
+     */
+    private List<EnquiryConversationRecord> parseConversationLog(String raw, Enquiry enquiry) {
+        List<EnquiryConversationRecord> records = new ArrayList<>();
+        if (raw == null || raw.isBlank()) return records;
+
+        for (String entry : raw.split(CONVERSATION_SEPARATOR)) {
+            if (entry == null || entry.isBlank()) continue;
+            String[] parts = entry.split(CONVERSATION_FIELD_SEPARATOR, 3);
+
+            LocalDate on = null;
+            String typeToken = null;
+            String text;
+            if (parts.length == 3) {
+                on = parseDate(parts[0]);
+                typeToken = parts[1];
+                text = parts[2];
+            } else if (parts.length == 2) {
+                // Two fields are "date|text" when the first parses as a date and "TYPE|text"
+                // when it does not, so neither shape loses its note to the other's parse.
+                on = parseDate(parts[0]);
+                if (on == null) typeToken = parts[0];
+                text = parts[1];
+            } else {
+                text = parts[0];
+            }
+            if (text == null || text.isBlank()) continue;
+
+            EnquiryConversationRecord record = new EnquiryConversationRecord();
+            record.setEnquiry(enquiry);
+            record.setConversation(text.trim());
+            record.setConversationDate(on);
+            record.setConversationType(parseConversationType(typeToken));
+            records.add(record);
+        }
+        return records;
+    }
+
+    private EnquiryConversationRecord.ConversationType parseConversationType(String token) {
+        if (token == null || token.isBlank()) return EnquiryConversationRecord.ConversationType.NOTE;
+        try {
+            return EnquiryConversationRecord.ConversationType.valueOf(token.trim().toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return EnquiryConversationRecord.ConversationType.NOTE;
+        }
     }
 
     private LocalDate parseDate(String val) {

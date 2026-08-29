@@ -69,8 +69,14 @@ public class Enquiry {
     private LocalDate targetCloseDate;
 
     private LocalDate closedDate;
+
+    /** Verbatim text as recorded by sales — kept alongside the code, which is what reports count. */
     private String closeReason;
-    
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "close_reason_id")
+    private EnquiryCloseReason closeReasonCode;
+
     @Enumerated(EnumType.STRING)
     private EnquiryPriority priority = EnquiryPriority.WARM;
 
@@ -90,6 +96,37 @@ public class Enquiry {
     private String description;
 
     private Date deletedDate;
+
+    // ── AI Lead Agent provenance (V160) ─────────────────────────────────────
+    // Set only by the agent service account. Sales never types into these, and the update path
+    // must not let a hand edit clear them -- provenance that a human can overwrite is not
+    // provenance. Defaulted rather than nullable Boolean so the register never has to distinguish
+    // "not AI" from "nobody said".
+
+    /** True when this row was written by the AI Lead Agent rather than by a person. */
+    private boolean aiGenerated = false;
+
+    /** Agent's confidence in the extraction, 0.000–1.000. Null on hand-typed rows. */
+    @Column(precision = 4, scale = 3)
+    private BigDecimal aiConfidence;
+
+    /** Deterministic qualification score, 0–100. Mirrors what drove the HOT/WARM/COLD priority. */
+    private Integer aiScore;
+
+    /** Model that produced the extraction, e.g. qwen3:4b. Kept so a bad batch is traceable to it. */
+    @Column(length = 100)
+    private String aiModel;
+
+    /** Still awaiting a human decision on the review desk. */
+    private boolean aiRequiresReview = false;
+
+    /** Gmail message the enquiry came from. Unique where present — the agent's idempotency key. */
+    @Column(length = 255)
+    private String gmailMessageId;
+
+    /** Gmail thread. Not unique: one chain can legitimately carry successive RFQs. */
+    @Column(length = 255)
+    private String gmailThreadId;
 
     private String createdBy;
     private String updatedBy;

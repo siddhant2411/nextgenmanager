@@ -134,6 +134,19 @@ public class PurchaseOrder {
 
     private Date quotationDate;
 
+    // ── External reference ────────────────────────────────────────────────────
+
+    /**
+     * Where this PO came from outside the ERP -- a spreadsheet row, a vendor portal id, an email
+     * thread. Importers use it as the idempotency key: find the PO carrying this reference and
+     * update it, rather than creating a second copy.
+     *
+     * <p>Not unique on purpose -- a revision legitimately shares its source reference with the
+     * PO it amends.
+     */
+    @Column(length = 200)
+    private String reference;
+
     // ── Email Tracking ────────────────────────────────────────────────────────
 
     /** Timestamp of when this PO was last emailed to the vendor. */

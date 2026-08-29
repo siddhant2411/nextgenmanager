@@ -11,6 +11,7 @@ import com.nextgenmanager.nextgenmanager.purchase.exception.PurchaseOrderNotFoun
 import com.nextgenmanager.nextgenmanager.purchase.mapper.PurchaseOrderMapper;
 import com.nextgenmanager.nextgenmanager.purchase.model.*;
 import com.nextgenmanager.nextgenmanager.purchase.repository.PurchaseOrderRepository;
+import com.nextgenmanager.nextgenmanager.purchase.repository.PurchaseOrderSpecifications;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderItem;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
@@ -84,11 +85,10 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.expectedDeliveryDate(), dto.placeOfSupply(), dto.currency(),
                 dto.exchangeRate(), dto.paymentTerms(), dto.creditDays(),
                 dto.vendorBillingAddressId(), dto.shipToAddressId(), dto.salesOrderId(),
-                dto.quotationNumber(), dto.quotationDate(),
+                dto.quotationNumber(), dto.quotationDate(), dto.reference(),
                 dto.termsAndConditions(), dto.internalNotes(), dto.remarks());
         po.setItems(buildItems(po, dto.items()));
-        deriveAndSetGstTreatment(po, po.getPlaceOfSupply());
-        taxCalculator.recalculate(po);
+        applyGstTreatmentAndRecalculate(po, dto.gstTreatment());
         return toDto(poRepo.save(po));
     }
 
@@ -100,23 +100,35 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         return toDto(findActive(id));
     }
 
+    /**
+     * Every supplied filter narrows the result.
+     *
+     * <p>This used to be an if/else chain that returned on the first filter it recognised, so
+     * {@code ?vendorId=5&status=SENT} quietly answered a different question -- every PO for
+     * vendor 5, in any status -- and looked like a correct, merely longer, list. The filters are
+     * ANDed into one specification now, and the controller rejects any parameter not on
+     * {@link PurchaseOrderFilter#KNOWN_PARAMS}, so a misspelt one is a 400 rather than a silently
+     * unfiltered page.
+     */
     @Override
     @Transactional(readOnly = true)
-    public Page<PurchaseOrderListDto> list(String status, String approvalStatus,
-                                           Integer vendorId, Pageable pageable) {
-        if (vendorId != null) {
-            return poRepo.findByVendorIdAndDeletedDateIsNull(vendorId, pageable)
-                    .map(mapper::toListDto);
-        }
-        if (StringUtils.hasText(status)) {
-            return poRepo.findByStatusAndDeletedDateIsNull(
-                    PurchaseOrderStatus.valueOf(status), pageable).map(mapper::toListDto);
-        }
-        if (StringUtils.hasText(approvalStatus)) {
-            return poRepo.findByApprovalStatusAndDeletedDateIsNull(
-                    PurchaseOrderApprovalStatus.valueOf(approvalStatus), pageable).map(mapper::toListDto);
-        }
-        return poRepo.findByDeletedDateIsNull(pageable).map(mapper::toListDto);
+    public Page<PurchaseOrderListDto> list(PurchaseOrderFilter filter, Pageable pageable) {
+        PurchaseOrderFilter f = (filter != null ? filter : new PurchaseOrderFilter()).normalized();
+        return poRepo.findAll(PurchaseOrderSpecifications.from(f), pageable).map(mapper::toListDto);
+    }
+
+    /**
+     * Looks a PO up by the number people actually quote to each other.
+     *
+     * <p>Everything else here is keyed on the surrogate id, which nobody has when they are
+     * reading a number off a printed PO, an email or a source spreadsheet. Without this, finding
+     * one known PO meant paging the whole table and filtering client-side.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PurchaseOrderDto getByNumber(String purchaseOrderNumber) {
+        return toDto(poRepo.findByPurchaseOrderNumberAndDeletedDateIsNull(purchaseOrderNumber)
+                .orElseThrow(() -> new PurchaseOrderNotFoundException(purchaseOrderNumber)));
     }
 
     @Override
@@ -150,14 +162,13 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.expectedDeliveryDate(), dto.placeOfSupply(), dto.currency(),
                 dto.exchangeRate(), dto.paymentTerms(), dto.creditDays(),
                 dto.vendorBillingAddressId(), dto.shipToAddressId(), dto.salesOrderId(),
-                dto.quotationNumber(), dto.quotationDate(),
+                dto.quotationNumber(), dto.quotationDate(), dto.reference(),
                 dto.termsAndConditions(), dto.internalNotes(), dto.remarks());
         if (dto.items() != null) {
             po.getItems().clear();
             po.getItems().addAll(buildItems(po, dto.items()));
         }
-        deriveAndSetGstTreatment(po, po.getPlaceOfSupply());
-        taxCalculator.recalculate(po);
+        applyGstTreatmentAndRecalculate(po, dto.gstTreatment());
         return toDto(poRepo.save(po));
     }
 
@@ -240,8 +251,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     @Override
     public PurchaseOrderDto recalculate(Long id) {
         PurchaseOrder po = findActive(id);
-        deriveAndSetGstTreatment(po, po.getPlaceOfSupply());
-        taxCalculator.recalculate(po);
+        // Keeps whatever treatment the PO already carries. Re-deriving it here would silently
+        // undo an explicit override the first time anything triggered a recalculation.
+        applyGstTreatmentAndRecalculate(po, po.getGstTreatment());
         return toDto(poRepo.save(po));
     }
 
@@ -280,7 +292,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                                    BigDecimal exchangeRate, String paymentTerms,
                                    Integer creditDays, Integer vendorBillingAddressId,
                                    Integer shipToAddressId, Long salesOrderId,
-                                   String quotationNumber, Date quotationDate,
+                                   String quotationNumber, Date quotationDate, String reference,
                                    String termsAndConditions, String internalNotes,
                                    String remarks) {
         if (vendorId != null) {
@@ -309,6 +321,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             po.setSalesOrder(em.getReference(SalesOrder.class, salesOrderId));
         if (quotationNumber != null) po.setQuotationNumber(quotationNumber.isBlank() ? null : quotationNumber);
         if (quotationDate != null)   po.setQuotationDate(quotationDate);
+        if (reference != null)       po.setReference(reference.isBlank() ? null : reference);
         if (termsAndConditions != null) po.setTermsAndConditions(termsAndConditions);
         if (internalNotes != null)      po.setInternalNotes(internalNotes);
         if (remarks != null)            po.setRemarks(remarks);
@@ -320,8 +333,18 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         List<PurchaseOrderItem> lines = new ArrayList<>();
         int lineNo = 1;
         for (PurchaseOrderItemCreateDto d : dtos) {
-            InventoryItem invItem = itemRepo.findById(d.itemId()!=null ? d.itemId().intValue() : -1)
-                    .orElseThrow(() -> new IllegalArgumentException("Item not found: " + d.itemId()));
+            // Named line, named field. The old message for a missing itemId read
+            // "Item not found: null", which sends the caller hunting for a deleted item rather
+            // than looking at the line it never filled in.
+            final int at = lineNo;
+            if (d.itemId() == null) {
+                throw new IllegalArgumentException(
+                        "Line " + at + " has no itemId. Every purchase order line must reference an "
+                        + "existing inventory item -- create the item first, then send its id.");
+            }
+            InventoryItem invItem = itemRepo.findById(d.itemId().intValue())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Line " + at + " references item id " + d.itemId() + ", which does not exist."));
 
             PurchaseOrderItem line = new PurchaseOrderItem();
             line.setPurchaseOrder(po);
@@ -354,15 +377,28 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         return lines;
     }
 
-    private void deriveAndSetGstTreatment(PurchaseOrder po, String overridePlaceOfSupply) {
-        if (po.getVendor() == null) return;
-        GstTreatment treatment = gstResolver.deriveGstTreatment(po.getVendor());
-        po.setGstTreatment(treatment);
-        // Derive placeOfSupply from company state if not explicitly set
-        if (!StringUtils.hasText(overridePlaceOfSupply)) {
+    /**
+     * Sets the GST treatment -- preferring an explicit one over the derived default -- then
+     * reprices the PO, because the treatment is what decides CGST/SGST vs IGST vs no tax at all.
+     *
+     * <p>Derivation reads the vendor's GSTIN, and a vendor with no GSTIN on file comes back
+     * UNREGISTERED, which the tax calculator prices at zero tax. That is the right answer for a
+     * genuinely unregistered vendor and the wrong one for a registered vendor whose GSTIN nobody
+     * has typed in yet -- and from here the two are indistinguishable. Callers that do know which
+     * is which say so, and the value they send is stored for audit exactly as a derived one is.
+     */
+    private void applyGstTreatmentAndRecalculate(PurchaseOrder po, GstTreatment explicit) {
+        if (explicit != null) {
+            po.setGstTreatment(explicit);
+        } else if (po.getVendor() != null) {
+            po.setGstTreatment(gstResolver.deriveGstTreatment(po.getVendor()));
+        }
+        // placeOfSupply falls back to the company's own state when the caller did not name one.
+        if (!StringUtils.hasText(po.getPlaceOfSupply())) {
             String companyState = gstResolver.resolveCompanyStateCode();
             if (companyState != null) po.setPlaceOfSupply(companyState);
         }
+        taxCalculator.recalculate(po);
     }
 
     @Override
@@ -412,7 +448,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.id(), dto.purchaseOrderNumber(), dto.poType(),
                 dto.vendorId(), dto.vendorName(), dto.orderDate(), dto.expectedDeliveryDate(),
                 dto.status(), dto.approvalStatus(), dto.currency(), dto.grandTotal(),
-                dto.itemCount(), dto.createdDate(), days);
+                dto.reference(), dto.itemCount(), dto.createdDate(), days);
     }
 
     private PurchaseOrderDto toDto(PurchaseOrder po) {
@@ -431,7 +467,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.cgstAmount(), dto.sgstAmount(), dto.igstAmount(),
                 dto.cessAmount(), dto.roundOff(), dto.grandTotal(),
                 AmountInWords.convert(po.getGrandTotal()),
-                po.getQuotationNumber(), po.getQuotationDate(),
+                po.getQuotationNumber(), po.getQuotationDate(), po.getReference(),
                 po.getSentToVendorAt(), po.getSentToVendorEmail(),
                 dto.revisionNo(), dto.parentPoId(), dto.salesOrderId(),
                 dto.termsAndConditions(), dto.internalNotes(), dto.remarks(),

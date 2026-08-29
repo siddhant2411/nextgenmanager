@@ -4,6 +4,7 @@ package com.nextgenmanager.nextgenmanager.sales.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -47,6 +48,20 @@ public class SalesOrder {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "quotation_id")
     private Quotation quotation;
+
+    /**
+     * The enquiry this order ultimately came from.
+     *
+     * Normally derived from {@link #quotation} — enquiry to quotation to order is the intended
+     * chain. It is held directly as well because plenty of real orders never pass through a
+     * quotation: PEC's 2026 register books orders taken over the phone, over WhatsApp and by
+     * mail against enquiries that were never formally quoted. Reaching those only through the
+     * quotation would leave the enquiry that produced the revenue unable to prove it, and
+     * "which enquiries actually turned into money?" is the question the register exists to answer.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "enquiry_id")
+    private Enquiry enquiry;
 
     // — Line items —
     @OneToMany(mappedBy = "salesOrder", cascade = CascadeType.ALL, orphanRemoval = true)

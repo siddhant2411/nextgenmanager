@@ -27,6 +27,13 @@ public class SalesOrderCreateDto {
 
     private Long quotationId; // optional
 
+    /**
+     * Optional. Only needed for an order that never went through a quotation — a phone or mail
+     * order booked straight against an enquiry. When quotationId is given, the enquiry is taken
+     * from the quotation and this is ignored, so the two can never be made to disagree.
+     */
+    private Long enquiryId;
+
     @Valid
     private List<SalesOrderItemDto> items;
 

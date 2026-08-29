@@ -29,4 +29,12 @@ public class SalesOrderDisplayDto {
     private String currency;
     private String phone;
     private String email;
+
+    // Where the order came from. Without these the list cannot answer "which enquiry produced
+    // this order?" without a round trip per row, and an import has no exact key to re-run against.
+    private Long enquiryId;
+    private String enquiryNumber;
+    private Long quotationId;
+    private String quotationNumber;
+    private String reference;
 }

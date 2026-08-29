@@ -197,14 +197,52 @@ public class CoaServiceImpl implements CoaService {
     public List<LedgerAccountDto> ensureContactLedgers(int contactId) {
         Contact contact = contactRepo.findById(contactId)
                 .orElseThrow(() -> new ResourceNotFoundException("Contact not found: " + contactId));
-        List<SubLedgerType> needed = switch (contact.getContactType()) {
+        return subLedgerTypesFor(contact).stream()
+                .map(type -> toLedgerDto(getOrCreatePartyLedger(contact, type)))
+                .toList();
+    }
+
+    @Override
+    public BulkLedgerResultDto ensureContactLedgersBulk(List<Integer> contactIds) {
+        // Sweeping every contact, not just GST-registered ones: a party without a
+        // GSTIN still trades and still carries an opening balance, and neither has
+        // anywhere to post until its sub-ledger exists.
+        List<Contact> targets = (contactIds == null || contactIds.isEmpty())
+                ? contactRepo.findAllActive()
+                : contactRepo.findAllById(contactIds);
+
+        BulkLedgerResultDto result = new BulkLedgerResultDto();
+        for (Contact contact : targets) {
+            if (contact.getDeletedDate() != null) continue;
+            result.setProcessed(result.getProcessed() + 1);
+            for (SubLedgerType type : subLedgerTypesFor(contact)) {
+                try {
+                    boolean existed = ledgerRepo
+                            .findByContactIdAndSubLedgerTypeAndDeletedDateIsNull(contact.getId(), type)
+                            .isPresent();
+                    getOrCreatePartyLedger(contact, type);
+                    if (existed) result.setExisting(result.getExisting() + 1);
+                    else result.setCreated(result.getCreated() + 1);
+                } catch (RuntimeException e) {
+                    // A missing control account (3010 / 8010) fails every contact the same
+                    // way. Recording it per contact keeps the caller's report honest instead
+                    // of aborting a 300-row import on the first bad one.
+                    result.getFailed().add(new BulkLedgerResultDto.Failure(
+                            contact.getId(), contact.getCompanyName(),
+                            type + ": " + e.getMessage()));
+                }
+            }
+        }
+        return result;
+    }
+
+    /** CUSTOMER gets a debtor ledger, VENDOR a creditor ledger, BOTH gets both. */
+    private List<SubLedgerType> subLedgerTypesFor(Contact contact) {
+        return switch (contact.getContactType()) {
             case CUSTOMER -> List.of(SubLedgerType.CUSTOMER);
             case VENDOR   -> List.of(SubLedgerType.VENDOR);
             case BOTH     -> List.of(SubLedgerType.CUSTOMER, SubLedgerType.VENDOR);
         };
-        return needed.stream()
-                .map(type -> toLedgerDto(getOrCreatePartyLedger(contact, type)))
-                .toList();
     }
 
     @Override

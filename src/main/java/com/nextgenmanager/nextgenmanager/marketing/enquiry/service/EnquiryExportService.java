@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryFilter;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiredProducts;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus;
@@ -54,19 +55,28 @@ public class EnquiryExportService {
     }
 
     @Transactional(readOnly = true)
-    public byte[] exportToExcel(String enqNo, String companyName, LocalDate lastContactedDate,
-                                LocalDate enqDate, LocalDate closedDate, Integer daysForNextFollowup,
-                                String lastContactedDateComp, String enqDateComp, String closedDateComp) throws Exception {
+    public byte[] exportToExcel(EnquiryFilter filter) throws Exception {
 
-        logger.debug("Starting Excel export for enquiry. Params: enqNo={}, companyName={}", enqNo, companyName);
+        // Same filter object the list endpoint uses, normalised the same way. The export used to
+        // default closedDateComp to '>' where the list defaulted it to '=', so a download could
+        // legitimately contain rows the screen had never shown.
+        EnquiryFilter f = (filter != null ? filter : new EnquiryFilter()).normalized();
+
+        logger.debug("Starting Excel export for enquiry. Params: enqNo={}, companyName={}",
+                f.getEnqNo(), f.getCompanyName());
 
         Page<Object[]> rawPage = enquiryRepository.getActiveEnquiries(
                 PageRequest.of(0, 5000, Sort.by("enqDate").descending()),
-                enqNo, companyName, lastContactedDate, daysForNextFollowup,
-                enqDate, closedDate,
-                lastContactedDateComp != null ? lastContactedDateComp : "=",
-                enqDateComp != null ? enqDateComp : "=",
-                closedDateComp != null ? closedDateComp : ">"
+                f.getEnqNo(), f.getEnqNoContains(), f.getCompanyName(),
+                f.getStatus() != null ? f.getStatus().name() : null,
+                f.getPriority() != null ? f.getPriority().name() : null,
+                f.getOutcome() != null ? f.getOutcome().name() : null,
+                f.getCloseReasonCode(), f.getEnquirySource(), f.getAssignedToId(),
+                f.getDaysForNextFollowup(), f.getEnqDateFrom(), f.getEnqDateTo(),
+                f.getLastContactedDate(), f.getEnqDate(), f.getClosedDate(),
+                f.getLastContactedDateComp(), f.getEnqDateComp(), f.getClosedDateComp(),
+                f.getAiGenerated(), f.getAiRequiresReview(),
+                f.getGmailThreadId(), f.getGmailMessageId()
         );
 
         List<Long> ids = rawPage.getContent().stream()

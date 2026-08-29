@@ -65,6 +65,15 @@ public interface ContactRepository extends JpaRepository<Contact, Integer> {
     @Query("SELECT COUNT(c) FROM Contact c WHERE c.gstNumber IS NOT NULL AND c.gstNumber <> '' AND c.deletedDate IS NULL")
     long countGstRegistered();
 
+    /** GST-registered contacts, ordered for stable bulk processing. */
+    @Query("SELECT c FROM Contact c WHERE c.gstNumber IS NOT NULL AND TRIM(c.gstNumber) <> '' " +
+           "AND c.deletedDate IS NULL ORDER BY c.id")
+    List<Contact> findGstRegistered();
+
+    /** Every live contact, ordered for stable bulk processing. */
+    @Query("SELECT c FROM Contact c WHERE c.deletedDate IS NULL ORDER BY c.id")
+    List<Contact> findAllActive();
+
     @Query("SELECT COUNT(c) FROM Contact c WHERE c.creationDate >= :date AND c.deletedDate IS NULL")
     long countRecentlyAdded(@Param("date") java.util.Date date);
 }
