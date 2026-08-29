@@ -48,6 +48,7 @@ India has over **6.3 crore MSMEs** that form the backbone of the manufacturing s
 - **Premium Card-Based Design** — Say goodbye to dense, clunky tables. Experience a modern, intuitive layout built to increase user adoption on the shop floor.
 - **Job Work Challans** — Built-in support for subcontracting workflows common in Indian manufacturing.
 - **Multi-address with GST** — Manage multiple factory/godown addresses per vendor or customer, each with their own GSTIN.
+- **AI-ready out of the box** — A built-in MCP server lets AI assistants read your BOMs, stock, and work orders directly; an optional agent turns enquiry emails into draft enquiries.
 - **Runs on modest hardware** — No need for expensive cloud infrastructure. Runs on a basic laptop or a Rs. 500/month VPS.
 - **Zero license cost** — Free and open-source forever. No per-user fees, no hidden charges, no vendor lock-in.
 
@@ -85,22 +86,36 @@ India has over **6.3 crore MSMEs** that form the backbone of the manufacturing s
 </p>
 <p align="center"><em>Visual manufacturing routing: Define operations, work centers, and parallel execution paths.</em></p>
 
-- **Bill of Materials (BOM)** — Multi-level BOMs with versioning, cost breakdown, where-used analysis, and ECO tracking.
-- **Work Orders** — Create from BOM, track material issuance, operation progress, and state transitions.
-- **Routing & Operations** — Define manufacturing processes with sequences, setup/cycle times, and parallel operations.
-- **Production Scheduling** — Schedule operations against work centers with capacity planning and shift management.
+- **Bill of Materials (BOM)** — Multi-level BOMs with versioning, cost breakdown, where-used analysis, and ECO-style change tracking with approvals.
+- **Work Orders** — Single or multi-line work orders created from BOMs or sales orders, with material issuance, operation progress, labour entries, and full state transitions.
+- **Routing & Operations** — Manufacturing processes with sequences, setup/cycle times, dependencies, and parallel operations.
+- **Operation Costing** — Multiple costing modes including hourly labour rates and **piece-rate costing** (rate x quantity — e.g. Rs./hole x holes), plus a configurable overhead-percentage rollup.
+- **Production Scheduling** — Schedule operations against work centers with capacity planning, shifts, holiday calendars, and calendar overrides.
+- **Work Centers & Machines** — Work-center masters, labour roles, production job rate masters, machine registry, and machine production logs.
+- **Downtime & OEE** — Downtime reason codes, start/stop capture, and OEE dashboards by machine and work center with trend analysis.
+- **Make vs Buy Analysis** — Side-by-side in-house cost versus vendor quote to drive the daily make-or-outsource call.
+- **Job Work Challans** — Subcontracting challans with line-level tracking and return reconciliation for Indian job-work workflows.
 
-### Sales & Quotations
+### Quality Control
+
+- **Test Templates & Results** — Reusable inspection plans applied to work orders, with recorded test results and an exportable QC test report.
+- **In-Process QA** — Per-operation QA parameter entries captured on the shop floor as operations complete.
+- **Rejections & Disposition** — Rejection entries with categorised reason codes and a disposition workflow.
+
+### Planning & Procurement
 
 <p align="center">
-  <img src="docs/assets/quotation_hub.png" alt="Quotation Hub" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
+  <img src="docs/assets/purchase_orders.png" alt="Purchase Orders" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
 </p>
-<p align="center"><em>Review, track, and manage professional proposals with ease.</em></p>
+<p align="center"><em>Procurement pipeline: Manage purchase orders, vendor approvals, and receiving workflows.</em></p>
 
-- **Enquiries** — Capture and track customer inquiries.
-- **Quotations** — Create premium sales quotations with auto-populating items and dynamic tax configurations.
-- **Sales Orders** — Full sales order lifecycle with PDF generation.
-- **Job Work Challans** — Subcontracting management with challan tracking.
+- **Route-Aware Demand** — Sales order approval explodes demand against each item's replenishment strategy (make-to-stock / make-to-order) and raises work orders or purchase requisitions automatically when the route is unambiguous.
+- **Planning Desk** — Ambiguous shortfalls land in a planning queue where a planner decides make, buy, or defer, backed by make-vs-buy costing.
+- **Purchase Requisitions** — Requisitions with priority, source tracking, line-level status, and configurable approval rules.
+- **Purchase Orders** — Vendor approvals, PO types, GST treatment, and PO-to-GRN tracking.
+- **Goods Receipt (GRN)** — Receiving against POs with quality status, partial receipts, and automatic stock posting.
+- **Vendor Invoices, Payments & Debit Notes** — Invoice capture against POs, payment recording, and purchase returns via debit notes.
+- **Vendor Price Lists** — Item-vendor prices with full price history for comparison and re-costing.
 
 ### Inventory & Items
 
@@ -119,14 +134,26 @@ India has over **6.3 crore MSMEs** that form the backbone of the manufacturing s
 </p>
 <p align="center"><em>Detailed BOM management: Component tracking, revision comparison, and change logs.</em></p>
 
-### Procurement & Purchasing
+- **Product Master** — Raw material, semi-finished, and finished goods with specifications, process types, and separate finance and inventory settings per product.
+- **Item Coding** — Configurable item code series and code mapping, so your existing part-numbering scheme survives the migration.
+- **Batch & Serial Tracking** — Batch numbers and serial numbers with status lifecycles, tracked through receipt, issue, and dispatch.
+- **Inventory Ledger** — Every movement written to a ledger and movement log, giving a fully auditable stock history.
+- **Stock Count** — Physical stock counting with variance capture and adjustment posting.
+- **Material Requests & Reservations** — Work-order material requests, booking approvals, and reorder handling for shortfalls.
+
+### Sales & CRM
 
 <p align="center">
-  <img src="docs/assets/purchase_orders.png" alt="Purchase Orders" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
+  <img src="docs/assets/quotation_hub.png" alt="Quotation Hub" width="100%" style="border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"/>
 </p>
-<p align="center"><em>Procurement pipeline: Manage purchase orders, vendor approvals, and receiving workflows.</em></p>
+<p align="center"><em>Review, track, and manage professional proposals with ease.</em></p>
 
-- **Purchase Orders** — Vendor approvals, receiving workflows, and PO-to-GRN tracking.
+- **Enquiries** — Capture and track customer enquiries with a configurable close-reason master for win/loss analysis.
+- **Quotations** — Premium sales quotations with auto-populating items, dynamic tax configuration, and reusable message templates.
+- **Sales Orders** — Full lifecycle with approval status, dispatch details, and PDF generation.
+- **Delivery Notes & Tax Invoices** — Dispatch documentation and GST tax invoices generated straight from the order.
+- **Payments & Credit Notes** — Advance and against-invoice payment recording, plus sales credit notes for returns.
+- **Sales Analytics** — Pipeline and revenue analytics over enquiries, quotations, and orders.
 
 ### Accounting & Compliance
 
@@ -135,10 +162,25 @@ Full Indian-compliance accounting stack built directly into the ERP — no separ
 - **Chart of Accounts & Vouchers** — Configurable CoA with a statutory voucher system (journal, payment, receipt, contra) and an approval framework.
 - **Auto-Posting from Operations** — Sales and purchase transactions post to the ledger automatically (AR/AP), keeping books in sync with the shop floor.
 - **Perpetual Inventory** — Real-time stock-to-GL reconciliation, so inventory value on the books always matches physical stock movement.
-- **GST Compliance** — GST register, HSN summary, and GSTR-1 / GSTR-3B return generation.
-- **TDS** — TDS at time of payment, section-wise tracking, and challan/26Q reporting.
+- **GST Compliance** — GST register, HSN summary, GSTR-1 / GSTR-3B return generation, and filing status tracking.
+- **TDS** — TDS at time of payment, section-wise tracking, and challan / 26Q reporting.
 - **Opening Balances & Financial Years** — Mid-year opening balance entry and financial year period management.
-- **Accounting Reports** — Built-in reporting across ledgers, GST, and TDS.
+- **Accounting Reports** — Trial balance, day book, account ledgers, debtors/creditors ageing, and stock-GL reconciliation, with Excel export.
+
+### Automation & Integrations
+
+- **MCP Server** — A built-in [Model Context Protocol](https://modelcontextprotocol.io) endpoint at `/api/mcp` exposing inventory, BOM, work order, item, and costing tools, so AI assistants can query — and, when write tools are explicitly enabled, update — your ERP.
+- **AI Lead Agent** — An opt-in agent that reads incoming enquiry emails and drafts enquiry records into a review queue; the browser talks only to the ERP backend, which proxies the agent.
+- **Approval Framework** — Reusable approval policies, rules, and multi-step requests wired into sales orders, purchase orders, requisitions, vouchers, and inventory bookings.
+- **Document Checklists** — Per-document-type checklists so nothing ships without its paperwork.
+- **REST API & Exports** — Every module exposed over a documented REST API, with PDF document generation and Excel exports throughout.
+
+### Platform
+
+- **Roles & Permissions** — JWT authentication with refresh tokens, role-based access, and custom roles beyond the built-in admin tiers.
+- **Audit Trail** — Spring-event-driven change history on BOMs, work orders, and scheduling decisions.
+- **Attachments** — MinIO-backed file storage for item, BOM, and document attachments.
+- **Multi-Address GST** — Multiple factory/godown addresses per contact, each with its own GSTIN, plus MSME registration and PAN.
 
 ---
 
@@ -252,11 +294,14 @@ All endpoints are grouped by module and require a JWT bearer token obtained from
 
 ### In Progress
 - [ ] Financial statements (P&L, Balance Sheet, Cash Flow), bank reconciliation, and FY year-end close.
-- [ ] Quality Control (QC) inspection workflows.
-- [ ] Save Filters for users
-- [ ] Complete MCP Support
+- [ ] Saved filters and views per user.
 
 ### Planned
+- [ ] Multi-warehouse / bin-level stock locations.
+- [ ] Unit-of-measure conversions (purchase UoM vs stock UoM vs consumption UoM).
+- [ ] Horizon-wide batch MRP run, alongside the existing per-order planning desk.
+- [ ] E-invoicing (IRN + QR code) and e-way bill generation.
+- [ ] Shop-floor job cards with per-worker clock-in / clock-out time capture.
 - [ ] Mobile-responsive PWA for shop floor use.
 
 ---
