@@ -62,6 +62,9 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     private WorkOrderRepository workOrderRepository;
 
     @Autowired
+    private com.nextgenmanager.nextgenmanager.quality.service.QualityGateService qualityGateService;
+
+    @Autowired
     private WorkOrderMaterialRepository workOrderMaterialRepository;
 
     @Autowired
@@ -2744,6 +2747,11 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     "All operations must be COMPLETED before completing WorkOrder"
             );
         }
+
+        // Quality gate (phase H). Until now a failed critical check was recorded and then ignored:
+        // the order completed and produceStock put the goods on the shelf regardless. Checked
+        // here, with the other guards, so nothing is half-completed before it is refused.
+        qualityGateService.assertProductionAllowed(workOrder);
 
         // Handle Backflushing
         if (workOrder.isAllowBackflush()) {
