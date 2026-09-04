@@ -23,5 +23,10 @@ public class DeliveryNoteDto {
     private String ewayBillNumber;
     private String dispatchThrough;
     private String remarks;
+
+    /** The pick this note shipped, when it came from one. Null for a direct dispatch. */
+    private Long pickListId;
+    private String pickNumber;
+
     private List<DeliveryNoteItemDetailDto> items;
 }

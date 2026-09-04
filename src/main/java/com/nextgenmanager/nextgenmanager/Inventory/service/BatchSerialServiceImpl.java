@@ -28,6 +28,7 @@ public class BatchSerialServiceImpl implements BatchSerialService {
     @Autowired private BatchNumberRepository batchRepo;
     @Autowired private SerialNumberRepository serialRepo;
     @Autowired private NumberSequenceRepository sequenceRepo;
+    @Autowired private WarehouseService warehouseService;
 
     // ─── Batch creation ───────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ public class BatchSerialServiceImpl implements BatchSerialService {
         batch.setStatus(BatchStatus.ACTIVE);
         batch.setSource(source);
         batch.setSourceDocNo(sourceDocNo);
-        batch.setWarehouse(warehouse);
+        batch.setWarehouse(warehouseService.resolveByCodeOrDefault(warehouse));
         batch.setManufacturingDate(manufacturingDate);
         batch.setExpiryDate(expiryDate);
         batch.setSupplierBatchNo(supplierBatchNo);
@@ -87,7 +88,7 @@ public class BatchSerialServiceImpl implements BatchSerialService {
             serial.setReceivedDate(LocalDate.now());
             serial.setSource(source);
             serial.setSourceDocNo(sourceDocNo);
-            serial.setWarehouse(warehouse);
+            serial.setWarehouse(warehouseService.resolveByCodeOrDefault(warehouse));
             serial.setCreatedBy(createdBy);
             created.add(serialRepo.save(serial));
         }
@@ -195,7 +196,7 @@ public class BatchSerialServiceImpl implements BatchSerialService {
         dto.setStatus(b.getStatus().name());
         dto.setSource(b.getSource());
         dto.setSourceDocNo(b.getSourceDocNo());
-        dto.setWarehouse(b.getWarehouse());
+        dto.setWarehouse(b.getWarehouse() != null ? b.getWarehouse().getCode() : null);
         dto.setCreatedBy(b.getCreatedBy());
         dto.setCreatedDate(b.getCreatedDate());
         return dto;
@@ -216,7 +217,7 @@ public class BatchSerialServiceImpl implements BatchSerialService {
         dto.setReceivedDate(s.getReceivedDate());
         dto.setSource(s.getSource());
         dto.setSourceDocNo(s.getSourceDocNo());
-        dto.setWarehouse(s.getWarehouse());
+        dto.setWarehouse(s.getWarehouse() != null ? s.getWarehouse().getCode() : null);
         dto.setConsumedDate(s.getConsumedDate());
         dto.setConsumedByDocNo(s.getConsumedByDocNo());
         dto.setCreatedBy(s.getCreatedBy());

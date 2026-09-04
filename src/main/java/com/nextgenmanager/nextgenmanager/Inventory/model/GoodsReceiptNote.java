@@ -38,7 +38,13 @@ public class GoodsReceiptNote {
     @JoinColumn(name = "vendor_id")
     private Contact vendor;
 
-    private String warehouse;
+    /**
+     * Where this sits. A NOT NULL reference since V164 — previously a free-text string that
+     * nothing constrained, so two spellings of one store were two warehouses.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "warehouse_id", nullable = false)
+    private Warehouse warehouse;
 
     @Enumerated(EnumType.STRING)
     private GRNStatus status;

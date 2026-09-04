@@ -91,6 +91,27 @@ public class InventoryInstance {
 
     private String consumptionReferenceNo; // Tracks the document (e.g., Work Order) that consumed this instance
 
+    /**
+     * Which warehouse this physical stock is in. NOT NULL since V165 — stock always sits
+     * somewhere, and a nullable column here would make per-warehouse totals quietly under-report.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "warehouse_id", nullable = false)
+    private Warehouse warehouse;
+
+    /**
+     * The pick that allocated this unit, if any. Cleared when a pick is cancelled so allocation is
+     * never stranded on stock that is back on the shelf.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "picklistline_id")
+    private PickListLine pickListLine;
+
+    /** Bin within the warehouse. Null unless that warehouse is bin-tracked, which is off by default. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "storagelocation_id")
+    private StorageLocation storageLocation;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "batchId")
     private BatchNumber batchNumber;

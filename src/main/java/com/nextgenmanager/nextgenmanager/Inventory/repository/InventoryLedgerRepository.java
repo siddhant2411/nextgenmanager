@@ -19,10 +19,10 @@ public interface InventoryLedgerRepository extends JpaRepository<InventoryLedger
             int inventoryItemId, LocalDate from, LocalDate to);
 
     @Query("SELECT e FROM InventoryLedger e WHERE e.inventoryItem.inventoryItemId = :itemId " +
-           "AND (:warehouse IS NULL OR e.warehouse = :warehouse) " +
+           "AND (:warehouseId IS NULL OR e.warehouse.id = :warehouseId) " +
            "ORDER BY e.movementDate DESC")
     List<InventoryLedger> findByItemAndWarehouse(@Param("itemId") int itemId,
-                                                  @Param("warehouse") String warehouse);
+                                                  @Param("warehouseId") Long warehouseId);
 
     @Query("SELECT e FROM InventoryLedger e WHERE e.inventoryItem.inventoryItemId = :itemId " +
            "ORDER BY e.movementDate DESC, e.id DESC")
@@ -40,8 +40,8 @@ public interface InventoryLedgerRepository extends JpaRepository<InventoryLedger
                                                org.springframework.data.domain.Pageable pageable);
 
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM InventoryLedger e " +
-           "WHERE (:warehouse IS NULL OR e.warehouse = :warehouse) AND e.quantity > 0")
-    double getStockValueByWarehouse(@Param("warehouse") String warehouse);
+           "WHERE (:warehouseId IS NULL OR e.warehouse.id = :warehouseId) AND e.quantity > 0")
+    double getStockValueByWarehouse(@Param("warehouseId") Long warehouseId);
 
     /**
      * Cross-item inward/outward register for a date range.

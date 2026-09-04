@@ -35,6 +35,7 @@ public class GRNServiceImpl implements GRNService {
     @Autowired private InventoryTransactionService inventoryTransactionService;
     @Autowired private BatchNumberRepository batchNumberRepository;
     @Autowired private SerialNumberRepository serialNumberRepository;
+    @Autowired private WarehouseService warehouseService;
 
     @Override
     @Transactional
@@ -42,7 +43,7 @@ public class GRNServiceImpl implements GRNService {
         GoodsReceiptNote grn = new GoodsReceiptNote();
         grn.setGrnNumber(generateGrnNumber());
         grn.setGrnDate(request.getGrnDate() != null ? request.getGrnDate() : LocalDate.now());
-        grn.setWarehouse(request.getWarehouse());
+        grn.setWarehouse(warehouseService.resolveByCodeOrDefault(request.getWarehouse()));
         grn.setRemarks(request.getRemarks());
         grn.setCreatedBy(request.getCreatedBy());
         grn.setStatus(GRNStatus.SUBMITTED);
@@ -170,7 +171,7 @@ public class GRNServiceImpl implements GRNService {
         dto.setId(grn.getId());
         dto.setGrnNumber(grn.getGrnNumber());
         dto.setGrnDate(grn.getGrnDate());
-        dto.setWarehouse(grn.getWarehouse());
+        dto.setWarehouse(grn.getWarehouse() != null ? grn.getWarehouse().getCode() : null);
         dto.setStatus(grn.getStatus() != null ? grn.getStatus().name() : null);
         dto.setTotalAmount(grn.getTotalAmount());
         dto.setRemarks(grn.getRemarks());

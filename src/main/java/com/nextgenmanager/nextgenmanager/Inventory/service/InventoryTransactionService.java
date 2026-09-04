@@ -1,6 +1,8 @@
 package com.nextgenmanager.nextgenmanager.Inventory.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.StockReconciliationReportDto;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.StockScalarCorrectionRowDto;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryLedger;
 
 import java.time.LocalDate;
@@ -78,4 +80,32 @@ public interface InventoryTransactionService {
      *            referenceDocNo=dnNumber, createdBy
      */
     void writeDispatchLedger(InventoryTransactionDTO dto);
+
+    /**
+     * Compares each item's stock counters against what its instance rows actually say.
+     * Read-only — it reports drift, it does not correct it, so it is safe to run against
+     * live books.
+     *
+     * @param onlyDrifted when true, returns only the items whose counters disagree
+     */
+    StockReconciliationReportDto reconcileStockScalars(boolean onlyDrifted);
+
+    /**
+     * Resets the named items' stock counters to what their instance rows say.
+     *
+     * <p>Deliberately writes no ledger entry: this corrects counters that drifted from
+     * the instance table, it does not record a physical movement. Inventing an
+     * ADJUSTMENT row would put a movement into the stock ledger that never happened,
+     * and would push the ledger out of step with the GL that posts from it.
+     *
+     * <p>Also rebuilds the item's per-warehouse counters from the warehouses those instances
+     * name, so a repair fixes both halves of the invariant rather than leaving the warehouse
+     * split behind. In-transit quantities are left alone: a stock transfer moves counters without
+     * touching instances, so nothing here can know about goods on a vehicle — which is also why
+     * this should not be run on an item with a transfer in flight.
+     *
+     * @param itemIds items to correct — named explicitly, never inferred
+     * @param reason  free text recorded in the log for audit
+     */
+    List<StockScalarCorrectionRowDto> correctStockScalars(List<Integer> itemIds, String reason);
 }
