@@ -21,6 +21,14 @@ public interface PurchaseOrderRepository
 
     Page<PurchaseOrder> findByDeletedDateIsNull(Pageable pageable);
 
+    /**
+     * Every item that has ever appeared on a purchase order line, cancelled orders included: the
+     * question being asked is "is this something we buy", and buying it once answers that
+     * whatever became of the order.
+     */
+    @Query("SELECT DISTINCT line.item.inventoryItemId FROM PurchaseOrderItem line WHERE line.item IS NOT NULL")
+    List<Integer> findDistinctOrderedItemIds();
+
     List<PurchaseOrder> findByStatusInAndDeletedDateIsNull(List<PurchaseOrderStatus> statuses);
 
     List<PurchaseOrder> findByStatusInAndExpectedDeliveryDateBeforeAndDeletedDateIsNull(

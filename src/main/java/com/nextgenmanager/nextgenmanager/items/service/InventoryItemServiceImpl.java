@@ -7,10 +7,13 @@ import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventorySettingsBackfillDto;
 import com.nextgenmanager.nextgenmanager.items.mapper.InventoryItemMapper;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemCode;
 import com.nextgenmanager.nextgenmanager.items.model.ItemCodeSeries;
+import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
+import com.nextgenmanager.nextgenmanager.items.model.ReplenishmentStrategy;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.repository.ItemCodeSeriesRepository;
 import com.nextgenmanager.nextgenmanager.items.spec.InventoryItemSpecification;
@@ -65,6 +68,9 @@ public class InventoryItemServiceImpl implements InventoryItemService {
     @Autowired
     private FileStorageService fileStorageService;
 
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.purchase.repository.PurchaseOrderRepository purchaseOrderRepository;
+
     private static final Map<String, String> JOIN_FIELD_MAP = Map.of(
             "dimension", "productSpecification.dimension",
             "size", "productSpecification.size",
@@ -108,6 +114,14 @@ public class InventoryItemServiceImpl implements InventoryItemService {
                 }
             }
 
+            // Every item needs somewhere to keep its stock figures. Nothing else in this codebase
+            // ever builds this row, so an item created without one — which is every item any
+            // import has ever loaded — can never hold stock, be reserved or be picked: those
+            // paths all read the settings first and give up when they are null.
+            if (inventoryItem.getProductInventorySettings() == null) {
+                inventoryItem.setProductInventorySettings(defaultInventorySettings(inventoryItem));
+            }
+
             InventoryItem savedInventoryItem = inventoryItemRepository.save(inventoryItem);
             logger.info("Item Successfully added with inventory item id: {}", savedInventoryItem.getInventoryItemId());
             long itemId = (long)savedInventoryItem.getInventoryItemId();
@@ -133,6 +147,62 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             logger.error("Error while adding new inventory item: {}", e.getMessage());
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * The settings an item gets when nobody said otherwise: it holds stock, tracks nothing, and
+     * has no reorder policy. Zeroes here are the honest statement that no one has set a policy,
+     * which is a different thing from a policy of zero — and unlike an invented reorder level,
+     * a zero cannot quietly trigger purchasing.
+     */
+    private ProductInventorySettings defaultInventorySettings(InventoryItem item) {
+        ProductInventorySettings settings = new ProductInventorySettings();
+        settings.setInventoryItem(item);
+        settings.setReplenishmentStrategy(ReplenishmentStrategy.MAKE_TO_STOCK);
+        settings.setBatchTracked(false);
+        settings.setSerialTracked(false);
+        settings.setAllowNegativeStock(false);
+        settings.setAvailableQuantity(0);
+        settings.setReservedQuantity(0);
+        settings.setOrderedQuantity(0);
+        settings.setReorderLevel(0);
+        settings.setMinStock(0);
+        settings.setMaxStock(0);
+        settings.setLeadTime(0);
+        return settings;
+    }
+
+    @Override
+    @Transactional
+    public InventorySettingsBackfillDto backfillInventorySettings(boolean dryRun) {
+        List<InventoryItem> missing = inventoryItemRepository.findActiveWithoutInventorySettings();
+        Set<Integer> everPurchased = new HashSet<>(purchaseOrderRepository.findDistinctOrderedItemIds());
+
+        List<InventorySettingsBackfillDto.Row> rows = new ArrayList<>();
+        long purchased = 0, manufactured = 0;
+
+        for (InventoryItem item : missing) {
+            boolean isPurchased = everPurchased.contains(item.getInventoryItemId());
+            ProductInventorySettings settings = defaultInventorySettings(item);
+            settings.setPurchased(isPurchased);
+            settings.setManufactured(!isPurchased);
+
+            if (!dryRun) {
+                item.setProductInventorySettings(settings);
+                inventoryItemRepository.save(item);
+            }
+
+            if (isPurchased) purchased++; else manufactured++;
+            rows.add(new InventorySettingsBackfillDto.Row(
+                    item.getInventoryItemId(), item.getItemCode(), item.getName(),
+                    isPurchased, !isPurchased,
+                    isPurchased ? "on a purchase order" : "never ordered"));
+        }
+
+        logger.warn("Inventory settings backfill{}: {} items without settings, {} purchased, {} manufactured",
+                dryRun ? " (DRY RUN)" : "", missing.size(), purchased, manufactured);
+
+        return new InventorySettingsBackfillDto(dryRun, missing.size(), purchased, manufactured, rows);
     }
 
     @Override
@@ -292,6 +362,13 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             }
             if (updatedItem.getProductInventorySettings() != null) {
                 updatedItem.getProductInventorySettings().setInventoryItem(updatedItem);
+            } else if (existingItem.getProductInventorySettings() != null) {
+                // The association is orphanRemoval, so an update that simply does not mention the
+                // settings would delete them — taking the item's stock figures with it. A caller
+                // that says nothing about them means to leave them alone.
+                ProductInventorySettings kept = existingItem.getProductInventorySettings();
+                kept.setInventoryItem(updatedItem);
+                updatedItem.setProductInventorySettings(kept);
             }
 
             InventoryItem newItem = inventoryItemRepository.save(updatedItem);

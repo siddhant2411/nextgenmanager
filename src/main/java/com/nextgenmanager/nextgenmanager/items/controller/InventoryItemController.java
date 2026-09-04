@@ -5,6 +5,7 @@ import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventorySettingsBackfillDto;
 import com.nextgenmanager.nextgenmanager.items.DTO.PriceListExportRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
@@ -121,6 +122,22 @@ public class InventoryItemController {
         }
     }
 
+
+    /**
+     * Backfill of missing inventory settings — POST /api/inventory_item/backfill-inventory-settings
+     *
+     * <p>Dry run by default: it reports what it would write, item by item, and writes nothing.
+     * Pass {@code dryRun=false} once the classification has been read and believed.
+     *
+     * <p>Items that already have settings are never touched, so running it twice is safe and the
+     * second run finds nothing.
+     */
+    @PostMapping("/backfill-inventory-settings")
+    @RequiresInventoryAdminAccess
+    public ResponseEntity<InventorySettingsBackfillDto> backfillInventorySettings(
+            @RequestParam(defaultValue = "true") boolean dryRun) {
+        return ResponseEntity.ok(inventoryItemService.backfillInventorySettings(dryRun));
+    }
 
     @GetMapping("/all-with-deleted")
     @RequiresInventoryAdminAccess

@@ -20,6 +20,19 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
 
     boolean existsByItemCodeAndDeletedDateIsNull(String itemCode);
 
+    /**
+     * Active items carrying no inventory settings at all.
+     *
+     * <p>The settings row is created only when a client sends one, so anything loaded through an
+     * import that did not think to include the block has none — and an item without it cannot
+     * hold stock, be reserved or be picked, because every one of those paths reads the settings
+     * first and gives up when they are null.
+     */
+    @Query("SELECT i FROM InventoryItem i "
+            + "WHERE i.deletedDate IS NULL AND i.productInventorySettings IS NULL "
+            + "ORDER BY i.inventoryItemId")
+    List<InventoryItem> findActiveWithoutInventorySettings();
+
     @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NULL AND (LOWER(CAST(i.name AS text)) LIKE %:search% OR LOWER(CAST(i.itemCode AS text)) LIKE %:search% OR LOWER(CAST(i.hsnCode AS text)) LIKE %:search%)", nativeQuery = true)
     Page<InventoryItem> findAllActiveCategory(@Param("search") String search, Pageable pageable);
 
