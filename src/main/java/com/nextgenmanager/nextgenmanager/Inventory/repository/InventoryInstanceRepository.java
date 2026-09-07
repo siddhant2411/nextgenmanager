@@ -279,11 +279,18 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             "AND i.inventoryInstanceStatus <> 'CONSUMED'")
     BigDecimal countSumOfInventoryValue();
 
-    @Query(value = "SELECT * FROM InventoryInstance i WHERE i.deletedDate IS NULL AND i.inventoryItemRef = :inventoryItemId AND (:status IS NULL OR i.inventoryInstanceStatus = :status) LIMIT :qty", nativeQuery = true)
+    // Both queries below add the same clause: a caller asking for AVAILABLE stock means "fit to
+    // promise", and gets only PASSED or WAIVED quality. Every current caller asking for AVAILABLE
+    // is choosing what to reserve or consume next — reservation, unplanned dispatch, or the manual
+    // instance picker — so quarantined stock offered by any of them would be a leak of exactly the
+    // kind phase H exists to stop. REQUESTED and PENDING callers are untouched: reserved stock has
+    // already passed this filter once, and PENDING rows are receipt placeholders that default to
+    // PASSED anyway.
+    @Query(value = "SELECT * FROM InventoryInstance i WHERE i.deletedDate IS NULL AND i.inventoryItemRef = :inventoryItemId AND (:status IS NULL OR i.inventoryInstanceStatus = :status) AND (:status <> 'AVAILABLE' OR i.qualityStatus IN ('PASSED','WAIVED')) LIMIT :qty", nativeQuery = true)
     List<InventoryInstance> inventoryInstanceByStatus(@Param("inventoryItemId") int inventoryItemId, String status, double qty);
 
     /** FIFO selection of instances in a given status — used for CONSUME and RETURN operations. */
-    @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :itemId AND i.inventoryInstanceStatus = :status AND i.deletedDate IS NULL ORDER BY i.entryDate ASC", nativeQuery = true)
+    @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :itemId AND i.inventoryInstanceStatus = :status AND i.deletedDate IS NULL AND (:status <> 'AVAILABLE' OR i.qualityStatus IN ('PASSED','WAIVED')) ORDER BY i.entryDate ASC", nativeQuery = true)
     List<InventoryInstance> findByItemAndStatusFIFO(@Param("itemId") int itemId, @Param("status") String status);
 
 //    @Query("""
