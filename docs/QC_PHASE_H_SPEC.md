@@ -49,15 +49,29 @@ avoid.
 A `WAIVED` lot passes the gate. Waivers go through the existing `common/approval` engine rather
 than a new one, and the lot records who waived it.
 
-## Deliberately not in step 1
+## Step 2 (V170) — what happens to goods that failed
 
-- `NonConformanceReport` and its dispositions (rework / scrap / use-as-is / return to vendor).
-- `QualityStatus` on `InventoryInstance`, and GRN rejected quantity routing into the QUARANTINE
-  warehouse that phase F created and nothing yet uses.
-- The PACKAGE source, which has no document to hang off until phase J.
+- **`NonConformanceReport`**, raised against a lot that failed, closed by a disposition: rework,
+  scrap, use-as-is, return to vendor. Use-as-is needs an approver's name, for the same reason a
+  waiver needs a reason — it overrides an inspection rather than acting on one.
+- **`QualityStatus` on `InventoryInstance`.** It existed only on batch and serial records, so
+  untracked stock had no way to say it had failed. Existing rows become PASSED: every unit already
+  in stock was accepted into it, and marking them all as awaiting QC would strand real stock.
+- **Rejected goods stop vanishing.** A GRN's rejected quantity was typed in and dropped — only the
+  accepted quantity produced stock. It is now received into the QUARANTINE warehouse, marked
+  FAILED. Where no quarantine warehouse exists it goes to the default one, still FAILED, with a
+  loud log: quality status is what keeps it off a pick, and refusing the receipt over a missing
+  master record would stop goods at the door.
+- **Picking refuses unfit stock.** `PickListServiceImpl` will not allocate an instance that is
+  FAILED or PENDING_QC. Without this the column would be storage, not a gate.
 
-Those are step 2 (V170). Step 1 is the model, the lot lifecycle, and the gate — the part that
-changes behaviour rather than adding storage.
+What step 2 does **not** do is move quantities. Scrapping goods and returning them to a vendor are
+stock movements with their own documents — a write-off adjustment and a debit note — and inventing
+them here would put movements in the ledger that nothing explains. The stock stays FAILED, off
+every pick, until one of those is raised.
+
+The PACKAGE source still waits for phase J, which is the only thing that gives it a document to
+hang off.
 
 ## Migrations
 

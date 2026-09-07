@@ -39,6 +39,13 @@ public interface WarehouseService {
      */
     Warehouse resolveByCodeOrDefault(String code);
 
+    /**
+     * Where rejected goods go. Null when nobody has set a quarantine warehouse up — the caller
+     * decides what to do about that, because refusing a receipt over a missing master record
+     * would stop the gate at the door.
+     */
+    Warehouse resolveQuarantineWarehouse();
+
     /** What this warehouse is holding, item by item. Items at zero have no row. */
     List<WarehouseStockRowDto> listStock(Long warehouseId);
 

@@ -38,4 +38,11 @@ public class InventoryTransactionDTO {
      * If provided → size must equal quantity.
      */
     private List<String> manualSerialNumbers;
+
+    /**
+     * The quality verdict to stamp on the stock this movement creates. Null means PASSED, which is
+     * what an ordinary receipt is. Rejected goods arrive as FAILED, so they can be held on the
+     * books without being pickable.
+     */
+    private com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus qualityStatus;
 }

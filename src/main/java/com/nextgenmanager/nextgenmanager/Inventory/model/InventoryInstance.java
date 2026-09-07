@@ -100,6 +100,18 @@ public class InventoryInstance {
     private Warehouse warehouse;
 
     /**
+     * Whether this particular stock is fit to use. PASSED and WAIVED can be picked; PENDING_QC and
+     * FAILED cannot.
+     *
+     * <p>Until phase H this lived only on {@code BatchNumber} and {@code SerialNumber}, so
+     * untracked stock had no way to say it had failed — and a goods receipt's rejected quantity
+     * was simply dropped rather than being held anywhere.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "qualityStatus", nullable = false, length = 20)
+    private QualityStatus qualityStatus = QualityStatus.PASSED;
+
+    /**
      * The pick that allocated this unit, if any. Cleared when a pick is cancelled so allocation is
      * never stranded on stock that is back on the shelf.
      */

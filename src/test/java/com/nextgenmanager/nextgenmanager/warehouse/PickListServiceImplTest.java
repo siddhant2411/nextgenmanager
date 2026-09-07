@@ -147,6 +147,36 @@ class PickListServiceImplTest {
     }
 
     @Test
+    void stockThatFailedInspectionCannotBePicked() {
+        // Phase H: quality is a gate here too. Failed stock is physically on a shelf, and without
+        // this it would walk out on a delivery note like anything else.
+        when(pickListRepository.findLiveById(3L))
+                .thenReturn(Optional.of(pickOf(trackedItem, "1", PickListStatus.RELEASED)));
+        InventoryInstance failed = instance(101L, trackedItem, main, "1");
+        failed.setQualityStatus(QualityStatus.FAILED);
+        when(inventoryInstanceRepository.findById(101L)).thenReturn(Optional.of(failed));
+
+        assertThatThrownBy(() -> service.confirm(3L, new PickConfirmRequest(null, null,
+                List.of(new PickConfirmRequest.Line(30L, BigDecimal.ONE, List.of(101L))))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("quality status is FAILED");
+    }
+
+    @Test
+    void stockStillAwaitingInspectionCannotBePickedEither() {
+        when(pickListRepository.findLiveById(3L))
+                .thenReturn(Optional.of(pickOf(trackedItem, "1", PickListStatus.RELEASED)));
+        InventoryInstance pending = instance(101L, trackedItem, main, "1");
+        pending.setQualityStatus(QualityStatus.PENDING_QC);
+        when(inventoryInstanceRepository.findById(101L)).thenReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> service.confirm(3L, new PickConfirmRequest(null, null,
+                List.of(new PickConfirmRequest.Line(30L, BigDecimal.ONE, List.of(101L))))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("quality status is PENDING_QC");
+    }
+
+    @Test
     void instancesFromAnotherWarehouseAreRefused() {
         when(pickListRepository.findLiveById(3L))
                 .thenReturn(Optional.of(pickOf(trackedItem, "1", PickListStatus.RELEASED)));

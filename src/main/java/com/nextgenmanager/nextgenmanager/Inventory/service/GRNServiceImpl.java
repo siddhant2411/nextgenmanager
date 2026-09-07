@@ -28,6 +28,9 @@ import java.util.stream.Collectors;
 @Service
 public class GRNServiceImpl implements GRNService {
 
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(GRNServiceImpl.class);
+
     @Autowired private GoodsReceiptNoteRepository grnRepository;
     @Autowired private PurchaseOrderRepository purchaseOrderRepository;
     @Autowired private ContactRepository contactRepository;
@@ -101,6 +104,36 @@ public class GRNServiceImpl implements GRNService {
                 txn.setExpiryDate(lineDto.getExpiryDate());
                 txn.setManualSerialNumbers(lineDto.getManualSerialNumbers());
                 inventoryTransactionService.produceStock(txn);
+            }
+
+            // Rejected goods used to be typed in and then dropped: only the accepted quantity ever
+            // produced stock, so units standing on the receiving bay were on nobody's books. They
+            // are received now — into the quarantine warehouse if one exists, and marked FAILED
+            // either way, which is what actually stops them being picked.
+            if (lineDto.getRejectedQty() > 0) {
+                Warehouse quarantine = warehouseService.resolveQuarantineWarehouse();
+                if (quarantine == null) {
+                    logger.warn("GRN {}: {} rejected units of {} have nowhere to go — no active "
+                                    + "QUARANTINE warehouse exists, so they are being received into "
+                                    + "the default one as FAILED. Create a quarantine warehouse to "
+                                    + "keep rejected goods off the shop floor.",
+                            grn.getGrnNumber(), lineDto.getRejectedQty(), item.getItemCode());
+                }
+
+                InventoryTransactionDTO rejectTxn = new InventoryTransactionDTO();
+                rejectTxn.setInventoryItemId(lineDto.getInventoryItemId());
+                rejectTxn.setQuantity(lineDto.getRejectedQty());
+                rejectTxn.setTransactionType("GRN");
+                rejectTxn.setReferenceType("GRN_REJECTED");
+                rejectTxn.setReferenceDocNo(grn.getGrnNumber());
+                rejectTxn.setWarehouse(quarantine != null ? quarantine.getCode() : request.getWarehouse());
+                rejectTxn.setCostPerUnit(lineDto.getRate());
+                rejectTxn.setCreatedBy(request.getCreatedBy());
+                rejectTxn.setSupplierBatchNo(lineDto.getSupplierBatchNo());
+                rejectTxn.setQualityStatus(QualityStatus.FAILED);
+                rejectTxn.setOverrideReason(lineDto.getRejectionReason() != null
+                        ? lineDto.getRejectionReason() : "Rejected at goods receipt");
+                inventoryTransactionService.produceStock(rejectTxn);
             }
         }
 

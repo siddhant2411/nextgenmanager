@@ -278,6 +278,14 @@ public class PickListServiceImpl implements PickListService {
             if (inst.isConsumed() || inst.getInventoryInstanceStatus() == InventoryInstanceStatus.CONSUMED) {
                 throw new IllegalArgumentException("Instance " + instanceId + " has already been consumed");
             }
+            // Quality is a gate here too (phase H). Stock that failed inspection, or that is still
+            // waiting for one, is physically on a shelf and must not walk out on a delivery note.
+            if (inst.getQualityStatus() == QualityStatus.FAILED
+                    || inst.getQualityStatus() == QualityStatus.PENDING_QC) {
+                throw new IllegalArgumentException(String.format(
+                        "Instance %d cannot be picked: its quality status is %s",
+                        instanceId, inst.getQualityStatus()));
+            }
             if (inst.getPickListLine() != null && !inst.getPickListLine().getId().equals(line.getId())) {
                 throw new IllegalArgumentException(String.format(
                         "Instance %d is already allocated to pick %s", instanceId,

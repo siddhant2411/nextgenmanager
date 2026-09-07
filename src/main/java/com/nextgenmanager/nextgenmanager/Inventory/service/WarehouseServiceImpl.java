@@ -125,6 +125,14 @@ public class WarehouseServiceImpl implements WarehouseService {
     }
 
     @Override
+    public Warehouse resolveQuarantineWarehouse() {
+        return warehouseRepository.findLiveByType(WarehouseType.QUARANTINE).stream()
+                .filter(Warehouse::isActive)
+                .findFirst()
+                .orElse(null);
+    }
+
+    @Override
     public Warehouse resolveByCodeOrDefault(String code) {
         if (code == null || code.isBlank()) return resolveDefaultWarehouse();
         return warehouseRepository.findLiveByCode(code.trim())

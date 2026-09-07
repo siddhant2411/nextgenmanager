@@ -105,6 +105,16 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     long countAnyInstances(@Param("inventoryItemId") int inventoryItemId);
 
     /**
+     * Stock of an item that is currently held as failed. Used when a non-conformance decides what
+     * becomes of goods rejected at receipt.
+     */
+    @Query("SELECT i FROM InventoryInstance i "
+            + "WHERE i.inventoryItem.inventoryItemId = :itemId "
+            + "AND i.qualityStatus = com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus.FAILED "
+            + "AND i.deletedDate IS NULL AND i.quantity > 0")
+    List<InventoryInstance> findFailedStock(@Param("itemId") int itemId);
+
+    /**
      * What an item's instances say each warehouse is holding: available and reserved, by
      * warehouse. Used to rebuild the per-warehouse counters when they have drifted.
      *

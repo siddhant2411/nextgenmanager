@@ -228,6 +228,10 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
                 inst.setCostPerUnit(cost);
                 inst.setSellPricePerUnit(cost);
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+                // Rejected goods are received as FAILED so they are on the books where they
+                // physically are, without being available to pick.
+                inst.setQualityStatus(req.getQualityStatus() != null
+                        ? req.getQualityStatus() : QualityStatus.PASSED);
                 inst.setBatchNumber(batch);
                 if (serials != null) inst.setSerialNumber(serials.get(i));
                 inventoryInstanceRepository.save(inst);
