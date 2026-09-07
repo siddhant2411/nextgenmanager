@@ -171,7 +171,17 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         boolean isBatch  = settings.isBatchTracked();
         boolean isSerial = settings.isSerialTracked();
 
-        if (isBatch || isSerial) {
+        // An untracked item normally gets no instance row at all — the scalars carry it alone,
+        // and that is unchanged for an ordinary receipt. But a quality status other than PASSED
+        // has nowhere to live except an instance, so a rejection asks for one explicitly. Without
+        // this, rejected quantity on an untracked item was added to availableQuantity exactly like
+        // good stock, with no record anywhere of which units were which — the failure this whole
+        // step exists to stop.
+        boolean explicitlyNotPassed = req.getQualityStatus() != null
+                && req.getQualityStatus() != QualityStatus.PASSED;
+        boolean createsInstance = isBatch || isSerial || explicitlyNotPassed;
+
+        if (createsInstance) {
             // Derive the source label for batch/serial records:
             //   GRN transaction        → "GRN"
             //   WO completion (PRODUCE with referenceType=WORK_ORDER) → "WORK_ORDER"
