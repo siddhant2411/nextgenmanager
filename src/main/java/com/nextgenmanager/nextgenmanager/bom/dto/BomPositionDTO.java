@@ -31,4 +31,10 @@ public class BomPositionDTO {
     /** Display name of the assigned routing operation. Null when not assigned. */
     private String routingOperationName;
 
+    /** Engineering revision of the child item this position was built against, e.g. "B". */
+    private String childItemRevisionCode;
+
+    /** RELEASED / DRAFT / PENDING_APPROVAL / SUPERSEDED / OBSOLETE — null if unresolved. */
+    private String childItemRevisionStatus;
+
 }

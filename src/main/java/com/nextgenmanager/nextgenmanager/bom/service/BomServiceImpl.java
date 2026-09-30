@@ -28,6 +28,8 @@ import com.nextgenmanager.nextgenmanager.common.spec.GenericSpecification;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterCriteria;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ItemRevision;
+import com.nextgenmanager.nextgenmanager.items.model.ItemRevisionStatus;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.enums.CostType;
@@ -78,6 +80,9 @@ public class BomServiceImpl implements BomService {
 
     @Autowired
     private InventoryItemService inventoryItemService;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.items.repository.ItemRevisionRepository itemRevisionRepository;
 
 
 
@@ -219,6 +224,7 @@ public class BomServiceImpl implements BomService {
                 pos.setRoutingOperation(null);
 
                 pos.setParentBom(bom);
+                resolveChildRevision(pos);
 
             }
         }
@@ -251,6 +257,47 @@ public class BomServiceImpl implements BomService {
     }
 
 
+
+    /**
+     * Pins the position to the child item's current released revision — this is what makes the
+     * BOM reproducible once the item itself moves on to a later revision. Left null if the child
+     * has no revision yet (should not happen post-backfill) or has no released revision at all
+     * (a brand-new item still in DRAFT, which is fine to reference here — the gate that matters
+     * is at BOM release, not at add time).
+     */
+    private void resolveChildRevision(BomPosition pos) {
+        if (pos.getChildInventoryItem() == null) return;
+        InventoryItem child = inventoryItemRepository.findById(pos.getChildInventoryItem().getInventoryItemId())
+                .orElse(null);
+        pos.setChildItemRevision(child != null ? child.getCurrentRevision() : null);
+    }
+
+    /**
+     * A BOM may not leave DRAFT/PENDING_APPROVAL while any component it references points at a
+     * revision that is not RELEASED. This is the interlock from the item-revision-control plan:
+     * it fires at approval, not at BOM creation, so a new part and the assembly that uses it can
+     * still be drawn in the same week without deadlocking each other.
+     */
+    private void assertComponentsReleased(Bom bom) {
+        if (bom.getPositions() == null) return;
+        List<String> blockers = new ArrayList<>();
+        for (BomPosition pos : bom.getPositions()) {
+            ItemRevision rev = pos.getChildItemRevision();
+            String itemLabel = pos.getChildInventoryItem() != null
+                    ? (pos.getChildInventoryItem().getItemCode() != null ? pos.getChildInventoryItem().getItemCode() : "item #" + pos.getChildInventoryItem().getInventoryItemId())
+                    : ("position " + pos.getPosition());
+            if (rev == null) {
+                blockers.add(itemLabel + " (no revision on record)");
+            } else if (rev.getStatus() != ItemRevisionStatus.RELEASED) {
+                blockers.add(itemLabel + " (rev " + rev.getRevisionCode() + " is " + rev.getStatus() + ")");
+            }
+        }
+        if (!blockers.isEmpty()) {
+            throw new IllegalStateException(
+                    "Cannot approve this BOM — the following components are not at a released revision: "
+                            + String.join(", ", blockers));
+        }
+    }
 
     public void checkBomStatusTransition(BomStatus current, BomStatus newStatus, boolean adminOverride) {
 
@@ -286,6 +333,10 @@ public class BomServiceImpl implements BomService {
                 newBomStatus,
                 false
         );
+
+        if (newBomStatus == BomStatus.APPROVED || newBomStatus == BomStatus.ACTIVE) {
+            assertComponentsReleased(bom);
+        }
 
         try {
 
@@ -539,6 +590,7 @@ public class BomServiceImpl implements BomService {
                 }
 
                 pos.setParentBom(existingBom);
+                resolveChildRevision(pos);
             }
         }
 

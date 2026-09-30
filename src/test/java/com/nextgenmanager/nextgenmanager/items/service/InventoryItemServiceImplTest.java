@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -38,6 +39,8 @@ class InventoryItemServiceImplTest {
     private FileStorageService fileStorageService;
     @Mock
     private InventoryItemMapper inventoryItemMapper;
+    @Mock
+    private ItemRevisionService itemRevisionService;
 
     @InjectMocks
     private InventoryItemServiceImpl service;
@@ -133,6 +136,70 @@ class InventoryItemServiceImplTest {
         verify(fileStorageService).uploadFile(eq(newFile), eq("inventoryItem"), eq("inventoryItem"), eq(7L), eq("SYSTEM"));
         assertThat(result.getFileAttachments()).isEqualTo(updatedFiles);
         assertThat(updated.getItemCode()).isEqualTo("CODE-7");
+    }
+
+    // ── item codes became editable in 2026-09, for the PEC renumbering ──────────
+
+    @Test
+    void editInventoryItem_appliesANewItemCode() {
+        InventoryItem existing = new InventoryItem();
+        existing.setInventoryItemId(7);
+        existing.setItemCode("PUR-014");
+
+        InventoryItem updated = new InventoryItem();
+        updated.setItemCode("FBBDY30001");
+
+        when(inventoryItemRepository.findById(7)).thenReturn(Optional.of(existing));
+        when(inventoryItemRepository.itemCodeTakenByAnother("FBBDY30001", 7)).thenReturn(false);
+        when(inventoryItemRepository.save(any(InventoryItem.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.editInventoryItem(7, updated);
+
+        assertThat(updated.getItemCode()).isEqualTo("FBBDY30001");
+    }
+
+    @Test
+    void editInventoryItem_rejectsACodeAnotherItemAlreadyHas() {
+        InventoryItem existing = new InventoryItem();
+        existing.setInventoryItemId(7);
+        existing.setItemCode("PUR-014");
+
+        InventoryItem taken = new InventoryItem();
+        taken.setInventoryItemId(9);
+        taken.setItemCode("FBBDY30001");
+        taken.setName("Machined body 80 CF8M");
+
+        InventoryItem updated = new InventoryItem();
+        updated.setItemCode("FBBDY30001");
+
+        when(inventoryItemRepository.findById(7)).thenReturn(Optional.of(existing));
+        when(inventoryItemRepository.itemCodeTakenByAnother("FBBDY30001", 7)).thenReturn(true);
+        when(inventoryItemRepository.findByItemCodeIgnoreCaseAndDeletedDateIsNull("FBBDY30001"))
+                .thenReturn(Optional.of(taken));
+
+        assertThatThrownBy(() -> service.editInventoryItem(7, updated))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("already used by")
+                .hasMessageContaining("Machined body 80 CF8M");
+        verify(inventoryItemRepository, never()).save(any());
+    }
+
+    @Test
+    void editInventoryItem_blankCodeLeavesTheExistingOneAlone() {
+        InventoryItem existing = new InventoryItem();
+        existing.setInventoryItemId(7);
+        existing.setItemCode("STR-2112-CF8-20");
+
+        InventoryItem updated = new InventoryItem();
+        updated.setItemCode("   ");            // callers that don't manage codes send blank
+
+        when(inventoryItemRepository.findById(7)).thenReturn(Optional.of(existing));
+        when(inventoryItemRepository.save(any(InventoryItem.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.editInventoryItem(7, updated);
+
+        assertThat(updated.getItemCode()).isEqualTo("STR-2112-CF8-20");
+        verify(inventoryItemRepository, never()).itemCodeTakenByAnother(any(), anyInt());
     }
 
     private static FileAttachment fileAttachment(Long id, String fileName) {

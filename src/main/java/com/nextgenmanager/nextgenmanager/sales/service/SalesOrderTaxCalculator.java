@@ -49,21 +49,17 @@ public class SalesOrderTaxCalculator {
         BigDecimal discountAmount = subTotal.multiply(discountPct).divide(HUNDRED, 2, ROUND);
 
         BigDecimal freight = nz(so.getFreightAndForwardingCharges());
-        boolean includeFreight = so.isIncludeFreightCharges();
 
-        BigDecimal taxableValue = subTotal.subtract(discountAmount);
-        if (includeFreight) {
-            taxableValue = taxableValue.add(freight);
-        }
-
-        // Header-level tax derived from header taxPercentage (kept for backward compat with UI),
-        // but line totals are authoritative when present.
-        BigDecimal headerRate = nz(so.getTaxPercentage());
-        BigDecimal headerTax = taxableValue.multiply(headerRate).divide(HUNDRED, 2, ROUND);
+        // Freight & forwarding charges are always part of the taxable value (GST applies to it).
+        BigDecimal preFreightTaxableValue = subTotal.subtract(discountAmount);
+        BigDecimal taxableValue = preFreightTaxableValue.add(freight);
 
         // Prefer line-sum if any line carried tax; otherwise fall back to header-rate computation.
         BigDecimal totalTax = totalCgst.add(totalSgst).add(totalIgst);
         if (totalTax.signum() == 0) {
+            // Header-level tax derived from header taxPercentage (kept for backward compat with UI),
+            BigDecimal headerRate = nz(so.getTaxPercentage());
+            BigDecimal headerTax = taxableValue.multiply(headerRate).divide(HUNDRED, 2, ROUND);
             totalTax = headerTax;
             if (taxType == TaxType.CGST_SGST) {
                 BigDecimal half = headerTax.divide(TWO, 2, ROUND);
@@ -75,12 +71,21 @@ public class SalesOrderTaxCalculator {
                 totalCgst = BigDecimal.ZERO;
                 totalSgst = BigDecimal.ZERO;
             }
+        } else if (freight.signum() > 0 && preFreightTaxableValue.signum() > 0) {
+            // Tax the freight at the order's blended effective GST rate (line rates may vary by item).
+            BigDecimal effectiveRate = totalTax.divide(preFreightTaxableValue, 6, ROUND);
+            BigDecimal freightTax = freight.multiply(effectiveRate).setScale(2, ROUND);
+            totalTax = totalTax.add(freightTax);
+            if (taxType == TaxType.CGST_SGST) {
+                BigDecimal half = freightTax.divide(TWO, 2, ROUND);
+                totalCgst = totalCgst.add(half);
+                totalSgst = totalSgst.add(freightTax.subtract(half));
+            } else {
+                totalIgst = totalIgst.add(freightTax);
+            }
         }
 
         BigDecimal netAmount = taxableValue.add(totalTax);
-        if (!includeFreight) {
-            netAmount = netAmount.add(freight);
-        }
 
         BigDecimal rounded = netAmount.setScale(0, ROUND);
         BigDecimal roundOff = rounded.subtract(netAmount).setScale(2, ROUND);

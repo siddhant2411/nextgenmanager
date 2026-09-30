@@ -17,5 +17,7 @@ public interface InventoryItemMapper {
     @Mapping(target = "replenishmentStrategy", source = "productInventorySettings.replenishmentStrategy")
     @Mapping(target = "leadTime", source = "productInventorySettings.leadTime")
     @Mapping(target = "standardCost", source = "productFinanceSettings.standardCost")
+    @Mapping(target = "revisionCode", source = "currentRevision.revisionCode")
+    @Mapping(target = "locked", expression = "java(item.getCurrentRevision() != null && item.getCurrentRevision().getStatus() == com.nextgenmanager.nextgenmanager.items.model.ItemRevisionStatus.RELEASED)")
     InventoryItemDTO toDTO(InventoryItem item);
 }
