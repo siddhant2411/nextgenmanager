@@ -5,6 +5,7 @@ import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventorySettingsBackfillDto;
 import com.nextgenmanager.nextgenmanager.items.DTO.PriceListExportRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
@@ -52,6 +53,9 @@ public class InventoryItemController {
 
     @Autowired
     private PriceListExportService priceListExportService;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.items.service.ItemRevisionService itemRevisionService;
 
     private static final Logger logger = LoggerFactory.getLogger(InventoryItemController.class);
 
@@ -121,6 +125,22 @@ public class InventoryItemController {
         }
     }
 
+
+    /**
+     * Backfill of missing inventory settings — POST /api/inventory_item/backfill-inventory-settings
+     *
+     * <p>Dry run by default: it reports what it would write, item by item, and writes nothing.
+     * Pass {@code dryRun=false} once the classification has been read and believed.
+     *
+     * <p>Items that already have settings are never touched, so running it twice is safe and the
+     * second run finds nothing.
+     */
+    @PostMapping("/backfill-inventory-settings")
+    @RequiresInventoryAdminAccess
+    public ResponseEntity<InventorySettingsBackfillDto> backfillInventorySettings(
+            @RequestParam(defaultValue = "true") boolean dryRun) {
+        return ResponseEntity.ok(inventoryItemService.backfillInventorySettings(dryRun));
+    }
 
     @GetMapping("/all-with-deleted")
     @RequiresInventoryAdminAccess
@@ -405,6 +425,53 @@ public class InventoryItemController {
             logger.error("Error generating job work items export: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       Item revision control — see docs/ITEM_REVISION_CONTROL_PLAN.md
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    @GetMapping("/{id}/revisions")
+    public ResponseEntity<List<com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionDTO>> getRevisionHistory(@PathVariable int id) {
+        return ResponseEntity.ok(itemRevisionService.getHistory(id));
+    }
+
+    @PostMapping("/{id}/revisions/revise")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_ENGINEERING')")
+    public ResponseEntity<com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionDTO> reviseItem(
+            @PathVariable int id,
+            @RequestBody(required = false) com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionRequestDTO request) {
+        return ResponseEntity.ok(itemRevisionService.reviseItem(id,
+                request != null ? request : new com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionRequestDTO()));
+    }
+
+    @PutMapping("/revisions/{revisionId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_ENGINEERING')")
+    public ResponseEntity<com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionDTO> updateDraftRevision(
+            @PathVariable long revisionId,
+            @RequestBody com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionRequestDTO request) {
+        return ResponseEntity.ok(itemRevisionService.updateDraftRevision(revisionId, request));
+    }
+
+    @PostMapping("/revisions/{revisionId}/submit")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_ENGINEERING')")
+    public ResponseEntity<com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionDTO> submitRevisionForApproval(@PathVariable long revisionId) {
+        return ResponseEntity.ok(itemRevisionService.submitForApproval(revisionId));
+    }
+
+    @PostMapping("/revisions/{revisionId}/release")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    public ResponseEntity<com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionDTO> releaseRevision(
+            @PathVariable long revisionId,
+            @RequestBody(required = false) com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionRequestDTO request) {
+        return ResponseEntity.ok(itemRevisionService.release(revisionId,
+                request != null ? request : new com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionRequestDTO()));
+    }
+
+    @PostMapping("/revisions/{revisionId}/obsolete")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
+    public ResponseEntity<com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionDTO> obsoleteRevision(@PathVariable long revisionId) {
+        return ResponseEntity.ok(itemRevisionService.obsolete(revisionId));
     }
 
 }

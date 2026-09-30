@@ -137,7 +137,7 @@ public class InventoryItemExportService {
                 row.createCell(colIdx++).setCellValue(item.getHsnCode() != null ? item.getHsnCode() : "");
                 row.createCell(colIdx++).setCellValue(item.getUom() != null ? item.getUom().name() : "");
                 row.createCell(colIdx++).setCellValue(item.getItemType() != null ? item.getItemType().name() : "");
-                row.createCell(colIdx++).setCellValue(item.getRevision());
+                row.createCell(colIdx++).setCellValue(item.getCurrentRevision() != null ? item.getCurrentRevision().getRevisionCode() : "");
                 row.createCell(colIdx++).setCellValue(item.getRemarks() != null ? item.getRemarks() : "");
                 row.createCell(colIdx++).setCellValue(item.getItemGroupCode() != null ? item.getItemGroupCode() : "");
 

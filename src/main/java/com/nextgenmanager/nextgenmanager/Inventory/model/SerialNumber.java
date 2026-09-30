@@ -46,7 +46,13 @@ public class SerialNumber {
     /** GRN number or Work Order number that created this serial */
     private String sourceDocNo;
 
-    private String warehouse;
+    /**
+     * Where this sits. A NOT NULL reference since V164 — previously a free-text string that
+     * nothing constrained, so two spellings of one store were two warehouses.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "warehouse_id", nullable = false)
+    private Warehouse warehouse;
 
     private Date consumedDate;
 

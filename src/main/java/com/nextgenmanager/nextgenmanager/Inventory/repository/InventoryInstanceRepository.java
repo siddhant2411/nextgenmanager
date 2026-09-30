@@ -38,6 +38,110 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     int countAvailableInInventory(@Param("inventoryItemId") int inventoryItemId,
                                   @Param("status") String  status);
 
+    // ── Authoritative stock derivation ────────────────────────────────────────
+    // One definition of "available" and "reserved", used by
+    // InventoryInstanceService.updateItemAvailability() to recompute BOTH scalars
+    // together. Previously available was recomputed two different ways (a
+    // status-aware COUNT for NOS items, a status-blind SUM for everything else)
+    // and reserved was never recomputed at all, so the pair could not be
+    // reconciled once they drifted apart.
+
+    /** Sum of quantity sitting in instances that are free to allocate. */
+    @Query(value = """
+    SELECT COALESCE(SUM(i.quantity), 0)
+    FROM inventoryInstance i
+    WHERE i.deletedDate IS NULL
+      AND i.bookedDate IS NULL
+      AND i.inventoryItemRef = :inventoryItemId
+      AND i.quantity > 0
+      AND i.inventoryInstanceStatus = 'AVAILABLE'
+    """, nativeQuery = true)
+    double sumAvailableQuantity(@Param("inventoryItemId") int inventoryItemId);
+
+    /**
+     * Sum of quantity spoken for but not yet consumed. REQUESTED is written by
+     * InventoryTransactionServiceImpl.reserveStock, BOOKED by
+     * InventoryInstanceServiceImp — both mean reserved, so both count here.
+     */
+    @Query(value = """
+    SELECT COALESCE(SUM(i.quantity), 0)
+    FROM inventoryInstance i
+    WHERE i.deletedDate IS NULL
+      AND i.inventoryItemRef = :inventoryItemId
+      AND i.quantity > 0
+      AND i.inventoryInstanceStatus IN ('REQUESTED', 'BOOKED')
+    """, nativeQuery = true)
+    double sumReservedQuantity(@Param("inventoryItemId") int inventoryItemId);
+
+    /**
+     * Live instance rows for an item. Guards the recount: an item with no instance
+     * rows is tracked by the scalars alone (untracked items reserved through
+     * InventoryTransactionServiceImpl never get rows), and recomputing it from an
+     * empty instance table would silently zero its stock.
+     */
+    @Query(value = """
+    SELECT COUNT(*)
+    FROM inventoryInstance i
+    WHERE i.deletedDate IS NULL
+      AND i.inventoryItemRef = :inventoryItemId
+      AND i.quantity > 0
+    """, nativeQuery = true)
+    long countLiveInstances(@Param("inventoryItemId") int inventoryItemId);
+
+    /**
+     * Every instance row an item has ever had, consumed ones included.
+     *
+     * <p>{@link #countLiveInstances} answers "is there stock", which is not the same question as
+     * "is this item tracked by instances at all". Using the live count as the recount guard meant
+     * that consuming an item's last unit made the recount skip itself, freezing whatever the
+     * counters happened to say — a shipped-out item could keep a reserved quantity for ever.
+     */
+    @Query(value = """
+    SELECT COUNT(*)
+    FROM inventoryInstance i
+    WHERE i.deletedDate IS NULL
+      AND i.inventoryItemRef = :inventoryItemId
+    """, nativeQuery = true)
+    long countAnyInstances(@Param("inventoryItemId") int inventoryItemId);
+
+    /**
+     * Stock of an item that is currently held as failed. Used when a non-conformance decides what
+     * becomes of goods rejected at receipt.
+     */
+    @Query("SELECT i FROM InventoryInstance i "
+            + "WHERE i.inventoryItem.inventoryItemId = :itemId "
+            + "AND i.qualityStatus = com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus.FAILED "
+            + "AND i.deletedDate IS NULL AND i.quantity > 0")
+    List<InventoryInstance> findFailedStock(@Param("itemId") int itemId);
+
+    /**
+     * What an item's instances say each warehouse is holding: available and reserved, by
+     * warehouse. Used to rebuild the per-warehouse counters when they have drifted.
+     *
+     * <p>Deliberately says nothing about in-transit — a stock transfer moves counters without
+     * touching instances, so instances cannot know about goods on a vehicle.
+     *
+     * @return rows of [warehouseId, available, reserved]
+     */
+    @Query(value = """
+    SELECT i.warehouse_id,
+           COALESCE(SUM(CASE WHEN i.inventoryInstanceStatus = 'AVAILABLE' AND i.bookedDate IS NULL
+                             THEN i.quantity ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN i.inventoryInstanceStatus IN ('REQUESTED', 'BOOKED')
+                             THEN i.quantity ELSE 0 END), 0)
+    FROM inventoryInstance i
+    WHERE i.deletedDate IS NULL
+      AND i.inventoryItemRef = :inventoryItemId
+      AND i.quantity > 0
+      AND i.warehouse_id IS NOT NULL
+    GROUP BY i.warehouse_id
+    """, nativeQuery = true)
+    List<Object[]> sumByWarehouse(@Param("inventoryItemId") int inventoryItemId);
+
+    /** Units allocated to a pick line. Used to release them again when a pick is cancelled. */
+    @Query("SELECT i FROM InventoryInstance i WHERE i.pickListLine.id = :lineId AND i.deletedDate IS NULL")
+    List<InventoryInstance> findByPickListLineId(@Param("lineId") Long lineId);
+
     @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :inventoryItemId ORDER BY i.entryDate ASC LIMIT :consumedQty", nativeQuery = true)
     public List<InventoryInstance> getItemsToConsume(@Param("inventoryItemId") int inventoryItemId, @Param("consumedQty") int consumedQty);
 
@@ -145,9 +249,6 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
 //            @Param("uom") Integer uom,
 //            @Param("itemTypeValue") Integer itemTypeValue);
 
-    @Query(value = "SELECT COALESCE(SUM(i.quantity), 0) FROM inventoryInstance i WHERE i.deletedDate IS NULL AND bookedDate IS NULL AND i.inventoryItemRef = :inventoryItemId", nativeQuery = true)
-    double getTotalQuantityForNonNOSItem(@Param("inventoryItemId") int inventoryItemId);
-
     @Query(value = "SELECT i.* FROM inventoryInstance i " +
             "JOIN inventoryItem item ON item.InventoryItemId = i.inventoryItemRef " +
             "WHERE i.deletedDate IS NULL AND i.quantity > 0 " +
@@ -178,11 +279,18 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
             "AND i.inventoryInstanceStatus <> 'CONSUMED'")
     BigDecimal countSumOfInventoryValue();
 
-    @Query(value = "SELECT * FROM InventoryInstance i WHERE i.deletedDate IS NULL AND i.inventoryItemRef = :inventoryItemId AND (:status IS NULL OR i.inventoryInstanceStatus = :status) LIMIT :qty", nativeQuery = true)
+    // Both queries below add the same clause: a caller asking for AVAILABLE stock means "fit to
+    // promise", and gets only PASSED or WAIVED quality. Every current caller asking for AVAILABLE
+    // is choosing what to reserve or consume next — reservation, unplanned dispatch, or the manual
+    // instance picker — so quarantined stock offered by any of them would be a leak of exactly the
+    // kind phase H exists to stop. REQUESTED and PENDING callers are untouched: reserved stock has
+    // already passed this filter once, and PENDING rows are receipt placeholders that default to
+    // PASSED anyway.
+    @Query(value = "SELECT * FROM InventoryInstance i WHERE i.deletedDate IS NULL AND i.inventoryItemRef = :inventoryItemId AND (:status IS NULL OR i.inventoryInstanceStatus = :status) AND (:status <> 'AVAILABLE' OR i.qualityStatus IN ('PASSED','WAIVED')) LIMIT :qty", nativeQuery = true)
     List<InventoryInstance> inventoryInstanceByStatus(@Param("inventoryItemId") int inventoryItemId, String status, double qty);
 
     /** FIFO selection of instances in a given status — used for CONSUME and RETURN operations. */
-    @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :itemId AND i.inventoryInstanceStatus = :status AND i.deletedDate IS NULL ORDER BY i.entryDate ASC", nativeQuery = true)
+    @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :itemId AND i.inventoryInstanceStatus = :status AND i.deletedDate IS NULL AND (:status <> 'AVAILABLE' OR i.qualityStatus IN ('PASSED','WAIVED')) ORDER BY i.entryDate ASC", nativeQuery = true)
     List<InventoryInstance> findByItemAndStatusFIFO(@Param("itemId") int itemId, @Param("status") String status);
 
 //    @Query("""

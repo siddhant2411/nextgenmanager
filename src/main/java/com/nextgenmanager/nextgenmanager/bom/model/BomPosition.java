@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.bom.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ItemRevision;
 import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -32,6 +33,15 @@ public class BomPosition {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "childInventoryItemId", nullable = true)
     private InventoryItem childInventoryItem;
+
+    /**
+     * Which engineering revision of the child item this position was built against — pinned at
+     * add/edit time to the child's current released revision, so the BOM stays reproducible even
+     * after the item revises. Nullable only for rows created before revision control existed.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "childItemRevisionId")
+    private ItemRevision childItemRevision;
 
     @Column(name = "position")
     private int position;

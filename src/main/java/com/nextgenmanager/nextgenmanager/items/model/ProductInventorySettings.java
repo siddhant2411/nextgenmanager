@@ -65,6 +65,16 @@ public class ProductInventorySettings {
 
     private boolean allowNegativeStock = false;
 
+    /**
+     * Whether finished goods of this item may be produced without a passed final inspection.
+     *
+     * <p>Off by default, and deliberately so: every item in this database has been produced
+     * without an inspection lot for its whole life, and requiring one everywhere at once would
+     * stop a shop floor that has never raised one. A lot that exists and failed blocks production
+     * whatever this says — that rule needs no configuration.
+     */
+    private boolean finalInspectionRequired = false;
+
     @PrePersist
     @PreUpdate
     private void validateTrackingConfig() {

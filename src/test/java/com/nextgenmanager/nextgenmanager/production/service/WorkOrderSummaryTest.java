@@ -2,7 +2,6 @@ package com.nextgenmanager.nextgenmanager.production.service;
 
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkOrderSummaryDTO;
-import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderListMapper;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderMapper;
@@ -16,6 +15,8 @@ import com.nextgenmanager.nextgenmanager.production.service.workorder.WorkOrderS
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.springframework.data.jpa.domain.Specification;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -64,13 +65,20 @@ class WorkOrderSummaryTest {
                 dateOf(today.plusDays(2)), null);
         WorkOrder dueSoonCancelled = buildWorkOrder(4, WorkOrderStatus.CANCELLED,
                 dateOf(today.plusDays(1)), null);
-        WorkOrder ready = buildWorkOrder(5, WorkOrderStatus.RELEASED, null, null);
+        // "Ready" on this dashboard now counts orders waiting to be inspected, not released
+        // orders with a ready operation — the rule changed in production and this fixture follows
+        // it. Worth revisiting when inspection becomes a real gate: a board that shows "ready"
+        // meaning "finished and awaiting QC" reads as "ready to start" to everyone looking at it.
+        WorkOrder ready = buildWorkOrder(5, WorkOrderStatus.READY_FOR_INSPECTION, null, null);
         WorkOrder inProgress = buildWorkOrder(6, WorkOrderStatus.IN_PROGRESS, null, null);
         WorkOrder completedToday = buildWorkOrder(7, WorkOrderStatus.COMPLETED,
                 null, dateOf(today));
         WorkOrder blocked = buildWorkOrder(8, WorkOrderStatus.HOLD, null, null);
 
-        when(workOrderRepository.findAll()).thenReturn(List.of(
+        // The summary reads through a Specification now (it filters out soft-deleted orders), so
+        // the no-arg findAll it used to call is never invoked. The specification itself is opaque
+        // to a mock, so what these fixtures still prove is the counting rules, not the filter.
+        when(workOrderRepository.findAll(ArgumentMatchers.<Specification<WorkOrder>>any())).thenReturn(List.of(
                 overdueActive,
                 overdueCompleted,
                 dueSoonActive,
@@ -80,11 +88,6 @@ class WorkOrderSummaryTest {
                 completedToday,
                 blocked
         ));
-
-        when(workOrderOperationRepository.existsByWorkOrderAndStatus(any(), eq(OperationStatus.READY)))
-                .thenReturn(false);
-        when(workOrderOperationRepository.existsByWorkOrderAndStatus(ready, OperationStatus.READY))
-                .thenReturn(true);
 
         WorkOrderSummaryDTO summary = service.getWorkOrderSummary(today);
 

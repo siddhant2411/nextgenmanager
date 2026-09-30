@@ -178,8 +178,12 @@ class WorkOrderServiceImplTest {
     @Test
     void completedQuantity_isMaterialDriven_whenWorkOrderHasNoOperations() {
         // Regression: an operation-less WO (BOM has no routing) must derive completion purely from
-        // materials. Previously calculateWorkOrderCompletedQuantity took min(material, operation=0),
-        // forcing the result to 0 → finished goods were never produced on completion.
+        // materials. The rule once took min(material, operation=0), forcing the result to 0 →
+        // finished goods were never produced on completion.
+        //
+        // The entry point is refreshCompletedQuantities since work orders went multi-line: it
+        // totals the lines, and falls back to this same rule for an order that has none. The old
+        // calculateWorkOrderCompletedQuantity is gone, which is what left these two tests red.
         WorkOrder workOrder = buildWorkOrder(1, "WO-NOOPS", new BigDecimal("10"), WorkOrderStatus.IN_PROGRESS);
 
         WorkOrderMaterial material = buildMaterial(workOrder, 301L, new BigDecimal("20"));
@@ -189,7 +193,7 @@ class WorkOrderServiceImplTest {
         when(workOrderMaterialRepository.findByWorkOrder(workOrder)).thenReturn(List.of(material));
 
         BigDecimal completed = ReflectionTestUtils.invokeMethod(
-                service, "calculateWorkOrderCompletedQuantity", workOrder);
+                service, "refreshCompletedQuantities", workOrder);
 
         // No operations → completion is material-driven (10), NOT forced to 0 by the min().
         assertThat(completed).isEqualByComparingTo("10");
@@ -205,7 +209,7 @@ class WorkOrderServiceImplTest {
         when(workOrderMaterialRepository.findByWorkOrder(workOrder)).thenReturn(Collections.emptyList());
 
         BigDecimal completed = ReflectionTestUtils.invokeMethod(
-                service, "calculateWorkOrderCompletedQuantity", workOrder);
+                service, "refreshCompletedQuantities", workOrder);
 
         assertThat(completed).isEqualByComparingTo("7");
     }

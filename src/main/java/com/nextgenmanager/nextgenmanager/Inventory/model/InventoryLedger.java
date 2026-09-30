@@ -34,7 +34,13 @@ public class InventoryLedger {
     /** FIFO, AVERAGE, STANDARD — defaults to AVERAGE */
     private String valuationMethod;
 
-    private String warehouse;
+    /**
+     * Where this sits. A NOT NULL reference since V164 — previously a free-text string that
+     * nothing constrained, so two spellings of one store were two warehouses.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "warehouse_id", nullable = false)
+    private Warehouse warehouse;
 
     /** Type of the source document — e.g. GRN, WORK_ORDER, SALES_ORDER */
     private String referenceType;

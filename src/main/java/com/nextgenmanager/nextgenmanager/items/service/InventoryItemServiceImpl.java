@@ -7,10 +7,13 @@ import com.nextgenmanager.nextgenmanager.common.model.FileAttachment;
 import com.nextgenmanager.nextgenmanager.common.repository.FileAttachmentRepository;
 import com.nextgenmanager.nextgenmanager.common.service.FileStorageService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
+import com.nextgenmanager.nextgenmanager.items.DTO.InventorySettingsBackfillDto;
 import com.nextgenmanager.nextgenmanager.items.mapper.InventoryItemMapper;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemCode;
 import com.nextgenmanager.nextgenmanager.items.model.ItemCodeSeries;
+import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
+import com.nextgenmanager.nextgenmanager.items.model.ReplenishmentStrategy;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.repository.ItemCodeSeriesRepository;
 import com.nextgenmanager.nextgenmanager.items.spec.InventoryItemSpecification;
@@ -25,6 +28,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,33 +41,25 @@ import java.time.Instant;
 import java.time.Year;
 import java.util.*;
 
+/**
+ * Note on injection: this class used to mix a one-argument constructor (for the final mapper) with
+ * {@code @Autowired} fields. Spring coped, but Mockito's {@code @InjectMocks} picks the constructor
+ * and then performs NO field injection, so every other dependency arrived null and the whole test
+ * class errored out. Moved to constructor injection 2026-09-05 so the tests can run at all.
+ */
 @Service
+@RequiredArgsConstructor
 public class InventoryItemServiceImpl implements InventoryItemService {
 
-    @Autowired
-    private InventoryItemRepository inventoryItemRepository;
-
-    @Autowired
-    private ItemCodeRepository itemCodeRepository;
-
-    @Autowired
-    private ItemCodeSeriesRepository itemCodeSeriesRepository;
-
-    @Autowired
-    private InventoryItemCodeGenerator codeGenerator;
-
-    @Autowired
-    private FileAttachmentRepository fileAttachmentRepository;
-
+    private final InventoryItemRepository inventoryItemRepository;
+    private final ItemCodeRepository itemCodeRepository;
+    private final ItemCodeSeriesRepository itemCodeSeriesRepository;
+    private final InventoryItemCodeGenerator codeGenerator;
+    private final FileAttachmentRepository fileAttachmentRepository;
     private final InventoryItemMapper inventoryItemMapper;
-
-    @Autowired
-    public InventoryItemServiceImpl(InventoryItemMapper inventoryItemMapper) {
-        this.inventoryItemMapper = inventoryItemMapper;
-    }
-
-    @Autowired
-    private FileStorageService fileStorageService;
+    private final FileStorageService fileStorageService;
+    private final com.nextgenmanager.nextgenmanager.purchase.repository.PurchaseOrderRepository purchaseOrderRepository;
+    private final ItemRevisionService itemRevisionService;
 
     private static final Map<String, String> JOIN_FIELD_MAP = Map.of(
             "dimension", "productSpecification.dimension",
@@ -108,8 +104,22 @@ public class InventoryItemServiceImpl implements InventoryItemService {
                 }
             }
 
+            // Every item needs somewhere to keep its stock figures. Nothing else in this codebase
+            // ever builds this row, so an item created without one — which is every item any
+            // import has ever loaded — can never hold stock, be reserved or be picked: those
+            // paths all read the settings first and give up when they are null.
+            if (inventoryItem.getProductInventorySettings() == null) {
+                inventoryItem.setProductInventorySettings(defaultInventorySettings(inventoryItem));
+            }
+
             InventoryItem savedInventoryItem = inventoryItemRepository.save(inventoryItem);
             logger.info("Item Successfully added with inventory item id: {}", savedInventoryItem.getInventoryItemId());
+
+            // Every item starts life released at revision A — a part with no revision history is
+            // exactly the gap that let engineering fields be edited in place with nothing to show
+            // for it. Revising off this baseline is what "unlocks" it for the next real change.
+            itemRevisionService.createInitialRevision(savedInventoryItem);
+
             long itemId = (long)savedInventoryItem.getInventoryItemId();
             // 2️⃣ Upload and save file metadata if attachments exist
             if (inventoryItem.getAttachments() != null && !inventoryItem.getAttachments().isEmpty()) {
@@ -133,6 +143,62 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             logger.error("Error while adding new inventory item: {}", e.getMessage());
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * The settings an item gets when nobody said otherwise: it holds stock, tracks nothing, and
+     * has no reorder policy. Zeroes here are the honest statement that no one has set a policy,
+     * which is a different thing from a policy of zero — and unlike an invented reorder level,
+     * a zero cannot quietly trigger purchasing.
+     */
+    private ProductInventorySettings defaultInventorySettings(InventoryItem item) {
+        ProductInventorySettings settings = new ProductInventorySettings();
+        settings.setInventoryItem(item);
+        settings.setReplenishmentStrategy(ReplenishmentStrategy.MAKE_TO_STOCK);
+        settings.setBatchTracked(false);
+        settings.setSerialTracked(false);
+        settings.setAllowNegativeStock(false);
+        settings.setAvailableQuantity(0);
+        settings.setReservedQuantity(0);
+        settings.setOrderedQuantity(0);
+        settings.setReorderLevel(0);
+        settings.setMinStock(0);
+        settings.setMaxStock(0);
+        settings.setLeadTime(0);
+        return settings;
+    }
+
+    @Override
+    @Transactional
+    public InventorySettingsBackfillDto backfillInventorySettings(boolean dryRun) {
+        List<InventoryItem> missing = inventoryItemRepository.findActiveWithoutInventorySettings();
+        Set<Integer> everPurchased = new HashSet<>(purchaseOrderRepository.findDistinctOrderedItemIds());
+
+        List<InventorySettingsBackfillDto.Row> rows = new ArrayList<>();
+        long purchased = 0, manufactured = 0;
+
+        for (InventoryItem item : missing) {
+            boolean isPurchased = everPurchased.contains(item.getInventoryItemId());
+            ProductInventorySettings settings = defaultInventorySettings(item);
+            settings.setPurchased(isPurchased);
+            settings.setManufactured(!isPurchased);
+
+            if (!dryRun) {
+                item.setProductInventorySettings(settings);
+                inventoryItemRepository.save(item);
+            }
+
+            if (isPurchased) purchased++; else manufactured++;
+            rows.add(new InventorySettingsBackfillDto.Row(
+                    item.getInventoryItemId(), item.getItemCode(), item.getName(),
+                    isPurchased, !isPurchased,
+                    isPurchased ? "on a purchase order" : "never ordered"));
+        }
+
+        logger.warn("Inventory settings backfill{}: {} items without settings, {} purchased, {} manufactured",
+                dryRun ? " (DRY RUN)" : "", missing.size(), purchased, manufactured);
+
+        return new InventorySettingsBackfillDto(dryRun, missing.size(), purchased, manufactured, rows);
     }
 
     @Override
@@ -260,6 +326,40 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         }
     }
 
+    /**
+     * Settles the item code on an edit. Codes used to be frozen at creation; they are editable as
+     * of the 2026-09 renumbering, because 395 of the 758 codes on file were generated by an import
+     * and have to be replaced with PEC's real scheme.
+     *
+     * <p>Renaming is safe: {@code itemCode} is only ever read for search and display — every
+     * relationship in the schema joins on {@code inventoryItemId}, so no document loses its link
+     * when a code changes.
+     *
+     * <p>A blank or absent code means "leave it alone", so existing callers that never sent one
+     * keep working unchanged.
+     */
+    private void applyItemCodeChange(InventoryItem existing, InventoryItem updated) {
+        String wanted = updated.getItemCode() == null ? null : updated.getItemCode().trim();
+        if (wanted == null || wanted.isEmpty() || wanted.equalsIgnoreCase(existing.getItemCode())) {
+            updated.setItemCode(existing.getItemCode());
+            return;
+        }
+        // Case-insensitive, because the lookup helpers are: allowing STR-100 beside str-100 would
+        // give two items one identity to every search in the application. Soft-deleted items count
+        // too — they still hold their code under the database's unpredicated UNIQUE(itemcode).
+        if (inventoryItemRepository.itemCodeTakenByAnother(wanted, existing.getInventoryItemId())) {
+            String owner = inventoryItemRepository
+                    .findByItemCodeIgnoreCaseAndDeletedDateIsNull(wanted)
+                    .map(o -> "'" + o.getName() + "'")
+                    .orElse("a deleted item");
+            throw new IllegalArgumentException(
+                    "Item code '" + wanted + "' is already used by " + owner + ".");
+        }
+        logger.info("Item {} renamed: {} -> {}", existing.getInventoryItemId(),
+                existing.getItemCode(), wanted);
+        updated.setItemCode(wanted);
+    }
+
     @Override
     public com.nextgenmanager.nextgenmanager.items.model.InventoryItem editInventoryItem(int itemId, com.nextgenmanager.nextgenmanager.items.model.InventoryItem updatedItem) {
         logger.debug("Editing inventory item with id: {}", itemId);
@@ -271,7 +371,11 @@ public class InventoryItemServiceImpl implements InventoryItemService {
                     });
 
             updatedItem.setInventoryItemId(itemId);
-            updatedItem.setItemCode(existingItem.getItemCode()); // preserve original code
+            applyItemCodeChange(existingItem, updatedItem);
+            itemRevisionService.assertEngineeringFieldsUnchanged(existingItem, updatedItem);
+            // The revision relationship isn't part of the incoming payload — carry it forward so
+            // save() doesn't null it out.
+            updatedItem.setCurrentRevision(existingItem.getCurrentRevision());
 
             if (!canAccessFinance()) {
                 com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings existingFinance = existingItem.getProductFinanceSettings();
@@ -292,6 +396,13 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             }
             if (updatedItem.getProductInventorySettings() != null) {
                 updatedItem.getProductInventorySettings().setInventoryItem(updatedItem);
+            } else if (existingItem.getProductInventorySettings() != null) {
+                // The association is orphanRemoval, so an update that simply does not mention the
+                // settings would delete them — taking the item's stock figures with it. A caller
+                // that says nothing about them means to leave them alone.
+                ProductInventorySettings kept = existingItem.getProductInventorySettings();
+                kept.setInventoryItem(updatedItem);
+                updatedItem.setProductInventorySettings(kept);
             }
 
             InventoryItem newItem = inventoryItemRepository.save(updatedItem);
@@ -330,6 +441,11 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             newItem.setFileAttachments(fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem",(long) itemId));
             logger.info("Inventory item with id: {} successfully updated", itemId);
             return newItem;
+        } catch (IllegalArgumentException e) {
+            // A rejected item code, or an unknown id, is the caller's mistake — not a server fault.
+            // Wrapping it in RuntimeException turned "that code is already used by X" into a bare
+            // 500, hiding the one message that tells the user how to fix it.
+            throw e;
         } catch (Exception e) {
             logger.error("Error while editing inventory item with id: {}: {}", itemId, e.getMessage());
             throw new RuntimeException(e);

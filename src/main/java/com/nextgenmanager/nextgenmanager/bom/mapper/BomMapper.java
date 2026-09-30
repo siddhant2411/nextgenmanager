@@ -88,6 +88,10 @@ public class BomMapper {
                         ? position.getRoutingOperation().getId() : null)
                 .routingOperationName(position.getRoutingOperation() != null
                         ? position.getRoutingOperation().getName() : null)
+                .childItemRevisionCode(position.getChildItemRevision() != null
+                        ? position.getChildItemRevision().getRevisionCode() : null)
+                .childItemRevisionStatus(position.getChildItemRevision() != null
+                        ? position.getChildItemRevision().getStatus().name() : null)
                 .build();
     }
 

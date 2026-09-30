@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.items.model;
 
 import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.fasterxml.jackson.annotation.ObjectIdGenerators;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
@@ -42,7 +43,16 @@ public class InventoryItem {
     @Column(nullable = false)
     private ItemType itemType;
 
-    private byte revision;
+    /**
+     * The item's current released engineering revision. Null only for legacy rows before the
+     * revision-control backfill ran. Engineering fields (dimension, material, drawing number...)
+     * live on {@link ItemRevision}, not here — this item row is the identity, price and stock
+     * policy, none of which are ever locked by a revision.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "currentRevisionId")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private ItemRevision currentRevision;
 
     private String remarks;
 

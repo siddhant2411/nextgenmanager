@@ -4,7 +4,12 @@ import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest;
 import com.nextgenmanager.nextgenmanager.Inventory.model.NumberSequence;
+import com.nextgenmanager.nextgenmanager.Inventory.model.PickList;
+import com.nextgenmanager.nextgenmanager.Inventory.model.PickListLine;
+import com.nextgenmanager.nextgenmanager.Inventory.model.PickListStatus;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.NumberSequenceRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.PickListRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -48,15 +53,35 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
     private final InventoryTransactionService inventoryTransactionService;
     private final NumberSequenceRepository numberSequenceRepository;
     private final StoreInventoryRequestService storeInventoryRequestService;
+    private final PickListRepository pickListRepository;
+    private final InventoryInstanceRepository inventoryInstanceRepository;
+
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(DeliveryNoteServiceImpl.class);
 
     @Override
     public DeliveryNoteDto createDeliveryNote(DeliveryNoteCreateDto dto) {
+        // A pick, when there is one, decides what ships and which units go: it was settled on the
+        // floor by someone holding the goods. Everything below this line then runs unchanged,
+        // because the pick is translated into the same item list a caller would have sent.
+        PickList pick = dto.getPickListId() != null ? loadConfirmedPick(dto) : null;
+        if (pick != null && dto.getSalesOrderId() == null) {
+            dto.setSalesOrderId(pick.getSalesOrder().getId());
+        }
+
         SalesOrder so = salesOrderRepository.findById(dto.getSalesOrderId())
                 .orElseThrow(() -> new SalesOrderNotFoundException(dto.getSalesOrderId()));
 
         if (so.getStatus() == SalesOrderStatus.CANCELLED || so.getStatus() == SalesOrderStatus.DRAFT) {
             throw new InvalidSalesOrderStateException(
                     "Cannot create Delivery Note for SO in status " + so.getStatus());
+        }
+
+        if (pick != null) {
+            requireSameOrder(pick, so);
+            dto.setItems(itemsFromPick(pick));
+        } else {
+            requireBypassIsDeliberate(so, dto);
         }
 
         // Build a map: inventoryItemId -> SalesOrderItem for qty validation + request lookup
@@ -211,6 +236,11 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                 dispatchDto.setReferenceType("DELIVERY_NOTE");
                 dispatchDto.setReferenceDocNo(dnNo);
                 dispatchDto.setCostPerUnit(avgCostPerUnit.doubleValue());
+                // Blank resolves to the default warehouse inside writeLedger, which is only right
+                // by accident. A pick knows where the goods actually were.
+                if (pick != null) {
+                    dispatchDto.setWarehouse(pick.getWarehouse().getCode());
+                }
                 // Also store the Sales Order number for cross-reference
                 if (dn.getSalesOrder() != null) {
                     dispatchDto.setOverrideReason("SO: " + dn.getSalesOrder().getOrderNumber());
@@ -237,10 +267,131 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
 
         DeliveryNote saved = deliveryNoteRepository.save(dn);
 
+        if (pick != null) {
+            pick.setStatus(PickListStatus.DISPATCHED);
+            pick.setDeliveryNote(saved);
+            pick.setUpdatedDate(new java.util.Date());
+            pickListRepository.save(pick);
+            logger.info("Pick {} dispatched on {}", pick.getPickNumber(), saved.getDeliveryNoteNo());
+        }
+
         // Recalculate SO status based on total dispatched vs ordered after this DN
         updateSoDispatchStatus(so, dto.getItems());
 
         return toDto(saved);
+    }
+
+    // ─── Shipping a confirmed pick ────────────────────────────────────────────
+
+    /**
+     * Loads the pick this note is shipping and refuses anything that is not ready to ship.
+     *
+     * <p>The states are refused with the reason rather than the enum name, because "it is
+     * RELEASED" tells a dispatcher nothing about what to do next.
+     */
+    private PickList loadConfirmedPick(DeliveryNoteCreateDto dto) {
+        PickList pick = pickListRepository.findLiveById(dto.getPickListId())
+                .orElseThrow(() -> new InvalidSalesOrderStateException(
+                        "Pick list not found: " + dto.getPickListId()));
+
+        if (pick.getStatus() == PickListStatus.DISPATCHED) {
+            String on = pick.getDeliveryNote() != null
+                    ? pick.getDeliveryNote().getDeliveryNoteNo() : "another delivery note";
+            throw new InvalidSalesOrderStateException(
+                    pick.getPickNumber() + " has already been shipped on " + on
+                            + ". Raise a new pick for anything still to go.");
+        }
+        if (pick.getStatus() != PickListStatus.PICKED) {
+            throw new InvalidSalesOrderStateException(String.format(
+                    "%s is %s. Confirm the pick — record what was actually taken off the shelf — "
+                            + "before shipping it.", pick.getPickNumber(), pick.getStatus()));
+        }
+        return pick;
+    }
+
+    private void requireSameOrder(PickList pick, SalesOrder so) {
+        if (!pick.getSalesOrder().getId().equals(so.getId())) {
+            throw new InvalidSalesOrderStateException(String.format(
+                    "%s was picked for %s, not %s", pick.getPickNumber(),
+                    pick.getSalesOrder().getOrderNumber(), so.getOrderNumber()));
+        }
+    }
+
+    /**
+     * Turns a confirmed pick into the item list the rest of this method already understands:
+     * quantities are what the picker found, and the units are the ones they took. Nothing is
+     * re-chosen here — re-deciding at dispatch is exactly how two documents end up claiming the
+     * same stock.
+     *
+     * <p>Lines are merged by item so an order that lists the same part twice cannot slip past the
+     * remaining-quantity check by arriving as two lines that are each individually small enough.
+     */
+    private List<DeliveryNoteItemDto> itemsFromPick(PickList pick) {
+        Map<Integer, DeliveryNoteItemDto> byItem = new java.util.LinkedHashMap<>();
+
+        for (PickListLine line : pick.getLines()) {
+            java.math.BigDecimal picked = line.getQuantityPicked() != null
+                    ? line.getQuantityPicked() : java.math.BigDecimal.ZERO;
+            // A line that came up empty is a short pick, already recorded as such. It is not
+            // something to ship, and it is not an error either.
+            if (picked.signum() <= 0) continue;
+
+            // Delivery note quantities are whole numbers. Truncating a picked 2.5 into a
+            // dispatched 2 would quietly lose half a unit between the shelf and the invoice.
+            if (picked.stripTrailingZeros().scale() > 0) {
+                throw new InvalidSalesOrderStateException(String.format(
+                        "%s: %s was picked as %s, but a delivery note can only carry whole units.",
+                        pick.getPickNumber(), line.getInventoryItem().getItemCode(),
+                        picked.toPlainString()));
+            }
+
+            List<Long> instanceIds = inventoryInstanceRepository
+                    .findByPickListLineId(line.getId()).stream()
+                    .map(InventoryInstance::getId)
+                    .collect(Collectors.toList());
+
+            DeliveryNoteItemDto existing = byItem.get(line.getInventoryItem().getInventoryItemId());
+            if (existing == null) {
+                DeliveryNoteItemDto item = new DeliveryNoteItemDto();
+                item.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
+                item.setQuantityDelivered(picked.intValue());
+                item.setAllocatedInstanceIds(instanceIds);
+                byItem.put(item.getInventoryItemId(), item);
+            } else {
+                existing.setQuantityDelivered(existing.getQuantityDelivered() + picked.intValue());
+                List<Long> merged = new ArrayList<>(existing.getAllocatedInstanceIds());
+                merged.addAll(instanceIds);
+                existing.setAllocatedInstanceIds(merged);
+            }
+        }
+
+        if (byItem.isEmpty()) {
+            throw new InvalidSalesOrderStateException(
+                    "Nothing was picked on " + pick.getPickNumber() + ", so there is nothing to ship.");
+        }
+        return new ArrayList<>(byItem.values());
+    }
+
+    /**
+     * Counter sales and sample dispatches have no picking step, so shipping without a pick stays
+     * possible — but only as something asked for by name. Left as the default it would silently
+     * allocate a second set of units for stock already sitting on a trolley.
+     */
+    private void requireBypassIsDeliberate(SalesOrder so, DeliveryNoteCreateDto dto) {
+        if (dto.isDirectDispatch()) {
+            logger.info("Direct dispatch on {} — shipping without a pick, by request",
+                    so.getOrderNumber());
+            return;
+        }
+        List<PickList> waiting = pickListRepository.findPickedAwaitingDispatch(so.getId());
+        if (!waiting.isEmpty()) {
+            String numbers = waiting.stream().map(PickList::getPickNumber)
+                    .collect(Collectors.joining(", "));
+            throw new InvalidSalesOrderStateException(String.format(
+                    "%s already has a confirmed pick waiting to ship (%s). Raise the delivery note "
+                            + "against it, or set directDispatch to ship without one.",
+                    so.getOrderNumber(), numbers));
+        }
     }
 
     private void updateSoDispatchStatus(SalesOrder so, List<DeliveryNoteItemDto> newItems) {
@@ -321,6 +472,12 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
         dto.setEwayBillNumber(dn.getEwayBillNumber());
         dto.setDispatchThrough(dn.getDispatchThrough());
         dto.setRemarks(dn.getRemarks());
+        if (dn.getId() != null) {
+            pickListRepository.findByDeliveryNote(dn.getId()).ifPresent(p -> {
+                dto.setPickListId(p.getId());
+                dto.setPickNumber(p.getPickNumber());
+            });
+        }
         if (dn.getItems() != null) {
             dto.setItems(dn.getItems().stream().map(this::toItemDetailDto).collect(Collectors.toList()));
         }

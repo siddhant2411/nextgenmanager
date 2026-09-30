@@ -3,6 +3,9 @@ package com.nextgenmanager.nextgenmanager.Inventory.controller;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.StockCountLine;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.StockCountRequest;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.StockReconciliationReportDto;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.StockScalarCorrectionRequest;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.StockScalarCorrectionRowDto;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,5 +107,36 @@ public class StockCountController {
 
         logger.info("Stock count {} completed: {} lines, {} adjusted, {} no-change", countId, total, adjusted, noChange);
         return ResponseEntity.ok(summary);
+    }
+
+    /**
+     * Stock counter reconciliation — GET /api/inventory/stock-reconciliation
+     *
+     * Compares each item's availableQuantity / reservedQuantity counters against the
+     * instance rows behind them and reports the difference. Read-only: it never writes,
+     * so it is safe to run against live books to size the drift before correcting it.
+     *
+     * @param onlyDrifted defaults true — pass false to get every item, including the
+     *                    ones that agree
+     */
+    @GetMapping("/stock-reconciliation")
+    public ResponseEntity<StockReconciliationReportDto> reconcileStock(
+            @RequestParam(defaultValue = "true") boolean onlyDrifted) {
+        return ResponseEntity.ok(inventoryTransactionService.reconcileStockScalars(onlyDrifted));
+    }
+
+    /**
+     * Counter correction — POST /api/inventory/stock-reconciliation/correct
+     *
+     * Resets the named items' stock counters to match their instance rows. Writes no
+     * ledger entry, because nothing physically moved — the counters had drifted from
+     * the instance table. Items must be named explicitly; there is no "fix everything"
+     * form, since an item with no instances derives to zero.
+     */
+    @PostMapping("/stock-reconciliation/correct")
+    public ResponseEntity<List<StockScalarCorrectionRowDto>> correctStockScalars(
+            @RequestBody StockScalarCorrectionRequest request) {
+        return ResponseEntity.ok(
+                inventoryTransactionService.correctStockScalars(request.itemIds(), request.reason()));
     }
 }

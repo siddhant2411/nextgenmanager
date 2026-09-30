@@ -10,6 +10,7 @@ import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryLedgerRep
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryProcurementOrderRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryMovementLogRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.ItemWarehouseStockRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.BomServiceException;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -69,6 +70,66 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     @org.springframework.context.annotation.Lazy
     private ProcurementRoutingService procurementRoutingService;
 
+    @Autowired
+    private WarehouseService warehouseService;
+
+    /**
+     * Where stock created on these paths lands. Every one of them is a plain receipt or a pending
+     * placeholder with no warehouse of its own to carry, so they all go to the default.
+     *
+     * <p>Resolved per call rather than hoisted: the warehouse table holds a handful of rows behind
+     * a unique index, so even a receipt that creates one instance per unit stays cheap.
+     */
+    private Warehouse stockWarehouse() {
+        return warehouseService.resolveDefaultWarehouse();
+    }
+
+    @Autowired
+    private ItemWarehouseStockRepository itemWarehouseStockRepository;
+
+    /**
+     * Moves an instance's quantity between the per-warehouse counters.
+     *
+     * <p>Every status change below is also a change in what a building is holding, and until this
+     * existed only the item-wide scalars followed. Reserving an order's stock left the warehouse
+     * still reporting it as free to pick; shipping it left the warehouse reporting it at all. The
+     * deltas here are the same ones the scalar recount will arrive at, so
+     * {@code availableQuantity == SUM(onHand)} and {@code reservedQuantity == SUM(reserved)} hold
+     * across the pair rather than by luck.
+     *
+     * <p>A movement with no warehouse is dropped rather than parked in the default one: guessing
+     * would put stock somewhere it never was.
+     */
+    private void mirrorToWarehouse(InventoryInstance inst, double onHandDelta, double reservedDelta) {
+        if (inst == null || inst.getWarehouse() == null) return;
+        if (onHandDelta == 0 && reservedDelta == 0) return;
+
+        InventoryItem item = inst.getInventoryItem();
+        Warehouse warehouse = inst.getWarehouse();
+        ItemWarehouseStock row = itemWarehouseStockRepository
+                .find(item.getInventoryItemId(), warehouse.getId())
+                .orElseGet(() -> {
+                    ItemWarehouseStock fresh = new ItemWarehouseStock();
+                    fresh.setInventoryItem(item);
+                    fresh.setWarehouse(warehouse);
+                    return fresh;
+                });
+        row.setOnHand(row.getOnHand().add(BigDecimal.valueOf(onHandDelta)));
+        row.setReserved(row.getReserved().add(BigDecimal.valueOf(reservedDelta)));
+        row.setUpdatedDate(new Date());
+        itemWarehouseStockRepository.save(row);
+    }
+
+    /** Quantity of an instance as a double, treating null as nothing. */
+    private double qty(InventoryInstance inst) {
+        return inst.getQuantity() != null ? inst.getQuantity().doubleValue() : 0.0;
+    }
+
+    /** Whether a status counts towards the reserved figure, matching sumReservedQuantity. */
+    private boolean isReservedStatus(InventoryInstanceStatus status) {
+        return status == InventoryInstanceStatus.REQUESTED || status == InventoryInstanceStatus.BOOKED;
+    }
+
     
     @PersistenceContext
     private EntityManager entityManager;
@@ -100,16 +161,37 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 return;
             }
 
-            double availableQty;
-            if (item.getUom() == UOM.NOS) {
-                availableQty = inventoryInstanceRepository.countAvailableInInventory(itemId, InventoryInstanceStatus.AVAILABLE.name());
-            } else {
-                availableQty = inventoryInstanceRepository.getTotalQuantityForNonNOSItem(itemId);
+            var settings = item.getProductInventorySettings();
+            if (settings == null) {
+                logger.warn("Item ID {} has no inventory settings; skipping recount", itemId);
+                return;
             }
 
-            item.getProductInventorySettings().setAvailableQuantity(availableQty);
+            // An item with no instance rows at all is carried by the scalars alone: reserving an
+            // untracked item through InventoryTransactionServiceImpl moves the counters
+            // without ever creating an instance. Recomputing those from an empty instance
+            // table would zero real stock, so leave them to the transactional arithmetic.
+            //
+            // The test is "has this item ever had an instance", not "has it any stock now".
+            // Guarding on the live count meant that consuming the last unit made the recount
+            // skip itself, leaving whatever the counters happened to say standing for ever —
+            // an item shipped down to nothing kept its reserved quantity.
+            if (inventoryInstanceRepository.countAnyInstances(itemId) == 0) {
+                logger.debug("Item ID {} has never had an instance; leaving scalars to transactional arithmetic", itemId);
+                return;
+            }
+
+            // Both scalars come from the same instance state, in one place, so the pair
+            // stays reconcilable. Previously only availableQuantity was recomputed here —
+            // and by one of two different definitions depending on UOM — while
+            // reservedQuantity had no recount path anywhere in the codebase.
+            double availableQty = inventoryInstanceRepository.sumAvailableQuantity(itemId);
+            double reservedQty  = inventoryInstanceRepository.sumReservedQuantity(itemId);
+
+            settings.setAvailableQuantity(availableQty);
+            settings.setReservedQuantity(reservedQty);
             inventoryItemRepository.save(item);
-            logger.debug("Updated availability for item ID {}: {}", itemId, availableQty);
+            logger.debug("Recounted item ID {}: available={} reserved={}", itemId, availableQty, reservedQty);
         } catch (Exception e) {
             logger.error("Error in updateItemAvailability for item ID {}: {}", itemId, e.getMessage(), e);
             throw e;
@@ -122,10 +204,13 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             List<InventoryInstance> inventoryInstanceList = new ArrayList<>();
             for(InventoryInstance instance: instances){
                 InventoryInstance inst = inventoryInstanceRepository.getReferenceById(instance.getId());
+                boolean wasReserved = isReservedStatus(inst.getInventoryInstanceStatus());
                 inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
                 inst.setConsumed(false);
                 inst.setBookedDate(null);
                 inst.setConsumeDate(null);
+                // Back on the shelf: free again in the warehouse it never left.
+                mirrorToWarehouse(inst, qty(inst), wasReserved ? -qty(inst) : 0);
                 inventoryInstanceList.add(inst);
             }
             inventoryInstanceRepository.saveAll(inventoryInstanceList);
@@ -152,6 +237,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 for (int i = 0; i < (int) qty; i++) {
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
+                    inst.setWarehouse(stockWarehouse());
                     inst.setEntryDate(now);
                     inst.setQuantity(BigDecimal.ONE);
                     inst.setCostPerUnit(template.getCostPerUnit() != null ? template.getCostPerUnit() : standardCost);
@@ -162,6 +248,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             } else {
                 InventoryInstance inst = new InventoryInstance();
                 inst.setInventoryItem(dbItem);
+                inst.setWarehouse(stockWarehouse());
                 inst.setEntryDate(now);
                 inst.setQuantity(BigDecimal.valueOf(qty));
                 inst.setCostPerUnit(template.getCostPerUnit() != null ? template.getCostPerUnit() : standardCost);
@@ -193,6 +280,8 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 for (InventoryInstance inst : available) {
                     inst.setBookedDate(now);
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.BOOKED);
+                    // Booked stock is spoken for: it leaves the free figure in its warehouse.
+                    mirrorToWarehouse(inst, -qty(inst), qty(inst));
                     booked.add(inst);
                 }
             } else {
@@ -201,6 +290,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     inst.setBookedDate(now);
                     inst.setQuantity(BigDecimal.valueOf(qty));
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.BOOKED);
+                    mirrorToWarehouse(inst, -qty, qty);
                     booked.add(inst);
                 }
             }
@@ -233,10 +323,15 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 for (InventoryInstance inst : available) {
                     if (count >= (int) qty) break;
                     if (inst.getInventoryItem().equals(dbItem)) {
+                        // Captured before the status and quantity are overwritten: after this the
+                        // row no longer says which counter the unit was standing in.
+                        double leaving = qty(inst);
+                        boolean wasReserved = isReservedStatus(inst.getInventoryInstanceStatus());
                         inst.setConsumed(true);
                         inst.setConsumeDate(now);
                         inst.setQuantity(BigDecimal.ZERO);
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                        mirrorToWarehouse(inst, wasReserved ? 0 : -leaving, wasReserved ? -leaving : 0);
                         // Stamp serial consumedByDocNo
                         if (refDocNo != null && inst.getSerialNumber() != null) {
                             com.nextgenmanager.nextgenmanager.Inventory.model.SerialNumber sn = inst.getSerialNumber();
@@ -258,12 +353,16 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
                     BigDecimal availableQty = instance.getQuantity();
                     BigDecimal toConsume = BigDecimal.valueOf(remainingQty).min(availableQty);
+                    boolean wasReserved = isReservedStatus(instance.getInventoryInstanceStatus());
 
                     instance.setConsumeDate(now);
                     BigDecimal newQty = availableQty.subtract(toConsume);
                     instance.setQuantity(newQty);
                     boolean fullyConsumed = newQty.compareTo(BigDecimal.ZERO) == 0;
                     instance.setConsumed(fullyConsumed);
+                    mirrorToWarehouse(instance,
+                            wasReserved ? 0 : -toConsume.doubleValue(),
+                            wasReserved ? -toConsume.doubleValue() : 0);
                     if (fullyConsumed) {
                         instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
                         // Stamp batch remainingQty
@@ -348,10 +447,16 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 if (!instance.getInventoryItem().equals(dbItem)) continue;
 
                 if (isUnitByNos(dbItem)) {
+                    // Which warehouse counter the unit was standing in, read before consumption
+                    // erases the evidence. Stock reserved at order approval leaves the reserved
+                    // figure; stock nobody had claimed leaves the free one.
+                    double leaving = qty(instance);
+                    boolean wasReserved = isReservedStatus(instance.getInventoryInstanceStatus());
                     instance.setConsumed(true);
                     instance.setConsumeDate(now);
                     instance.setQuantity(BigDecimal.ZERO);
                     instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                    mirrorToWarehouse(instance, wasReserved ? 0 : -leaving, wasReserved ? -leaving : 0);
 
                     // Stamp serial with dispatch document number for full traceability
                     if (instance.getSerialNumber() != null) {
@@ -367,6 +472,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 } else {
                     BigDecimal availableQty = instance.getQuantity();
                     BigDecimal toConsume = BigDecimal.valueOf(remainingQty).min(availableQty);
+                    boolean wasReserved = isReservedStatus(instance.getInventoryInstanceStatus());
 
                     instance.setConsumeDate(now);
                     BigDecimal newQty = availableQty.subtract(toConsume);
@@ -375,6 +481,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     if (newQty.compareTo(BigDecimal.ZERO) == 0) {
                         instance.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
                     }
+                    mirrorToWarehouse(instance,
+                            wasReserved ? 0 : -toConsume.doubleValue(),
+                            wasReserved ? -toConsume.doubleValue() : 0);
 
                     // Update linked BatchNumber remaining qty
                     if (instance.getBatchNumber() != null) {
@@ -456,6 +565,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
                     inst.setBookedDate(now);
                     inst.setInventoryRequest(request);
+                    // Reserved stock is still in the building but no longer free to pick, so the
+                    // warehouse has to say so too — otherwise its shelf reads as available to
+                    // every other order.
+                    mirrorToWarehouse(inst, -qty(inst), qty(inst));
                     resultInstances.add(inst);
                     fulfilled++;
                 }
@@ -463,6 +576,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 for (int i = 0; i < remaining; i++) {
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
+                    inst.setWarehouse(stockWarehouse());
                     inst.setEntryDate(now);
                     inst.setQuantity(BigDecimal.ONE);
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
@@ -485,6 +599,11 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
                         inst.setBookedDate(now);
                         inst.setInventoryRequest(request);
+                        // The whole instance leaves the free figure, not just the part reserved:
+                        // this branch shrinks the row to what it booked rather than splitting it,
+                        // so the remainder stops counting anywhere. The recount agrees, and the
+                        // warehouse has to agree with the recount.
+                        mirrorToWarehouse(inst, -instQty.doubleValue(), usedQty.doubleValue());
                         resultInstances.add(inst);
                         qtyToBook = qtyToBook.subtract(usedQty);
                     }
@@ -494,10 +613,12 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                         inst.setInventoryInstanceStatus(InventoryInstanceStatus.REQUESTED);
                         inst.setBookedDate(now);
                         inst.setInventoryRequest(request);
+                        mirrorToWarehouse(inst, -qty(inst), qty(inst));
                         resultInstances.add(inst);
                     }
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
+                    inst.setWarehouse(stockWarehouse());
                     inst.setEntryDate(now);
                     inst.setQuantity(qtyToRequest);
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
@@ -853,12 +974,18 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             List<InventoryInstance> pendingInstances = inventoryInstanceRepository.inventoryInstanceByStatus(inventoryItemId, InventoryInstanceStatus.PENDING.name(), addedQty.doubleValue());
             BigDecimal remainingQty = addedQty;
 
+            // Goods arriving are stock in a building, so the per-warehouse counters move with the
+            // item-wide ones. (Booking the same receipt through a stock count as well would count
+            // it twice — the count is for stock the books have never seen, not a second entry for
+            // stock being received here.)
             for (InventoryInstance inst : pendingInstances) {
                 if (isUnitByNos(dbItem)) {
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
                     inst.setEntryDate(now);
                     inst.setCostPerUnit(finalCost);
                     inst.setSellPricePerUnit(standardCost);
+                    // Pending was a placeholder for goods on order: it counted nowhere until now.
+                    mirrorToWarehouse(inst, qty(inst), 0);
                     resultInstances.add(inst);
                     remainingQty = remainingQty.subtract(BigDecimal.ONE);
                     if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) break;
@@ -868,6 +995,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     inst.setEntryDate(now);
                     inst.setCostPerUnit(finalCost);
                     inst.setSellPricePerUnit(standardCost);
+                    mirrorToWarehouse(inst, qty(inst), 0);
                     resultInstances.add(inst);
                     remainingQty = remainingQty.subtract(canFill);
                     if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) break;
@@ -881,6 +1009,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     for (int i = 0; i < unitCount; i++) {
                         InventoryInstance inst = new InventoryInstance();
                         inst.setInventoryItem(dbItem);
+                        inst.setWarehouse(stockWarehouse());
                         inst.setEntryDate(now);
                         inst.setQuantity(BigDecimal.ONE);
                         inst.setCostPerUnit(finalCost);
@@ -891,6 +1020,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 } else {
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
+                    inst.setWarehouse(stockWarehouse());
                     inst.setEntryDate(now);
                     inst.setQuantity(remainingQty);
                     inst.setCostPerUnit(finalCost);
@@ -899,7 +1029,12 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     resultInstances.add(inst);
                 }
                 List<InventoryInstance> newInstances = resultInstances.stream().filter(i -> i.getId() == null).toList();
-                if (!newInstances.isEmpty()) inventoryInstanceRepository.saveAll(newInstances);
+                if (!newInstances.isEmpty()) {
+                    inventoryInstanceRepository.saveAll(newInstances);
+                    for (InventoryInstance fresh : newInstances) {
+                        mirrorToWarehouse(fresh, qty(fresh), 0);
+                    }
+                }
             }
 
             InventoryProcurementOrder procurementOrder = new InventoryProcurementOrder();
@@ -937,6 +1072,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             ledger.setCreatedBy(request.getCreatedBy());
             ledger.setClosingBalance(closingBal);
             ledger.setInventoryItem(dbItem);
+            // warehouse_id is NOT NULL since V164. This path (opening stock and manual receipts)
+            // has no warehouse of its own to carry, so it lands in the default one.
+            ledger.setWarehouse(warehouseService.resolveDefaultWarehouse());
             inventoryLedgerRepository.save(ledger);
             // Opening-stock onboarding posts to the GL (Dr Stock / Cr Opening Balance Equity) so a
             // company can migrate to perpetual inventory in one balanced step. Only OPENING_STOCK is
@@ -1096,6 +1234,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     for (int i = 0; i < unitCount; i++) {
                         InventoryInstance inst = new InventoryInstance();
                         inst.setInventoryItem(dbItem);
+                        inst.setWarehouse(stockWarehouse());
                         inst.setEntryDate(now);
                         inst.setQuantity(BigDecimal.ONE);
                         inst.setCostPerUnit(finalCost);
@@ -1106,6 +1245,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 } else {
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
+                    inst.setWarehouse(stockWarehouse());
                     inst.setEntryDate(now);
                     inst.setQuantity(remainingQty);
                     inst.setCostPerUnit(finalCost);
@@ -1185,6 +1325,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         // Create a pending instance to carry the qty through the routing service's shortfallQty calculation
         InventoryInstance pending = new InventoryInstance();
         pending.setInventoryItem(item);
+        pending.setWarehouse(stockWarehouse());
         pending.setEntryDate(new Date());
         pending.setQuantity(qty);
         pending.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);

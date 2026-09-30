@@ -37,5 +37,10 @@ public class InventoryItemDTO {
     private Double standardCost;
     private Long drawingFileId;
 
+    /** Current engineering revision code ("A", "B"...) — null on legacy rows before backfill. */
+    private String revisionCode;
+    /** True when the current revision is RELEASED — engineering fields are frozen. */
+    private boolean locked;
+
 
 }

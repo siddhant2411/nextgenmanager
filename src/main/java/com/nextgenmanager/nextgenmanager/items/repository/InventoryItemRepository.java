@@ -20,6 +20,19 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
 
     boolean existsByItemCodeAndDeletedDateIsNull(String itemCode);
 
+    /**
+     * Active items carrying no inventory settings at all.
+     *
+     * <p>The settings row is created only when a client sends one, so anything loaded through an
+     * import that did not think to include the block has none — and an item without it cannot
+     * hold stock, be reserved or be picked, because every one of those paths reads the settings
+     * first and gives up when they are null.
+     */
+    @Query("SELECT i FROM InventoryItem i "
+            + "WHERE i.deletedDate IS NULL AND i.productInventorySettings IS NULL "
+            + "ORDER BY i.inventoryItemId")
+    List<InventoryItem> findActiveWithoutInventorySettings();
+
     @Query(value = "SELECT * FROM inventoryItem i WHERE i.deletedDate IS NULL AND (LOWER(CAST(i.name AS text)) LIKE %:search% OR LOWER(CAST(i.itemCode AS text)) LIKE %:search% OR LOWER(CAST(i.hsnCode AS text)) LIKE %:search%)", nativeQuery = true)
     Page<InventoryItem> findAllActiveCategory(@Param("search") String search, Pageable pageable);
 
@@ -35,6 +48,18 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem,Int
 
     @Procedure("check_item_code_exists")
     boolean checkItemCodeExists(@Param("itemCodeParam") String itemCode);
+
+    /**
+     * Is this code held by any OTHER item, including a soft-deleted one?
+     *
+     * <p>Deliberately ignores {@code deletedDate}: the database constraint is a plain
+     * {@code UNIQUE(itemcode)} with no predicate, so a soft-deleted item still occupies its code
+     * and a rename onto it fails with an opaque constraint violation. Checking here turns that
+     * into a message a person can act on.
+     */
+    @Query("SELECT COUNT(i) > 0 FROM InventoryItem i "
+            + "WHERE LOWER(i.itemCode) = LOWER(:code) AND i.inventoryItemId <> :excludeId")
+    boolean itemCodeTakenByAnother(@Param("code") String code, @Param("excludeId") int excludeId);
 
     @Query("SELECT i FROM InventoryItem i LEFT JOIN FETCH i.productFinanceSettings WHERE " +
             "(LOWER(i.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
