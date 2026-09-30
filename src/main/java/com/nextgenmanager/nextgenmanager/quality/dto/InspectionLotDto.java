@@ -20,6 +20,7 @@ public record InspectionLotDto(
         String workOrderNumber,
         Long workOrderOperationId,
         Long goodsReceiptNoteId,
+        Long packageBoxId,
         BigDecimal quantityOffered,
         BigDecimal quantityAccepted,
         BigDecimal quantityRejected,

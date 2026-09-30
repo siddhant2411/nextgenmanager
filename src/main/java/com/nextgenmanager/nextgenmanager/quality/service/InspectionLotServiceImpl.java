@@ -4,6 +4,8 @@ import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptNote;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.GoodsReceiptNoteRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.packaging.model.PackageBox;
+import com.nextgenmanager.nextgenmanager.packaging.repository.PackageBoxRepository;
 import com.nextgenmanager.nextgenmanager.production.enums.QaResult;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
@@ -38,6 +40,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
     private final WorkOrderRepository workOrderRepository;
     private final WorkOrderOperationRepository workOrderOperationRepository;
     private final GoodsReceiptNoteRepository goodsReceiptNoteRepository;
+    private final PackageBoxRepository packageBoxRepository;
     private final InspectionLotNumberGenerator numberGenerator;
 
     // ─── Reads ────────────────────────────────────────────────────────────────
@@ -102,8 +105,14 @@ public class InspectionLotServiceImpl implements InspectionLotService {
                 lot.setGoodsReceiptNote(grn);
                 lot.setInventoryItem(requireItem(request.inventoryItemId()));
             }
-            case PACKAGE -> throw new IllegalArgumentException(
-                    "Package inspection arrives with packing slips in phase J");
+            case PACKAGE -> {
+                PackageBox box = packageBoxRepository.findById(requireId(
+                                request.packageBoxId(), "A package"))
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Package not found: " + request.packageBoxId()));
+                lot.setPackageBox(box);
+                lot.setInventoryItem(requireItem(request.inventoryItemId()));
+            }
         }
 
         for (InspectionCheckLine check : safe(request.checks())) {
@@ -296,6 +305,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
     private String documentLabel(InspectionLot lot) {
         if (lot.getWorkOrder() != null) return lot.getWorkOrder().getWorkOrderNumber();
         if (lot.getGoodsReceiptNote() != null) return "GRN " + lot.getGoodsReceiptNote().getId();
+        if (lot.getPackageBox() != null) return "Box " + lot.getPackageBox().getId();
         return "—";
     }
 
@@ -327,6 +337,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
                 lot.getWorkOrder() != null ? lot.getWorkOrder().getWorkOrderNumber() : null,
                 lot.getWorkOrderOperation() != null ? lot.getWorkOrderOperation().getId() : null,
                 lot.getGoodsReceiptNote() != null ? lot.getGoodsReceiptNote().getId() : null,
+                lot.getPackageBox() != null ? lot.getPackageBox().getId() : null,
                 lot.getQuantityOffered(), lot.getQuantityAccepted(), lot.getQuantityRejected(),
                 lot.getInspectedBy(), lot.getInspectedDate(),
                 lot.getWaivedBy(), lot.getWaiverReason(),

@@ -16,6 +16,6 @@ public enum InspectionSource {
     /** Finished goods at work-order completion, before they are produced into stock. */
     FINAL,
 
-    /** A packed box, before the packing slip closes. Waiting on phase J. */
+    /** A packed box, before the packing slip closes. */
     PACKAGE
 }

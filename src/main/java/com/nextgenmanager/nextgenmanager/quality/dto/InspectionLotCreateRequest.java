@@ -17,6 +17,7 @@ public record InspectionLotCreateRequest(
         Integer workOrderId,
         Long workOrderOperationId,
         Long goodsReceiptNoteId,
+        Long packageBoxId,
         Integer inventoryItemId,
         BigDecimal quantityOffered,
         String remarks,

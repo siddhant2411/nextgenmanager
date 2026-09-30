@@ -61,6 +61,10 @@ public class InspectionLot {
     @JoinColumn(name = "workOrderOperation_id")
     private WorkOrderOperation workOrderOperation;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "packagebox_id")
+    private com.nextgenmanager.nextgenmanager.packaging.model.PackageBox packageBox;
+
     @Column(precision = 18, scale = 4, nullable = false)
     private BigDecimal quantityOffered;
 
