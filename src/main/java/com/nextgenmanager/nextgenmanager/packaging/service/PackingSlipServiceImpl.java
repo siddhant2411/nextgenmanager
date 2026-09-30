@@ -28,7 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Packing slips and the boxes on them.
@@ -131,8 +135,11 @@ public class PackingSlipServiceImpl implements PackingSlipService {
         box.setNetWeightKg(request.netWeightKg());
         box.setShippingMarks(request.shippingMarks());
 
+        // What earlier lines of this same request have already claimed. None of them are on the
+        // database yet, so the per-line query alone cannot see them.
+        Map<Long, BigDecimal> claimedInThisRequest = new HashMap<>();
         for (PackageLineRequest lineReq : request.lines()) {
-            box.getLines().add(toPackageLine(pick, box, lineReq));
+            box.getLines().add(toPackageLine(pick, box, lineReq, claimedInThisRequest));
         }
 
         PackageBox saved = packageBoxRepository.save(box);
@@ -213,38 +220,28 @@ public class PackingSlipServiceImpl implements PackingSlipService {
                 .orElseThrow(() -> new IllegalArgumentException("Packing slip not found: " + id));
     }
 
-    private PackageLine toPackageLine(PickList pick, PackageBox box, PackageLineRequest req) {
+    private PackageLine toPackageLine(PickList pick, PackageBox box, PackageLineRequest req,
+                                      Map<Long, BigDecimal> claimedInThisRequest) {
         if (req.quantity() == null || req.quantity().signum() <= 0) {
             throw new IllegalArgumentException("Packed quantity must be greater than zero");
         }
 
-        PickListLine pickLine = null;
-        InventoryItem item;
-        if (req.pickListLineId() != null) {
-            pickLine = pick.getLines().stream()
-                    .filter(l -> l.getId().equals(req.pickListLineId()))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Pick line " + req.pickListLineId() + " is not on " + pick.getPickNumber()));
-            item = pickLine.getInventoryItem();
+        // Always a pick line, never just an item: the line is what carries quantityPicked, and a
+        // box line without one would be invisible to every later "how much is left to pack" check.
+        PickListLine pickLine = resolvePickLine(pick, req);
+        InventoryItem item = pickLine.getInventoryItem();
 
-            BigDecimal already = packageLineRepository.sumAlreadyPackaged(pickLine.getId());
-            BigDecimal remaining = pickLine.getQuantityPicked().subtract(already != null ? already : BigDecimal.ZERO);
-            if (req.quantity().compareTo(remaining) > 0) {
-                throw new IllegalArgumentException(String.format(
-                        "%s: only %s of %s picked is still unpacked",
-                        item.getItemCode(), remaining.toPlainString(), pickLine.getQuantityPicked().toPlainString()));
-            }
-        } else if (req.inventoryItemId() != null) {
-            item = pick.getLines().stream()
-                    .map(PickListLine::getInventoryItem)
-                    .filter(i -> i.getInventoryItemId() == req.inventoryItemId())
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Item " + req.inventoryItemId() + " is not on " + pick.getPickNumber() + " — name its pick line"));
-        } else {
-            throw new IllegalArgumentException("Name either a pick line or an item for this box line");
+        BigDecimal onDatabase = packageLineRepository.sumAlreadyPackaged(pickLine.getId());
+        BigDecimal remaining = pickLine.getQuantityPicked()
+                .subtract(onDatabase != null ? onDatabase : BigDecimal.ZERO)
+                .subtract(claimedInThisRequest.getOrDefault(pickLine.getId(), BigDecimal.ZERO));
+        if (req.quantity().compareTo(remaining) > 0) {
+            throw new IllegalArgumentException(String.format(
+                    "%s: only %s of %s picked is still unpacked",
+                    item.getItemCode(), remaining.toPlainString(),
+                    pickLine.getQuantityPicked().toPlainString()));
         }
+        claimedInThisRequest.merge(pickLine.getId(), req.quantity(), BigDecimal::add);
 
         PackageLine line = new PackageLine();
         line.setPackageBox(box);
@@ -274,12 +271,54 @@ public class PackingSlipServiceImpl implements PackingSlipService {
     }
 
     /**
+     * The pick line a box line takes from. Naming the line is unambiguous. Naming only the item
+     * works while that item is on one line, and is refused when it is on several — picking one
+     * would silently charge the box against the wrong line's picked quantity.
+     */
+    private PickListLine resolvePickLine(PickList pick, PackageLineRequest req) {
+        if (req.pickListLineId() != null) {
+            return pick.getLines().stream()
+                    .filter(l -> l.getId().equals(req.pickListLineId()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Pick line " + req.pickListLineId() + " is not on " + pick.getPickNumber()));
+        }
+        if (req.inventoryItemId() == null) {
+            throw new IllegalArgumentException("Name either a pick line or an item for this box line");
+        }
+
+        List<PickListLine> matches = pick.getLines().stream()
+                .filter(l -> l.getInventoryItem() != null
+                        && l.getInventoryItem().getInventoryItemId() == req.inventoryItemId())
+                .toList();
+        if (matches.isEmpty()) {
+            throw new IllegalArgumentException(String.format(
+                    "Item %d is not on %s", req.inventoryItemId(), pick.getPickNumber()));
+        }
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException(String.format(
+                    "Item %d is on more than one line of %s — name the pick line",
+                    req.inventoryItemId(), pick.getPickNumber()));
+        }
+        return matches.get(0);
+    }
+
+    /**
      * Every named instance must already be allocated to this pick, and not already claimed by
      * another box. Checked before anything is written so a bad line cannot half-allocate.
      */
     private List<InventoryInstance> resolveInstances(PickList pick, InventoryItem item, List<Long> ids) {
         List<InventoryInstance> resolved = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
         for (Long instanceId : ids) {
+            // Nothing is written until the whole list resolves, so the "already packed" guard below
+            // cannot catch a repeat within this same list — one unit named twice would otherwise
+            // count twice towards the packed quantity.
+            if (!seen.add(instanceId)) {
+                throw new IllegalArgumentException(
+                        "Instance " + instanceId + " is named twice on the same box line");
+            }
+
             InventoryInstance inst = inventoryInstanceRepository.findById(instanceId)
                     .orElseThrow(() -> new IllegalArgumentException("Inventory instance not found: " + instanceId));
 

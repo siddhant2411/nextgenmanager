@@ -42,7 +42,12 @@ COMMENT ON COLUMN packingslip.picklist_id IS
      itself having one warehouse.';
 
 CREATE UNIQUE INDEX ux_packingslip_number ON packingslip (slipNumber) WHERE deletedDate IS NULL;
-CREATE UNIQUE INDEX ux_packingslip_picklist ON packingslip (picklist_id) WHERE deletedDate IS NULL;
+
+-- One live slip per pick. A cancelled slip is excluded because cancelling released its box
+-- allocations -- the pick is free to be packed again, and without this the first cancel would
+-- strand that pick permanently.
+CREATE UNIQUE INDEX ux_packingslip_picklist ON packingslip (picklist_id)
+    WHERE deletedDate IS NULL AND status <> 'CANCELLED';
 CREATE INDEX idx_packingslip_salesorder ON packingslip (salesOrder_id);
 CREATE INDEX idx_packingslip_status ON packingslip (status) WHERE deletedDate IS NULL;
 
@@ -59,10 +64,13 @@ CREATE TABLE packagebox (
     shippingMarks  VARCHAR(500),
     creationDate   TIMESTAMP,
     updatedDate    TIMESTAMP,
-    deletedDate    TIMESTAMP,
-
-    CONSTRAINT ux_packagebox_slip_box UNIQUE (packingslip_id, boxNumber)
+    deletedDate    TIMESTAMP
 );
+
+-- Partial, not a table constraint: boxNumber is handed out by MAX(boxNumber) + 1 over live boxes
+-- only, so a soft-deleted box must not keep reserving the number it used to hold.
+CREATE UNIQUE INDEX ux_packagebox_slip_box ON packagebox (packingslip_id, boxNumber)
+    WHERE deletedDate IS NULL;
 
 COMMENT ON COLUMN packagebox.boxNumber IS
     'Sequential within its slip, assigned by the service -- 1, 2, 3 -- not a global number. What

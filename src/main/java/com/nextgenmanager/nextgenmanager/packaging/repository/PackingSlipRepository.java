@@ -27,7 +27,12 @@ public interface PackingSlipRepository extends JpaRepository<PackingSlip, Long> 
             + "ORDER BY s.creationDate DESC")
     List<PackingSlip> findLiveBySalesOrder(@Param("salesOrderId") Long salesOrderId);
 
-    /** A pick is packed by at most one live slip — this is how that is enforced in the service. */
-    @Query("SELECT s FROM PackingSlip s WHERE s.pickList.id = :pickListId AND s.deletedDate IS NULL")
+    /**
+     * The live slip packing this pick, if any — at most one, which is how that is enforced in the
+     * service. A cancelled slip does not count: cancelling released its box allocations, so the
+     * pick is free to be packed again.
+     */
+    @Query("SELECT s FROM PackingSlip s WHERE s.pickList.id = :pickListId AND s.deletedDate IS NULL "
+            + "AND s.status <> com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.CANCELLED")
     Optional<PackingSlip> findLiveByPickList(@Param("pickListId") Long pickListId);
 }
