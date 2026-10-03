@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.packaging.model;
 
 import com.nextgenmanager.nextgenmanager.Inventory.model.PickList;
+import com.nextgenmanager.nextgenmanager.sales.model.DeliveryNote;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import jakarta.persistence.*;
 import lombok.*;
@@ -40,6 +41,14 @@ public class PackingSlip {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PackingSlipStatus status = PackingSlipStatus.DRAFT;
+
+    /**
+     * The delivery note this slip shipped on. Set once, at dispatch. Null on a closed slip means
+     * packed and waiting for a lorry.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "deliverynote_id")
+    private DeliveryNote deliveryNote;
 
     @Temporal(TemporalType.TIMESTAMP) private Date packedDate;
     @Temporal(TemporalType.TIMESTAMP) private Date closedDate;

@@ -27,6 +27,8 @@ public class DeliveryNoteDto {
     /** The pick this note shipped, when it came from one. Null for a direct dispatch. */
     private Long pickListId;
     private String pickNumber;
+    private Long packingSlipId;
+    private String packingSlipNumber;
 
     private List<DeliveryNoteItemDetailDto> items;
 }

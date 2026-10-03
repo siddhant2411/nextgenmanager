@@ -19,5 +19,7 @@ public record PackingSlipDto(
         String closedBy,
         String remarks,
         String createdBy,
+        Long deliveryNoteId,
+        String deliveryNoteNumber,
         List<PackageBoxDto> boxes
 ) {}

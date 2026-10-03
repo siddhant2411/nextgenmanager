@@ -160,6 +160,7 @@ public class PackingSlipServiceImpl implements PackingSlipService {
         if (slip.getBoxes().stream().noneMatch(b -> b.getDeletedDate() == null)) {
             throw new IllegalStateException(slip.getSlipNumber() + " has no boxes yet");
         }
+        requireEverythingPickedIsBoxed(slip);
         slip.setStatus(PackingSlipStatus.PACKED);
         slip.setPackedDate(new Date());
         slip.setPackedBy(currentUser());
@@ -218,6 +219,33 @@ public class PackingSlipServiceImpl implements PackingSlipService {
     private PackingSlip load(Long id) {
         return packingSlipRepository.findLiveById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Packing slip not found: " + id));
+    }
+
+    /**
+     * A packed slip accounts for every unit the pick took off the shelf. The delivery note ships
+     * the pick, so a slip that boxed less would close on a record of the consignment that the
+     * delivery note then contradicts — and once closed it can be neither added to nor cancelled.
+     * Goods that are not to go belong on a short pick, not left out of a box.
+     */
+    private void requireEverythingPickedIsBoxed(PackingSlip slip) {
+        List<String> unboxed = new ArrayList<>();
+        for (PickListLine line : slip.getPickList().getLines()) {
+            BigDecimal picked = line.getQuantityPicked() != null ? line.getQuantityPicked() : BigDecimal.ZERO;
+            if (picked.signum() <= 0) continue;
+            BigDecimal boxed = packageLineRepository.sumAlreadyPackaged(line.getId());
+            BigDecimal left = picked.subtract(boxed != null ? boxed : BigDecimal.ZERO);
+            if (left.signum() > 0) {
+                unboxed.add(String.format("%s of %s", left.stripTrailingZeros().toPlainString(),
+                        line.getInventoryItem().getItemCode()));
+            }
+        }
+        if (!unboxed.isEmpty()) {
+            throw new IllegalStateException(String.format(
+                    "%s cannot be marked packed: %s picked on %s %s not in a box yet. Box the rest, "
+                            + "or cancel the slip.",
+                    slip.getSlipNumber(), String.join(", ", unboxed),
+                    slip.getPickList().getPickNumber(), unboxed.size() == 1 ? "is" : "are"));
+        }
     }
 
     private PackageLine toPackageLine(PickList pick, PackageBox box, PackageLineRequest req,
@@ -380,6 +408,8 @@ public class PackingSlipServiceImpl implements PackingSlipService {
                 s.getPickList().getId(), s.getPickList().getPickNumber(),
                 s.getStatus(), s.getPackedDate(), s.getClosedDate(),
                 s.getPackedBy(), s.getClosedBy(), s.getRemarks(), s.getCreatedBy(),
+                s.getDeliveryNote() != null ? s.getDeliveryNote().getId() : null,
+                s.getDeliveryNote() != null ? s.getDeliveryNote().getDeliveryNoteNo() : null,
                 boxes);
     }
 

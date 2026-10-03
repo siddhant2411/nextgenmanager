@@ -116,10 +116,10 @@
             <div class="box-heading">
                 Box <span th:text="${box.boxNumber}">1</span>
                 <span th:if="${box.boxType}" th:text="'— ' + ${box.boxType}"></span>
-                <span th:if="${box.grossWeightKg}" th:text="' — Gross ' + ${box.grossWeightKg} + ' kg'"></span>
-                <span th:if="${box.netWeightKg}" th:text="' / Net ' + ${box.netWeightKg} + ' kg'"></span>
+                <span th:if="${box.grossWeightKg}" th:text="' — Gross ' + ${box.grossWeightKg.stripTrailingZeros().toPlainString()} + ' kg'"></span>
+                <span th:if="${box.netWeightKg}" th:text="' / Net ' + ${box.netWeightKg.stripTrailingZeros().toPlainString()} + ' kg'"></span>
                 <span th:if="${box.lengthCm != null and box.widthCm != null and box.heightCm != null}"
-                      th:text="' — ' + ${box.lengthCm} + ' x ' + ${box.widthCm} + ' x ' + ${box.heightCm} + ' cm'"></span>
+                      th:text="' — ' + ${box.lengthCm.stripTrailingZeros().toPlainString()} + ' x ' + ${box.widthCm.stripTrailingZeros().toPlainString()} + ' x ' + ${box.heightCm.stripTrailingZeros().toPlainString()} + ' cm'"></span>
             </div>
             <table class="content-table">
                 <thead>
@@ -136,7 +136,7 @@
                         <td th:text="${line.inventoryItem.name}">Product Name</td>
                         <td class="text-center" th:text="${line.inventoryItem.hsnCode}">8481</td>
                         <td class="text-center">
-                            <b th:text="${line.quantity}">10</b>
+                            <b th:text="${line.quantity.stripTrailingZeros().toPlainString()}">10</b>
                             <span th:text="${line.inventoryItem.uom}">NOS</span>
                         </td>
                     </tr>

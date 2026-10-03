@@ -71,6 +71,7 @@ class DeliveryNoteFromPickTest {
     @Mock private StoreInventoryRequestService storeInventoryRequestService;
     @Mock private PickListRepository pickListRepository;
     @Mock private InventoryInstanceRepository inventoryInstanceRepository;
+    @Mock private com.nextgenmanager.nextgenmanager.packaging.repository.PackingSlipRepository packingSlipRepository;
 
     @InjectMocks private DeliveryNoteServiceImpl service;
 
@@ -111,6 +112,9 @@ class DeliveryNoteFromPickTest {
         lenient().when(salesOrderRepository.findById(SO_ID)).thenReturn(Optional.of(order));
         lenient().when(inventoryItemRepository.findById(ITEM_ID)).thenReturn(Optional.of(valve));
         lenient().when(deliveryNoteRepository.findAll()).thenReturn(List.of());
+        // Most picks here were never packed. The packing tests override this.
+        lenient().when(packingSlipRepository.findLiveByPickList(any())).thenReturn(Optional.empty());
+        lenient().when(packingSlipRepository.findByDeliveryNote(any())).thenReturn(Optional.empty());
         lenient().when(deliveryNoteRepository.save(any(DeliveryNote.class))).thenAnswer(i -> {
             DeliveryNote saved = i.getArgument(0);
             saved.setId(900L);
@@ -170,6 +174,77 @@ class DeliveryNoteFromPickTest {
         dto.setDeliveryNoteNo("DC/2026/0001");
         dto.setDeliveryDate(new Date());
         return dto;
+    }
+
+    // ─── packing, once started, has to finish ─────────────────────────────────
+
+    private com.nextgenmanager.nextgenmanager.packaging.model.PackingSlip slip(
+            PickList p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus status) {
+        var s = new com.nextgenmanager.nextgenmanager.packaging.model.PackingSlip();
+        s.setId(9L);
+        s.setSlipNumber("PS/0001");
+        s.setPickList(p);
+        s.setSalesOrder(order);
+        s.setStatus(status);
+        return s;
+    }
+
+    @Test
+    void aPickNobodyStartedPackingShipsAsBefore() {
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(pick(PickListStatus.PICKED, "5", "3")));
+        allocateTwoUnits();
+
+        DeliveryNoteDto note = service.createDeliveryNote(shipPick());
+
+        assertThat(note.getItems()).hasSize(1);
+        verify(packingSlipRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void aPickStillBeingBoxedCannotShip() {
+        PickList p = pick(PickListStatus.PICKED, "5", "3");
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(p));
+        when(packingSlipRepository.findLiveByPickList(PICK_ID)).thenReturn(Optional.of(
+                slip(p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.DRAFT)));
+
+        assertThatThrownBy(() -> service.createDeliveryNote(shipPick()))
+                .isInstanceOf(InvalidSalesOrderStateException.class)
+                .hasMessageContaining("PK/0001 is being packed on PS/0001, which is still DRAFT")
+                .hasMessageContaining("Finish boxing it");
+        verify(deliveryNoteRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    /**
+     * PACKED is where a failed or unjudged package inspection holds a slip. Shipping from here is
+     * exactly the hole this closes: the goods would leave with the inspection still open.
+     */
+    @Test
+    void aPackedButUnclosedSlipCannotShip() {
+        PickList p = pick(PickListStatus.PICKED, "5", "3");
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(p));
+        when(packingSlipRepository.findLiveByPickList(PICK_ID)).thenReturn(Optional.of(
+                slip(p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.PACKED)));
+
+        assertThatThrownBy(() -> service.createDeliveryNote(shipPick()))
+                .isInstanceOf(InvalidSalesOrderStateException.class)
+                .hasMessageContaining("which is still PACKED")
+                .hasMessageContaining("has to pass or be waived first");
+        verify(deliveryNoteRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void aClosedSlipShipsAndRemembersTheDeliveryNote() {
+        PickList p = pick(PickListStatus.PICKED, "5", "3");
+        var closed = slip(p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.CLOSED);
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(p));
+        when(packingSlipRepository.findLiveByPickList(PICK_ID)).thenReturn(Optional.of(closed));
+        allocateTwoUnits();
+
+        service.createDeliveryNote(shipPick());
+
+        assertThat(closed.getDeliveryNote()).isNotNull();
+        assertThat(closed.getDeliveryNote().getDeliveryNoteNo()).isEqualTo("DC/2026/0001");
+        verify(packingSlipRepository).save(closed);
     }
 
     // ─── the pick decides what ships ──────────────────────────────────────────

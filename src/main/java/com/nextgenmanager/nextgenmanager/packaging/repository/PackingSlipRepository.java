@@ -35,4 +35,8 @@ public interface PackingSlipRepository extends JpaRepository<PackingSlip, Long> 
     @Query("SELECT s FROM PackingSlip s WHERE s.pickList.id = :pickListId AND s.deletedDate IS NULL "
             + "AND s.status <> com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.CANCELLED")
     Optional<PackingSlip> findLiveByPickList(@Param("pickListId") Long pickListId);
+
+    /** The slip a delivery note shipped, for showing the two documents against each other. */
+    @Query("SELECT s FROM PackingSlip s WHERE s.deliveryNote.id = :deliveryNoteId AND s.deletedDate IS NULL")
+    Optional<PackingSlip> findByDeliveryNote(@Param("deliveryNoteId") Long deliveryNoteId);
 }
