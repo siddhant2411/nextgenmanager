@@ -124,6 +124,11 @@ public class InventoryInstance {
     @JoinColumn(name = "storagelocation_id")
     private StorageLocation storageLocation;
 
+    /** The box this unit was packed into, if any. Cleared when the box's slip is cancelled. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "packageline_id")
+    private com.nextgenmanager.nextgenmanager.packaging.model.PackageLine packageLine;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "batchId")
     private BatchNumber batchNumber;

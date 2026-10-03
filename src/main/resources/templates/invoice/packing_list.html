@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Packing List</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -moz-box-sizing: border-box;
+            -webkit-box-sizing: border-box;
+        }
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+        body {
+            font-family: 'DejaVu Sans', sans-serif;
+            font-size: 12px;
+            color: #333;
+            line-height: 1.5;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+        }
+        .container {
+            width: 98%;
+            margin: 0 auto;
+            border: 1px solid #000;
+        }
+        table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            word-wrap: break-word;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            border-bottom: 1px solid #000;
+            padding: 15px;
+            background-color: #f8f9fa;
+            text-transform: uppercase;
+        }
+        .header-table { border-bottom: 1px solid #000; }
+        .header-table td { padding: 12px; vertical-align: top; }
+        .company-name { font-size: 18px; font-weight: bold; display: block; margin-bottom: 5px; }
+        .label { font-weight: bold; color: #555; }
+        .box-heading {
+            background-color: #f1f3f5;
+            font-weight: bold;
+            padding: 8px 12px;
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+        }
+        table.content-table { width: 100%; border-collapse: collapse; }
+        table.content-table th, table.content-table td { border: 1px solid #000; padding: 10px; text-align: left; }
+        table.content-table th { background-color: #f1f3f5; font-weight: bold; text-transform: uppercase; font-size: 11px; }
+        .text-right { text-align: right !important; }
+        .text-center { text-align: center !important; }
+        .footer-section { width: 100%; border-top: 1px solid #000; }
+        .footer-section td { padding: 10px; vertical-align: top; }
+        .signatory-box { height: 70px; border: 1px solid #000; margin-top: 10px; position: relative; }
+        .signatory-label { position: absolute; bottom: 5px; width: 100%; text-align: center; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">Packing List</div>
+
+        <table class="header-table">
+            <tr>
+                <td style="width: 50%; border-right: 1px solid #000;">
+                    <span class="company-name" th:text="${company.companyName}">Process Equipment Corporation</span>
+                    <span th:text="${company.street1}">123, Industrial Estate</span><br/>
+                    <span th:text="${company.city + ', ' + company.state + ' - ' + company.pinCode}">City, State - Pin</span><br/>
+                    <span class="label">GSTIN:</span> <span th:text="${company.gstNumber}">24ARJPM1573G1ZT</span>
+                </td>
+                <td style="width: 50%;">
+                    <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Packing List No:</span></td>
+                            <td style="padding: 2px;"><b th:text="${slip.slipNumber}">PS/0001</b></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Date:</span></td>
+                            <td style="padding: 2px;" th:text="${#dates.format(slip.creationDate, 'dd-MMM-yyyy')}">15-May-2026</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">SO Ref:</span></td>
+                            <td style="padding: 2px;" th:text="${slip.salesOrder.orderNumber}">SO-1001</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 2px;"><span class="label">Pick Ref:</span></td>
+                            <td style="padding: 2px;" th:text="${slip.pickList.pickNumber}">PK/0001</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td style="width: 50%; border-right: 1px solid #000; border-top: 1px solid #000;">
+                    <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Consignee (Ship to)</div>
+                    <b th:text="${slip.salesOrder.customer.companyName}">Customer Pvt Ltd</b><br/>
+                    <span th:text="${slip.salesOrder.deliveryAddress}">Delivery Address String</span><br/>
+                    <span class="label">GSTIN:</span> <span th:text="${slip.salesOrder.customer.gstNumber}">24XXXXX0000X1Z5</span>
+                </td>
+                <td style="width: 50%; border-top: 1px solid #000;">
+                    <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Summary</div>
+                    <span class="label">Total Boxes:</span> <span th:text="${slip.boxes.size()}">2</span><br/>
+                    <span class="label">Status:</span> <span th:text="${slip.status}">CLOSED</span><br/>
+                </td>
+            </tr>
+        </table>
+
+        <div th:each="box, boxIter : ${slip.boxes}">
+            <div class="box-heading">
+                Box <span th:text="${box.boxNumber}">1</span>
+                <span th:if="${box.boxType}" th:text="'— ' + ${box.boxType}"></span>
+                <span th:if="${box.grossWeightKg}" th:text="' — Gross ' + ${box.grossWeightKg} + ' kg'"></span>
+                <span th:if="${box.netWeightKg}" th:text="' / Net ' + ${box.netWeightKg} + ' kg'"></span>
+                <span th:if="${box.lengthCm != null and box.widthCm != null and box.heightCm != null}"
+                      th:text="' — ' + ${box.lengthCm} + ' x ' + ${box.widthCm} + ' x ' + ${box.heightCm} + ' cm'"></span>
+            </div>
+            <table class="content-table">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;">#</th>
+                        <th style="width: 55%;">Description of Goods</th>
+                        <th style="width: 20%;">HSN Code</th>
+                        <th style="width: 20%;">Quantity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="line, lineIter : ${box.lines}">
+                        <td class="text-center" th:text="${lineIter.index + 1}">1</td>
+                        <td th:text="${line.inventoryItem.name}">Product Name</td>
+                        <td class="text-center" th:text="${line.inventoryItem.hsnCode}">8481</td>
+                        <td class="text-center">
+                            <b th:text="${line.quantity}">10</b>
+                            <span th:text="${line.inventoryItem.uom}">NOS</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <p th:if="${box.shippingMarks}" style="margin: 6px 0 0;">
+                <span class="label">Shipping marks:</span> <span th:text="${box.shippingMarks}"></span>
+            </p>
+        </div>
+
+        <table class="footer-section">
+            <tr>
+                <td style="width: 60%;">
+                    <div class="label">Remarks:</div>
+                    <p th:text="${slip.remarks}">—</p>
+                </td>
+                <td style="width: 40%;">
+                    <div style="text-align: right;">
+                        For <b th:text="${company.companyName}">Process Equipment Corporation</b>
+                        <div class="signatory-box">
+                            <div class="signatory-label">Authorised Signatory</div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>

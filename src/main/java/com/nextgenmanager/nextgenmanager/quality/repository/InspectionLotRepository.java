@@ -43,4 +43,8 @@ public interface InspectionLotRepository extends JpaRepository<InspectionLot, Lo
     @Query("SELECT l FROM InspectionLot l WHERE l.goodsReceiptNote.id = :grnId "
             + "AND l.deletedDate IS NULL ORDER BY l.creationDate")
     List<InspectionLot> findLiveByGoodsReceiptNote(@Param("grnId") Long grnId);
+
+    @Query("SELECT l FROM InspectionLot l WHERE l.packageBox.id = :packageBoxId "
+            + "AND l.deletedDate IS NULL ORDER BY l.creationDate")
+    List<InspectionLot> findLiveByPackageBox(@Param("packageBoxId") Long packageBoxId);
 }
