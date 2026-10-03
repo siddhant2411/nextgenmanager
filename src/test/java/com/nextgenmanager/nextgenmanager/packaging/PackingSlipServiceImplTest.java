@@ -288,6 +288,48 @@ class PackingSlipServiceImplTest {
                 .hasMessageContaining("it is PACKED, not DRAFT");
     }
 
+    /**
+     * The delivery note ships the pick, so a slip that boxed less than was picked would close on a
+     * record the delivery note contradicts — and a closed slip can be neither added to nor cancelled.
+     */
+    @Test
+    void aSlipCannotBePackedWhilePickedUnitsAreNotInABox() {
+        slip.getBoxes().add(new PackageBox());
+        when(packageLineRepository.sumAlreadyPackaged(100L)).thenReturn(new BigDecimal("6"));
+        when(packageLineRepository.sumAlreadyPackaged(200L)).thenReturn(new BigDecimal("10"));
+
+        assertThatThrownBy(() -> service.pack(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("4 of BOLT-1")
+                .hasMessageContaining("is not in a box yet");
+        assertThat(slip.getStatus()).isEqualTo(PackingSlipStatus.DRAFT);
+    }
+
+    @Test
+    void aSlipIsPackedOnceEverythingPickedIsBoxed() {
+        slip.getBoxes().add(new PackageBox());
+        when(packageLineRepository.sumAlreadyPackaged(100L)).thenReturn(new BigDecimal("10"));
+        when(packageLineRepository.sumAlreadyPackaged(200L)).thenReturn(new BigDecimal("10"));
+        when(packingSlipRepository.save(any(PackingSlip.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.pack(1L);
+
+        assertThat(slip.getStatus()).isEqualTo(PackingSlipStatus.PACKED);
+    }
+
+    /** A line that came up empty on the pick has nothing to box, and must not hold the slip. */
+    @Test
+    void aLineThatWasNeverPickedDoesNotHoldTheSlip() {
+        slip.getBoxes().add(new PackageBox());
+        trackedLine.setQuantityPicked(BigDecimal.ZERO);
+        when(packageLineRepository.sumAlreadyPackaged(100L)).thenReturn(new BigDecimal("10"));
+        when(packingSlipRepository.save(any(PackingSlip.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.pack(1L);
+
+        assertThat(slip.getStatus()).isEqualTo(PackingSlipStatus.PACKED);
+    }
+
     @Test
     void aSlipWithNoBoxesCannotBePacked() {
         assertThatThrownBy(() -> service.pack(1L))

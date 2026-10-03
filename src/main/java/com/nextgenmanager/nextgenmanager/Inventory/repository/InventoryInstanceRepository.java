@@ -142,6 +142,10 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     @Query("SELECT i FROM InventoryInstance i WHERE i.pickListLine.id = :lineId AND i.deletedDate IS NULL")
     List<InventoryInstance> findByPickListLineId(@Param("lineId") Long lineId);
 
+    /** Every live unit a reservation request holds, whatever state it is in. */
+    @Query("SELECT i FROM InventoryInstance i WHERE i.inventoryRequest.id = :requestId AND i.deletedDate IS NULL")
+    List<InventoryInstance> findLiveByRequestId(@Param("requestId") Long requestId);
+
     /** Units packed into a box line. Used to release them again when a packing slip is cancelled. */
     @Query("SELECT i FROM InventoryInstance i WHERE i.packageLine.id = :lineId AND i.deletedDate IS NULL")
     List<InventoryInstance> findByPackageLineId(@Param("lineId") Long lineId);

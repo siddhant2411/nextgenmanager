@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class DeliveryNoteItemDto {
     private Integer inventoryItemId;
-    private int quantityDelivered;
+    private java.math.BigDecimal quantityDelivered;
     private java.util.List<Long> allocatedInstanceIds;
 
 }

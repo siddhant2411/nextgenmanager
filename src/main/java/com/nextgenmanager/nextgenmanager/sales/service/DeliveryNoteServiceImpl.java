@@ -10,6 +10,9 @@ import com.nextgenmanager.nextgenmanager.Inventory.model.PickListStatus;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.NumberSequenceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.PickListRepository;
+import com.nextgenmanager.nextgenmanager.packaging.model.PackingSlip;
+import com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus;
+import com.nextgenmanager.nextgenmanager.packaging.repository.PackingSlipRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -55,6 +58,7 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
     private final StoreInventoryRequestService storeInventoryRequestService;
     private final PickListRepository pickListRepository;
     private final InventoryInstanceRepository inventoryInstanceRepository;
+    private final PackingSlipRepository packingSlipRepository;
 
     private static final org.slf4j.Logger logger =
             org.slf4j.LoggerFactory.getLogger(DeliveryNoteServiceImpl.class);
@@ -77,8 +81,10 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                     "Cannot create Delivery Note for SO in status " + so.getStatus());
         }
 
+        PackingSlip slip = null;
         if (pick != null) {
             requireSameOrder(pick, so);
+            slip = requirePackingIsFinished(pick);
             dto.setItems(itemsFromPick(pick));
         } else {
             requireBypassIsDeliberate(so, dto);
@@ -124,17 +130,18 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             if (soItem != null && soItem.getItemRequestId() != null) continue;
 
             double available = settings.getAvailableQuantity();
-            if (available < itemDto.getQuantityDelivered()) {
+            double wanted = quantityOf(itemDto);
+            if (available < wanted) {
                 InventoryRequest storeRequest = storeInventoryRequestService.createOrFetchStoreRequest(
                         invItem.getInventoryItemId(),
-                        itemDto.getQuantityDelivered(),
+                        wanted,
                         dto.getSalesOrderId(),
                         soItem != null ? soItem.getId() : null,
                         currentUser);
                 shortfalls.add(new InsufficientStockForDeliveryException.ShortfallDetail(
                         invItem.getItemCode(),
                         invItem.getName(),
-                        itemDto.getQuantityDelivered(),
+                        wanted,
                         available,
                         storeRequest.getId(),
                         storeRequest.getReferenceNumber()));
@@ -173,18 +180,24 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             double dispatched = alreadyDispatched.getOrDefault(itemDto.getInventoryItemId(), 0.0);
             double remaining = ordered - dispatched;
 
-            if (itemDto.getQuantityDelivered() <= 0) {
+            java.math.BigDecimal quantity = itemDto.getQuantityDelivered();
+            if (quantity == null || quantity.signum() <= 0) {
                 throw new InvalidSalesOrderStateException("Quantity delivered must be > 0");
             }
-            if (itemDto.getQuantityDelivered() > remaining) {
+            // Compared as decimals to four places — the precision the column holds — so a quantity
+            // that is exactly the remainder is not refused over a floating-point crumb.
+            java.math.BigDecimal remainingExact = java.math.BigDecimal.valueOf(remaining)
+                    .setScale(4, java.math.RoundingMode.HALF_UP);
+            if (quantity.compareTo(remainingExact) > 0) {
                 throw new InvalidSalesOrderStateException(String.format(
-                        "Item %s: dispatch qty %d exceeds remaining %s (ordered %.0f, already dispatched %.0f)",
-                        invItem.getItemCode(), itemDto.getQuantityDelivered(), remaining, ordered, dispatched));
+                        "Item %s: dispatch qty %s exceeds remaining %s (ordered %s, already dispatched %s)",
+                        invItem.getItemCode(), plain(quantity), plain(remainingExact),
+                        plain(java.math.BigDecimal.valueOf(ordered)), plain(java.math.BigDecimal.valueOf(dispatched))));
             }
 
             DeliveryNoteItem item = new DeliveryNoteItem();
             item.setInventoryItem(invItem);
-            item.setQuantityDelivered(itemDto.getQuantityDelivered());
+            item.setQuantityDelivered(quantity);
             item.setDeliveryNote(dn);
 
             // DN number is set on the dn object before save, so it is available here
@@ -193,10 +206,10 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             List<InventoryInstance> consumedInstances;
             if (itemDto.getAllocatedInstanceIds() != null && !itemDto.getAllocatedInstanceIds().isEmpty()) {
                 consumedInstances = inventoryInstanceService.consumeSpecificInstances(
-                        invItem, itemDto.getAllocatedInstanceIds(), itemDto.getQuantityDelivered(), dnNo);
+                        invItem, itemDto.getAllocatedInstanceIds(), quantity.doubleValue(), dnNo);
             } else if (soItem.getItemRequestId() != null) {
                 consumedInstances = inventoryInstanceService.consumeInventoryInstance(
-                        invItem, (double) itemDto.getQuantityDelivered(), soItem.getItemRequestId(), dnNo);
+                        invItem, quantity.doubleValue(), soItem.getItemRequestId(), dnNo);
             } else {
                 ProductInventorySettings settings = invItem.getProductInventorySettings();
                 boolean isTracked = settings != null && (settings.isBatchTracked() || settings.isSerialTracked());
@@ -222,7 +235,7 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                         java.math.BigDecimal.valueOf(consumedInstances.size()), 5, java.math.RoundingMode.HALF_UP);
             }
             java.math.BigDecimal actualCost =
-                    avgCostPerUnit.multiply(java.math.BigDecimal.valueOf(itemDto.getQuantityDelivered()));
+                    avgCostPerUnit.multiply(quantity);
 
             // Write SALES_DISPATCH ledger entry so the Stock Ledger Report captures this outward movement
             // and accounting books COGS (Dr COGS / Cr Finished Goods) at the dispatched cost.
@@ -231,7 +244,7 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             try {
                 InventoryTransactionDTO dispatchDto = new InventoryTransactionDTO();
                 dispatchDto.setInventoryItemId(invItem.getInventoryItemId());
-                dispatchDto.setQuantity(itemDto.getQuantityDelivered());
+                dispatchDto.setQuantity(quantity.doubleValue());
                 dispatchDto.setTransactionType("SALES_DISPATCH");
                 dispatchDto.setReferenceType("DELIVERY_NOTE");
                 dispatchDto.setReferenceDocNo(dnNo);
@@ -274,6 +287,12 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             pickListRepository.save(pick);
             logger.info("Pick {} dispatched on {}", pick.getPickNumber(), saved.getDeliveryNoteNo());
         }
+        if (slip != null) {
+            slip.setDeliveryNote(saved);
+            slip.setUpdatedDate(new java.util.Date());
+            packingSlipRepository.save(slip);
+            logger.info("Packing slip {} shipped on {}", slip.getSlipNumber(), saved.getDeliveryNoteNo());
+        }
 
         // Recalculate SO status based on total dispatched vs ordered after this DN
         updateSoDispatchStatus(so, dto.getItems());
@@ -309,6 +328,41 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
         return pick;
     }
 
+    /**
+     * Once somebody has started boxing a pick, it ships only when that slip is closed — which is
+     * also when every box that was inspected has passed or been waived. A pick nobody has started
+     * packing ships as before: requiring a slip everywhere at once would stop every dispatch in a
+     * shop that does not pack through the system.
+     *
+     * <p>There is no flag to ship around an unfinished slip. The way out is to cancel it, which
+     * releases its boxes and stays on record.
+     *
+     * @return the closed slip being shipped, or null when the pick was never packed
+     */
+    private PackingSlip requirePackingIsFinished(PickList pick) {
+        PackingSlip slip = packingSlipRepository.findLiveByPickList(pick.getId()).orElse(null);
+        if (slip == null) return null;
+
+        if (slip.getStatus() != PackingSlipStatus.CLOSED) {
+            throw new InvalidSalesOrderStateException(String.format(
+                    "%s is being packed on %s, which is still %s. %s before shipping, or cancel "
+                            + "the slip to ship the pick unpacked.",
+                    pick.getPickNumber(), slip.getSlipNumber(), slip.getStatus(),
+                    slip.getStatus() == PackingSlipStatus.DRAFT
+                            ? "Finish boxing it and close the slip"
+                            : "Close the slip — any package inspection on it has to pass or be waived first"));
+        }
+        return slip;
+    }
+
+    private static double quantityOf(DeliveryNoteItemDto item) {
+        return item.getQuantityDelivered() != null ? item.getQuantityDelivered().doubleValue() : 0.0;
+    }
+
+    private static String plain(java.math.BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
+    }
+
     private void requireSameOrder(PickList pick, SalesOrder so) {
         if (!pick.getSalesOrder().getId().equals(so.getId())) {
             throw new InvalidSalesOrderStateException(String.format(
@@ -336,15 +390,6 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             // something to ship, and it is not an error either.
             if (picked.signum() <= 0) continue;
 
-            // Delivery note quantities are whole numbers. Truncating a picked 2.5 into a
-            // dispatched 2 would quietly lose half a unit between the shelf and the invoice.
-            if (picked.stripTrailingZeros().scale() > 0) {
-                throw new InvalidSalesOrderStateException(String.format(
-                        "%s: %s was picked as %s, but a delivery note can only carry whole units.",
-                        pick.getPickNumber(), line.getInventoryItem().getItemCode(),
-                        picked.toPlainString()));
-            }
-
             List<Long> instanceIds = inventoryInstanceRepository
                     .findByPickListLineId(line.getId()).stream()
                     .map(InventoryInstance::getId)
@@ -354,11 +399,11 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             if (existing == null) {
                 DeliveryNoteItemDto item = new DeliveryNoteItemDto();
                 item.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
-                item.setQuantityDelivered(picked.intValue());
+                item.setQuantityDelivered(picked);
                 item.setAllocatedInstanceIds(instanceIds);
                 byItem.put(item.getInventoryItemId(), item);
             } else {
-                existing.setQuantityDelivered(existing.getQuantityDelivered() + picked.intValue());
+                existing.setQuantityDelivered(existing.getQuantityDelivered().add(picked));
                 List<Long> merged = new ArrayList<>(existing.getAllocatedInstanceIds());
                 merged.addAll(instanceIds);
                 existing.setAllocatedInstanceIds(merged);
@@ -421,7 +466,8 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
                 .flatMap(dn -> dn.getItems() != null ? dn.getItems().stream() : java.util.stream.Stream.empty())
                 .collect(Collectors.groupingBy(
                         i -> i.getInventoryItem().getInventoryItemId(),
-                        Collectors.summingDouble(i -> (double) i.getQuantityDelivered())));
+                        Collectors.summingDouble(i -> i.getQuantityDelivered() != null
+                                ? i.getQuantityDelivered().doubleValue() : 0.0)));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -476,6 +522,10 @@ public class DeliveryNoteServiceImpl implements DeliveryNoteService {
             pickListRepository.findByDeliveryNote(dn.getId()).ifPresent(p -> {
                 dto.setPickListId(p.getId());
                 dto.setPickNumber(p.getPickNumber());
+            });
+            packingSlipRepository.findByDeliveryNote(dn.getId()).ifPresent(s -> {
+                dto.setPackingSlipId(s.getId());
+                dto.setPackingSlipNumber(s.getSlipNumber());
             });
         }
         if (dn.getItems() != null) {

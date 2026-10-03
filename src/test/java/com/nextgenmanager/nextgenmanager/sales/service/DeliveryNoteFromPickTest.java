@@ -71,6 +71,7 @@ class DeliveryNoteFromPickTest {
     @Mock private StoreInventoryRequestService storeInventoryRequestService;
     @Mock private PickListRepository pickListRepository;
     @Mock private InventoryInstanceRepository inventoryInstanceRepository;
+    @Mock private com.nextgenmanager.nextgenmanager.packaging.repository.PackingSlipRepository packingSlipRepository;
 
     @InjectMocks private DeliveryNoteServiceImpl service;
 
@@ -111,6 +112,9 @@ class DeliveryNoteFromPickTest {
         lenient().when(salesOrderRepository.findById(SO_ID)).thenReturn(Optional.of(order));
         lenient().when(inventoryItemRepository.findById(ITEM_ID)).thenReturn(Optional.of(valve));
         lenient().when(deliveryNoteRepository.findAll()).thenReturn(List.of());
+        // Most picks here were never packed. The packing tests override this.
+        lenient().when(packingSlipRepository.findLiveByPickList(any())).thenReturn(Optional.empty());
+        lenient().when(packingSlipRepository.findByDeliveryNote(any())).thenReturn(Optional.empty());
         lenient().when(deliveryNoteRepository.save(any(DeliveryNote.class))).thenAnswer(i -> {
             DeliveryNote saved = i.getArgument(0);
             saved.setId(900L);
@@ -172,6 +176,77 @@ class DeliveryNoteFromPickTest {
         return dto;
     }
 
+    // ─── packing, once started, has to finish ─────────────────────────────────
+
+    private com.nextgenmanager.nextgenmanager.packaging.model.PackingSlip slip(
+            PickList p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus status) {
+        var s = new com.nextgenmanager.nextgenmanager.packaging.model.PackingSlip();
+        s.setId(9L);
+        s.setSlipNumber("PS/0001");
+        s.setPickList(p);
+        s.setSalesOrder(order);
+        s.setStatus(status);
+        return s;
+    }
+
+    @Test
+    void aPickNobodyStartedPackingShipsAsBefore() {
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(pick(PickListStatus.PICKED, "5", "3")));
+        allocateTwoUnits();
+
+        DeliveryNoteDto note = service.createDeliveryNote(shipPick());
+
+        assertThat(note.getItems()).hasSize(1);
+        verify(packingSlipRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void aPickStillBeingBoxedCannotShip() {
+        PickList p = pick(PickListStatus.PICKED, "5", "3");
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(p));
+        when(packingSlipRepository.findLiveByPickList(PICK_ID)).thenReturn(Optional.of(
+                slip(p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.DRAFT)));
+
+        assertThatThrownBy(() -> service.createDeliveryNote(shipPick()))
+                .isInstanceOf(InvalidSalesOrderStateException.class)
+                .hasMessageContaining("PK/0001 is being packed on PS/0001, which is still DRAFT")
+                .hasMessageContaining("Finish boxing it");
+        verify(deliveryNoteRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    /**
+     * PACKED is where a failed or unjudged package inspection holds a slip. Shipping from here is
+     * exactly the hole this closes: the goods would leave with the inspection still open.
+     */
+    @Test
+    void aPackedButUnclosedSlipCannotShip() {
+        PickList p = pick(PickListStatus.PICKED, "5", "3");
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(p));
+        when(packingSlipRepository.findLiveByPickList(PICK_ID)).thenReturn(Optional.of(
+                slip(p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.PACKED)));
+
+        assertThatThrownBy(() -> service.createDeliveryNote(shipPick()))
+                .isInstanceOf(InvalidSalesOrderStateException.class)
+                .hasMessageContaining("which is still PACKED")
+                .hasMessageContaining("has to pass or be waived first");
+        verify(deliveryNoteRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void aClosedSlipShipsAndRemembersTheDeliveryNote() {
+        PickList p = pick(PickListStatus.PICKED, "5", "3");
+        var closed = slip(p, com.nextgenmanager.nextgenmanager.packaging.model.PackingSlipStatus.CLOSED);
+        when(pickListRepository.findLiveById(PICK_ID)).thenReturn(Optional.of(p));
+        when(packingSlipRepository.findLiveByPickList(PICK_ID)).thenReturn(Optional.of(closed));
+        allocateTwoUnits();
+
+        service.createDeliveryNote(shipPick());
+
+        assertThat(closed.getDeliveryNote()).isNotNull();
+        assertThat(closed.getDeliveryNote().getDeliveryNoteNo()).isEqualTo("DC/2026/0001");
+        verify(packingSlipRepository).save(closed);
+    }
+
     // ─── the pick decides what ships ──────────────────────────────────────────
 
     @Test
@@ -187,7 +262,7 @@ class DeliveryNoteFromPickTest {
                 eq(valve), ids.capture(), eq(3.0), eq("DC/2026/0001"));
         assertThat(ids.getValue()).containsExactly(101L, 102L);
         assertThat(note.getItems()).hasSize(1);
-        assertThat(note.getItems().get(0).getQuantityDelivered()).isEqualTo(3);
+        assertThat(note.getItems().get(0).getQuantityDelivered()).isEqualByComparingTo("3");
     }
 
     @Test
@@ -295,16 +370,34 @@ class DeliveryNoteFromPickTest {
                 .hasMessageContaining("Nothing was picked on PK/0001");
     }
 
+    /**
+     * Goods sold by weight are picked in fractions. The delivery note used to hold whole numbers,
+     * so the only honest thing it could do with 2.5 was refuse; it now ships exactly what was
+     * picked, and consumes exactly that much stock.
+     */
     @Test
-    void aFractionalPickIsRefusedRatherThanQuietlyTruncated() {
-        // A delivery note carries whole units. Shipping 2 of a picked 2.5 would lose half a unit
-        // between the shelf and the invoice, and nothing downstream would ever notice.
+    void aFractionalPickShipsExactlyWhatWasPicked() {
         when(pickListRepository.findLiveById(PICK_ID))
                 .thenReturn(Optional.of(pick(PickListStatus.PICKED, "5", "2.5")));
+        allocateTwoUnits();
+
+        DeliveryNoteDto note = service.createDeliveryNote(shipPick());
+
+        assertThat(note.getItems().get(0).getQuantityDelivered()).isEqualByComparingTo("2.5");
+        verify(inventoryInstanceService).consumeSpecificInstances(
+                eq(valve), any(), eq(2.5), eq("DC/2026/0001"));
+    }
+
+    @Test
+    void aFractionalPickCannotExceedWhatIsLeftOnTheOrder() {
+        // Ordered 5. A pick claiming 5.5 must be refused, and the message must show the decimals.
+        when(pickListRepository.findLiveById(PICK_ID))
+                .thenReturn(Optional.of(pick(PickListStatus.PICKED, "6", "5.5")));
+        allocateTwoUnits();
 
         assertThatThrownBy(() -> service.createDeliveryNote(shipPick()))
                 .isInstanceOf(InvalidSalesOrderStateException.class)
-                .hasMessageContaining("only carry whole units");
+                .hasMessageContaining("dispatch qty 5.5 exceeds remaining 5");
     }
 
     // ─── the direct-dispatch bypass ───────────────────────────────────────────
@@ -319,7 +412,7 @@ class DeliveryNoteFromPickTest {
         DeliveryNoteCreateDto byHand = new DeliveryNoteCreateDto();
         byHand.setSalesOrderId(SO_ID);
         byHand.setDeliveryNoteNo("DC/2026/0002");
-        byHand.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, 3, List.of(101L))));
+        byHand.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, new BigDecimal("3"), List.of(101L))));
 
         assertThatThrownBy(() -> service.createDeliveryNote(byHand))
                 .isInstanceOf(InvalidSalesOrderStateException.class)
@@ -337,7 +430,7 @@ class DeliveryNoteFromPickTest {
         counter.setSalesOrderId(SO_ID);
         counter.setDeliveryNoteNo("DC/2026/0003");
         counter.setDirectDispatch(true);
-        counter.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, 3, List.of(101L))));
+        counter.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, new BigDecimal("3"), List.of(101L))));
 
         DeliveryNoteDto note = service.createDeliveryNote(counter);
 

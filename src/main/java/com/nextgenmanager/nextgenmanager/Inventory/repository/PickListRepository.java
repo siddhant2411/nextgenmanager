@@ -45,8 +45,15 @@ public interface PickListRepository extends JpaRepository<PickList, Long> {
     /**
      * How much of an item is already spoken for by other live picks on this order. Cancelled picks
      * are excluded, since their stock went back on the shelf.
+     *
+     * <p>A pick still on the floor speaks for what it was asked to take. Once it is confirmed it
+     * speaks only for what was actually found: counting the asked quantity of a short pick would
+     * leave the shortfall owned by a pick that is finished, and nothing could ever pick it again.
      */
-    @Query("SELECT COALESCE(SUM(l.quantityToPick), 0) FROM PickList p JOIN p.lines l "
+    @Query("SELECT COALESCE(SUM(CASE WHEN p.status IN ("
+            + "com.nextgenmanager.nextgenmanager.Inventory.model.PickListStatus.PICKED, "
+            + "com.nextgenmanager.nextgenmanager.Inventory.model.PickListStatus.DISPATCHED) "
+            + "THEN l.quantityPicked ELSE l.quantityToPick END), 0) FROM PickList p JOIN p.lines l "
             + "WHERE p.salesOrder.id = :salesOrderId "
             + "AND l.inventoryItem.inventoryItemId = :itemId "
             + "AND p.deletedDate IS NULL "
