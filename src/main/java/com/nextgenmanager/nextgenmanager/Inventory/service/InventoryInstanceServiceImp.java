@@ -222,6 +222,50 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Override
     @Transactional
+    public BigDecimal releaseRequest(Long requestId) {
+        List<InventoryInstance> held = inventoryInstanceRepository.findLiveByRequestId(requestId);
+        if (held.isEmpty()) return BigDecimal.ZERO;
+
+        BigDecimal released = BigDecimal.ZERO;
+        List<InventoryInstance> backOnShelf = new ArrayList<>();
+        Integer itemId = null;
+        Date now = new Date();
+
+        for (InventoryInstance inst : held) {
+            if (inst.getInventoryItem() != null) itemId = inst.getInventoryItem().getInventoryItemId();
+
+            if (inst.isConsumed() || inst.getInventoryInstanceStatus() == InventoryInstanceStatus.CONSUMED) {
+                continue; // shipped already
+            }
+            if (inst.getInventoryInstanceStatus() == InventoryInstanceStatus.PENDING) {
+                // A placeholder for stock that never existed. With the demand gone there is
+                // nothing for it to stand in for.
+                inst.setDeletedDate(now);
+                inventoryInstanceRepository.save(inst);
+                continue;
+            }
+            if (isReservedStatus(inst.getInventoryInstanceStatus())) {
+                backOnShelf.add(inst);
+                released = released.add(BigDecimal.valueOf(qty(inst)));
+            }
+        }
+
+        // The status flip and the per-warehouse mirror live in one place; reuse it.
+        revertInventoryInstances(backOnShelf);
+        for (InventoryInstance inst : backOnShelf) {
+            inst.setInventoryRequest(null);
+            inst.setPickListLine(null);
+            inst.setPackageLine(null);
+        }
+        inventoryInstanceRepository.saveAll(backOnShelf);
+
+        if (itemId != null) updateItemAvailability(itemId);
+        logger.info("Released reservation request {}: {} unit(s) back to free stock", requestId, released);
+        return released;
+    }
+
+    @Override
+    @Transactional
     public List<InventoryInstance> createInstances(InventoryItem item, double qty, InventoryInstance template) {
         try {
             InventoryItem dbItem = inventoryItemRepository.findByActiveId(item.getInventoryItemId());

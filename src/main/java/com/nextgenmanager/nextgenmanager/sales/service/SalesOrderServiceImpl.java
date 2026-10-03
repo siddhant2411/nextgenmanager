@@ -57,6 +57,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final EnquiryRepository enquiryRepository;
     private final InventoryItemRepository inventoryItemRepository;
     private final InventoryInstanceService inventoryInstanceService;
+    private final com.nextgenmanager.nextgenmanager.Inventory.repository.PickListRepository pickListRepository;
     private final SalesOrderMapper salesOrderMapper;
     private final SalesOrderNumberGenerator orderNumberGenerator;
     private final SalesOrderTaxCalculator taxCalculator;
@@ -343,6 +344,40 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         }
     }
 
+    /**
+     * A pick that is still live has units on a trolley, or about to be. Cancelling the order
+     * underneath it would put those units back into free stock while somebody is holding them, so
+     * the pick has to be cancelled first — which is also what releases its allocation.
+     */
+    private void requireNoPickInHand(SalesOrder so) {
+        List<String> live = pickListRepository.findLiveBySalesOrder(so.getId()).stream()
+                .filter(p -> p.getStatus() != com.nextgenmanager.nextgenmanager.Inventory.model.PickListStatus.CANCELLED
+                        && p.getStatus() != com.nextgenmanager.nextgenmanager.Inventory.model.PickListStatus.DISPATCHED)
+                .map(p -> p.getPickNumber() + " (" + p.getStatus() + ")")
+                .toList();
+        if (!live.isEmpty()) {
+            throw new InvalidSalesOrderStateException(String.format(
+                    "SO %s cannot be cancelled while %s still open. Cancel the pick first.",
+                    so.getOrderNumber(),
+                    live.size() == 1 ? "pick " + live.get(0) + " is" : "picks " + String.join(", ", live) + " are"));
+        }
+    }
+
+    /**
+     * The other half of {@link #reserveInventory}. Approval commits stock to the order; without
+     * this, cancelling left it committed for ever — reserved for an order that no longer exists,
+     * and invisible to every other order that could have used it.
+     */
+    private void releaseReservations(SalesOrder so) {
+        for (SalesOrderItem item : so.getItems()) {
+            if (item.getItemRequestId() == null) continue;
+            java.math.BigDecimal released = inventoryInstanceService.releaseRequest(item.getItemRequestId());
+            logger.info("SO {} cancel: released {} of {}", so.getOrderNumber(), released,
+                    item.getInventoryItem() != null ? item.getInventoryItem().getItemCode() : "?");
+            item.setItemRequestId(null);
+        }
+    }
+
     // ---- Approval workflow ----
 
     @Override
@@ -422,6 +457,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             throw new InvalidSalesOrderStateException(
                     "SO " + so.getOrderNumber() + " cannot be cancelled in status " + so.getStatus());
         }
+        requireNoPickInHand(so);
+        releaseReservations(so);
+
         so.setStatus(SalesOrderStatus.CANCELLED);
         so.setRejectionReason(dto != null ? dto.getReason() : null);
         logger.info("SO {} cancelled", id);

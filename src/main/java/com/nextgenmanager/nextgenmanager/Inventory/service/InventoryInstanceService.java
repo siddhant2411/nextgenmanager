@@ -46,6 +46,15 @@ public interface InventoryInstanceService {
 
     public void revertInventoryInstances(List<InventoryInstance> instances);
 
+    /**
+     * Gives back everything a reservation request still holds: reserved units return to free
+     * stock, and placeholders raised for a shortfall are withdrawn. Units already consumed are left
+     * alone — they shipped, and that is a fact.
+     *
+     * @return how many units went back on the shelf
+     */
+    public java.math.BigDecimal releaseRequest(Long requestId);
+
     public Page<GroupedInventoryItem> getGroupedInventoryInstances(int page, int size, String sortBy, String sortDir,
                                                                    String queryItemCode, String queryItemName, String queryHsnCode,
                                                                    Double totalQuantityCondition, String filterType, UOM queryUOM,
