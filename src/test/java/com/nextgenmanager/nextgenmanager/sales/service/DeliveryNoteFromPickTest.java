@@ -262,7 +262,7 @@ class DeliveryNoteFromPickTest {
                 eq(valve), ids.capture(), eq(3.0), eq("DC/2026/0001"));
         assertThat(ids.getValue()).containsExactly(101L, 102L);
         assertThat(note.getItems()).hasSize(1);
-        assertThat(note.getItems().get(0).getQuantityDelivered()).isEqualTo(3);
+        assertThat(note.getItems().get(0).getQuantityDelivered()).isEqualByComparingTo("3");
     }
 
     @Test
@@ -370,16 +370,34 @@ class DeliveryNoteFromPickTest {
                 .hasMessageContaining("Nothing was picked on PK/0001");
     }
 
+    /**
+     * Goods sold by weight are picked in fractions. The delivery note used to hold whole numbers,
+     * so the only honest thing it could do with 2.5 was refuse; it now ships exactly what was
+     * picked, and consumes exactly that much stock.
+     */
     @Test
-    void aFractionalPickIsRefusedRatherThanQuietlyTruncated() {
-        // A delivery note carries whole units. Shipping 2 of a picked 2.5 would lose half a unit
-        // between the shelf and the invoice, and nothing downstream would ever notice.
+    void aFractionalPickShipsExactlyWhatWasPicked() {
         when(pickListRepository.findLiveById(PICK_ID))
                 .thenReturn(Optional.of(pick(PickListStatus.PICKED, "5", "2.5")));
+        allocateTwoUnits();
+
+        DeliveryNoteDto note = service.createDeliveryNote(shipPick());
+
+        assertThat(note.getItems().get(0).getQuantityDelivered()).isEqualByComparingTo("2.5");
+        verify(inventoryInstanceService).consumeSpecificInstances(
+                eq(valve), any(), eq(2.5), eq("DC/2026/0001"));
+    }
+
+    @Test
+    void aFractionalPickCannotExceedWhatIsLeftOnTheOrder() {
+        // Ordered 5. A pick claiming 5.5 must be refused, and the message must show the decimals.
+        when(pickListRepository.findLiveById(PICK_ID))
+                .thenReturn(Optional.of(pick(PickListStatus.PICKED, "6", "5.5")));
+        allocateTwoUnits();
 
         assertThatThrownBy(() -> service.createDeliveryNote(shipPick()))
                 .isInstanceOf(InvalidSalesOrderStateException.class)
-                .hasMessageContaining("only carry whole units");
+                .hasMessageContaining("dispatch qty 5.5 exceeds remaining 5");
     }
 
     // ─── the direct-dispatch bypass ───────────────────────────────────────────
@@ -394,7 +412,7 @@ class DeliveryNoteFromPickTest {
         DeliveryNoteCreateDto byHand = new DeliveryNoteCreateDto();
         byHand.setSalesOrderId(SO_ID);
         byHand.setDeliveryNoteNo("DC/2026/0002");
-        byHand.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, 3, List.of(101L))));
+        byHand.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, new BigDecimal("3"), List.of(101L))));
 
         assertThatThrownBy(() -> service.createDeliveryNote(byHand))
                 .isInstanceOf(InvalidSalesOrderStateException.class)
@@ -412,7 +430,7 @@ class DeliveryNoteFromPickTest {
         counter.setSalesOrderId(SO_ID);
         counter.setDeliveryNoteNo("DC/2026/0003");
         counter.setDirectDispatch(true);
-        counter.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, 3, List.of(101L))));
+        counter.setItems(List.of(new DeliveryNoteItemDto(ITEM_ID, new BigDecimal("3"), List.of(101L))));
 
         DeliveryNoteDto note = service.createDeliveryNote(counter);
 

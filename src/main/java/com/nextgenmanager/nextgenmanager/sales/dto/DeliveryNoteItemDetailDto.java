@@ -11,7 +11,7 @@ public class DeliveryNoteItemDetailDto {
     private Long id;
     private Integer inventoryItemId;
     private String itemName;
-    private int quantityDelivered;
+    private java.math.BigDecimal quantityDelivered;
     private java.util.List<String> batchNumbers;
     private java.util.List<String> serialNumbers;
 }

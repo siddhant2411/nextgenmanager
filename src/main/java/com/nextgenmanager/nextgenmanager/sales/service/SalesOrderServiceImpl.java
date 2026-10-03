@@ -518,7 +518,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                         
                         // Fallback: If actualCost is null/zero, try to sum from instances or standard cost
                         if (dnItemCost == null || dnItemCost.compareTo(BigDecimal.ZERO) <= 0) {
-                            dnItemCost = calculateItemCostFallback(item.getInventoryItem(), (double) item.getQuantityDelivered());
+                            dnItemCost = calculateItemCostFallback(item.getInventoryItem(), item.getQuantityDelivered().doubleValue());
                         }
 
                         totalCost = totalCost.add(dnItemCost);
@@ -541,7 +541,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                         if (dn.getItems() != null) {
                             for (DeliveryNoteItem dni : dn.getItems()) {
                                 if (dni.getInventoryItem() != null && dni.getInventoryItem().equals(soItem.getInventoryItem())) {
-                                    dispatchedQty = dispatchedQty.add( BigDecimal.valueOf(dni.getQuantityDelivered()));
+                                    dispatchedQty = dispatchedQty.add(dni.getQuantityDelivered());
                                 }
                             }
                         }
@@ -650,7 +650,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                         for (DeliveryNoteItem dni : dn.getItems()) {
                             if (dni.getInventoryItem() != null && 
                                 dni.getInventoryItem().getInventoryItemId() == itemDto.getInventoryItem().getInventoryItemId()) {
-                                dispatched = dispatched.add(BigDecimal.valueOf(dni.getQuantityDelivered()));
+                                dispatched = dispatched.add(dni.getQuantityDelivered());
                             }
                         }
                     }

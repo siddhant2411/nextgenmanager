@@ -26,7 +26,12 @@ public class DeliveryNoteItem {
     @JoinColumn(name = "inventory_item_id")
     private InventoryItem inventoryItem;
 
-    private int quantityDelivered;
+    /**
+     * Decimal since V176. It was a whole number, which meant a pick of 2.5 kg could not be shipped
+     * at all — the choice was to refuse it or to truncate it, and truncating loses stock silently.
+     */
+    @Column(precision = 18, scale = 4, nullable = false)
+    private java.math.BigDecimal quantityDelivered = java.math.BigDecimal.ZERO;
 
     @OneToMany(fetch = FetchType.LAZY)
     @JoinColumn(name = "delivery_note_item_id")

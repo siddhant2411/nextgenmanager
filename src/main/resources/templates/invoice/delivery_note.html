@@ -129,7 +129,7 @@
                     </td>
                     <td class="text-center" th:text="${item.inventoryItem.hsnCode}">8481</td>
                     <td class="text-center">
-                        <b th:text="${item.quantityDelivered}">10</b> 
+                        <b th:text="${item.quantityDelivered.stripTrailingZeros().toPlainString()}">10</b> 
                         <span th:text="${item.inventoryItem.uom}">NOS</span>
                     </td>
                 </tr>
