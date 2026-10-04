@@ -362,10 +362,13 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         if (lines.isEmpty()) {
             return WorkOrderStatus.COMPLETED;
         }
+        // A line that made something and has no operation left to run is finished, even when rejects or
+        // scrap left it short of the plan — the shortfall is visible in the quantities. Requiring the
+        // full planned quantity meant any loss on the floor left the order IN_PROGRESS for ever.
         boolean allComplete = lines.stream().allMatch(l -> {
             BigDecimal planned = l.getPlannedQuantity() != null ? l.getPlannedQuantity() : BigDecimal.ZERO;
             BigDecimal done = l.getCompletedQuantity() != null ? l.getCompletedQuantity() : BigDecimal.ZERO;
-            return done.compareTo(planned) >= 0;
+            return done.compareTo(planned) >= 0 || done.signum() > 0;
         });
         return allComplete ? WorkOrderStatus.COMPLETED : WorkOrderStatus.IN_PROGRESS;
     }
@@ -1763,20 +1766,26 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                         .allMatch(d -> d.getStatus() == OperationStatus.COMPLETED);
 
                 if (allComplete) {
-                    // Never revert an operation that is already past the READY gate
-                    if (dep.getStatus() == OperationStatus.COMPLETED
-                            || dep.getStatus() == OperationStatus.IN_PROGRESS) {
+                    // A finished operation is left alone.
+                    if (dep.getStatus() == OperationStatus.COMPLETED) {
                         logger.info("Skipping unlock for op [{} - {}] — already {}",
                                 dep.getSequence(), dep.getOperationName(), dep.getStatus());
                         continue;
                     }
-                    dep.setStatus(OperationStatus.READY);
-                    // Every dependency is complete, so the operation can run its full quantity —
-                    // its own, which is its line's, not the work order's total across all lines.
-                    // Raised rather than assigned so an over-completion that already forwarded
-                    // more than the planned quantity is not clipped back.
+                    // Never revert an operation that has already started, but still release the last
+                    // units to it: skipping it here left its input gate one unit short for ever.
+                    if (dep.getStatus() != OperationStatus.IN_PROGRESS) {
+                        dep.setStatus(OperationStatus.READY);
+                    }
+                    // Every dependency is complete, so the operation can run what they actually
+                    // delivered, up to its own planned quantity (its line's, not the work order's
+                    // total across all lines). Raised rather than assigned so an over-completion that
+                    // already forwarded more than planned is not clipped back.
+                    BigDecimal delivered = allDeps.stream()
+                            .map(d -> d.getCompletedQuantity() != null ? d.getCompletedQuantity() : BigDecimal.ZERO)
+                            .min(BigDecimal::compareTo).orElse(dep.getPlannedQuantity());
                     dep.setAvailableInputQuantity(
-                            dep.getAvailableInputQuantity().max(dep.getPlannedQuantity()));
+                            dep.getAvailableInputQuantity().max(dep.getPlannedQuantity().min(delivered)));
                     dep.setDependencyResolvedDate(new Date());
                     workOrderOperationRepository.save(dep);
 
@@ -2400,7 +2409,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             logger.info("Op [{} - {}] over-completion: extra {} forwarded to dependents for WO {}",
                     operation.getSequence(), operation.getOperationName(),
                     batchQty, workOrder.getWorkOrderNumber());
-        } else if (newCompleted.compareTo(operation.getPlannedQuantity()) >= 0) {
+        } else if (isOperationFullyProcessed(operation, workOrder, newCompleted)) {
             operation.setStatus(OperationStatus.COMPLETED);
             operation.setActualEndDate(new Date());
             unlockEligibleDependents(operation, newCompleted, workOrder);
@@ -2452,6 +2461,45 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         );
 
         return warnings;
+    }
+
+    /**
+     * An operation is finished when every unit it was given has been dealt with — made good, rejected
+     * or scrapped — not only when the good count reaches the plan. Judging by good units alone meant
+     * one scrapped piece left an operation short for ever, so the order could never be completed.
+     *
+     * <p>The first operation of a line is given the planned quantity. A later operation is given what
+     * its predecessors passed on, so it can only be judged finished once those predecessors are.
+     */
+    private boolean isOperationFullyProcessed(WorkOrderOperation op, WorkOrder workOrder, BigDecimal newCompleted) {
+        BigDecimal planned = op.getPlannedQuantity();
+        if (newCompleted.compareTo(planned) >= 0) {
+            return true;
+        }
+        BigDecimal scrapped = op.getScrappedQuantity() != null ? op.getScrappedQuantity() : BigDecimal.ZERO;
+        BigDecimal rejected = op.getRejectedQuantity() != null ? op.getRejectedQuantity() : BigDecimal.ZERO;
+        BigDecimal processed = newCompleted.add(scrapped).add(rejected);
+        if (processed.signum() <= 0) {
+            return false;
+        }
+
+        BigDecimal target = planned;
+        List<WorkOrderOperation> upstream;
+        if (op.getDependsOnOperationIds() != null && !op.getDependsOnOperationIds().isEmpty()) {
+            upstream = workOrderOperationRepository.findAllById(op.getDependsOnOperationIds());
+        } else {
+            WorkOrderOperation previous = workOrderOperationRepository
+                    .findTopByWorkOrderLineAndSequenceLessThanOrderBySequenceDesc(op.getWorkOrderLine(), op.getSequence());
+            upstream = previous == null ? List.of() : List.of(previous);
+        }
+        if (!upstream.isEmpty()) {
+            if (!upstream.stream().allMatch(d -> d.getStatus() == OperationStatus.COMPLETED)) {
+                return false; // more input may still arrive
+            }
+            BigDecimal given = op.getAvailableInputQuantity().add(extraInputFromReorders(op, workOrder));
+            target = planned.min(given);
+        }
+        return processed.compareTo(target) >= 0;
     }
 
     /**
@@ -3117,16 +3165,36 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             BigDecimal lineCost = materialCostOf(lineMaterials).add(operationCostOf(lineOperations));
             BigDecimal realUnitCost = lineCost.divide(lineCompleted, 2, RoundingMode.HALF_UP);
 
-            com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest addInvReq =
-                    new com.nextgenmanager.nextgenmanager.Inventory.dto.AddInventoryRequest();
-            addInvReq.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
-            addInvReq.setProcurementDecision(
-                    com.nextgenmanager.nextgenmanager.Inventory.model.ProcurementDecision.WORK_ORDER);
-            addInvReq.setReferenceId((long) workOrder.getId());
-            addInvReq.setQuantity(lineCompleted.doubleValue());
-            addInvReq.setCostPerUnit(realUnitCost.doubleValue());
-            addInvReq.setCreatedBy("System");
-            inventoryInstanceService.addInventory(addInvReq);
+            // Same PRODUCE movement as a normal completion. The earlier addInventory path wrote a stock
+            // row with no WORK_ORDER reference, so the accounting listener never posted the Dr Finished
+            // Goods / Cr WIP journal and the material consumed stayed in WIP for ever.
+            InventoryTransactionDTO produceDto = new InventoryTransactionDTO();
+            produceDto.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
+            produceDto.setQuantity(lineCompleted.doubleValue());
+            produceDto.setCostPerUnit(realUnitCost.doubleValue());
+            produceDto.setTransactionType("PRODUCE");
+            produceDto.setReferenceType("WORK_ORDER");
+            produceDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+            try {
+                produceDto.setCreatedBy(
+                        org.springframework.security.core.context.SecurityContextHolder
+                                .getContext().getAuthentication().getName());
+            } catch (Exception ignored) { }
+            inventoryTransactionService.produceStock(produceDto);
+
+            if (workOrder.getSalesOrder() != null) {
+                try {
+                    InventoryTransactionDTO reserveDto = new InventoryTransactionDTO();
+                    reserveDto.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
+                    reserveDto.setQuantity(lineCompleted.doubleValue());
+                    reserveDto.setTransactionType("RESERVE");
+                    reserveDto.setReferenceDocNo(workOrder.getSalesOrder().getOrderNumber());
+                    inventoryTransactionService.reserveStock(reserveDto);
+                } catch (Exception e) {
+                    logger.error("Auto-reserve for SalesOrder failed on short-close (WO {} line {}): {}",
+                            workOrder.getWorkOrderNumber(), line.getLineNumber(), e.getMessage());
+                }
+            }
 
             logger.info("Short-close: Added {} units of {} to inventory for WorkOrder {} line {} with cost ₹{}",
                     lineCompleted, line.getInventoryItem().getItemCode(),

@@ -33,8 +33,27 @@ public class VendorPaymentServiceImpl implements VendorPaymentService {
                 .orElseThrow(() -> new IllegalArgumentException("Vendor invoice not found: " + vendorInvoiceId));
 
         BigDecimal tds = dto.getTdsAmount() != null ? dto.getTdsAmount() : BigDecimal.ZERO;
+        if (tds.signum() > 0 && dto.getTdsRate() != null && invoice.getGrandTotal() != null
+                && invoice.getGrandTotal().signum() > 0 && invoice.getSubtotal() != null) {
+            // TDS is on the value of the supply, not on the GST charged on top of it. The payment is
+            // gross, so only the share of it that is the taxable value carries the deduction; working
+            // on the whole payment deducted ~18% too much on a 18%-GST bill.
+            BigDecimal taxableShare = invoice.getSubtotal().divide(invoice.getGrandTotal(), 8, java.math.RoundingMode.HALF_UP);
+            tds = dto.getAmount().multiply(taxableShare).multiply(dto.getTdsRate())
+                    .divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
+        }
         if (tds.compareTo(dto.getAmount()) > 0) {
             throw new IllegalArgumentException("TDS amount cannot exceed the payment amount");
+        }
+
+        if (dto.getAmount() == null || dto.getAmount().signum() <= 0) {
+            throw new IllegalArgumentException("Payment amount must be greater than zero");
+        }
+        BigDecimal alreadyPaid = paymentRepository.sumAmountByVendorInvoiceId(vendorInvoiceId);
+        BigDecimal balance = invoice.getGrandTotal().subtract(alreadyPaid == null ? BigDecimal.ZERO : alreadyPaid);
+        if (dto.getAmount().compareTo(balance.add(new BigDecimal("0.01"))) > 0) {
+            throw new IllegalArgumentException("Payment of " + dto.getAmount().setScale(2, java.math.RoundingMode.HALF_UP)
+                    + " exceeds the balance due of " + balance.max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP));
         }
 
         VendorPayment payment = new VendorPayment();

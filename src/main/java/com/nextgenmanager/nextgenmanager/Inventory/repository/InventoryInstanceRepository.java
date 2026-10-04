@@ -138,6 +138,23 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     """, nativeQuery = true)
     List<Object[]> sumByWarehouse(@Param("inventoryItemId") int inventoryItemId);
 
+    /**
+     * Units that can be picked without anyone naming them: in the given warehouse, live, not already
+     * claimed by a pick, in a state that still exists on the shelf, and that passed (or were waived
+     * past) inspection. Units reserved for the sales order line come first, then oldest first.
+     */
+    @Query("SELECT i FROM InventoryInstance i WHERE i.inventoryItem.inventoryItemId = :itemId "
+            + "AND i.warehouse.id = :warehouseId AND i.deletedDate IS NULL AND i.pickListLine IS NULL "
+            + "AND i.isConsumed = false "
+            + "AND i.inventoryInstanceStatus IN (com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstanceStatus.AVAILABLE, "
+            + "com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstanceStatus.BOOKED) "
+            + "AND i.qualityStatus IN (com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus.PASSED, "
+            + "com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus.WAIVED) "
+            + "ORDER BY CASE WHEN i.salesOrderItemId = :soItemId THEN 0 ELSE 1 END, i.entryDate ASC, i.id ASC")
+    List<InventoryInstance> findPickableForLine(@Param("itemId") int itemId,
+                                                @Param("warehouseId") Long warehouseId,
+                                                @Param("soItemId") Long soItemId);
+
     /** Units allocated to a pick line. Used to release them again when a pick is cancelled. */
     @Query("SELECT i FROM InventoryInstance i WHERE i.pickListLine.id = :lineId AND i.deletedDate IS NULL")
     List<InventoryInstance> findByPickListLineId(@Param("lineId") Long lineId);

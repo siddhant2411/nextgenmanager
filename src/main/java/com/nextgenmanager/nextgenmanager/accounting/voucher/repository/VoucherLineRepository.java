@@ -22,7 +22,7 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
         SELECT vl.ledgerAccount.id, COALESCE(SUM(vl.drAmount), 0), COALESCE(SUM(vl.crAmount), 0)
         FROM VoucherLine vl
         JOIN vl.voucher v
-        WHERE v.status = 'POSTED'
+        WHERE v.status IN ('POSTED', 'REVERSED')
           AND v.deletedDate IS NULL
           AND vl.deletedDate IS NULL
           AND v.date <= :asOf
@@ -39,7 +39,7 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
         FROM VoucherLine vl
         JOIN vl.voucher v
         WHERE vl.ledgerAccount.id = :accountId
-          AND v.status = 'POSTED'
+          AND v.status IN ('POSTED', 'REVERSED')
           AND v.deletedDate IS NULL
           AND vl.deletedDate IS NULL
           AND v.date BETWEEN :from AND :to
@@ -60,7 +60,7 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
         JOIN vl.voucher v
         WHERE vl.ledgerAccount.subLedgerType = :type
           AND vl.ledgerAccount.deletedDate IS NULL
-          AND v.status = 'POSTED'
+          AND v.status IN ('POSTED', 'REVERSED')
           AND v.deletedDate IS NULL
           AND vl.deletedDate IS NULL
           AND v.date <= :asOf
@@ -77,7 +77,7 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
         SELECT vl.ledgerAccount.code, COALESCE(SUM(vl.drAmount), 0), COALESCE(SUM(vl.crAmount), 0)
         FROM VoucherLine vl
         JOIN vl.voucher v
-        WHERE v.status = 'POSTED'
+        WHERE v.status IN ('POSTED', 'REVERSED')
           AND v.deletedDate IS NULL
           AND vl.deletedDate IS NULL
           AND v.date BETWEEN :from AND :to
@@ -96,7 +96,7 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
         SELECT vl.ledgerAccount.code, COALESCE(SUM(vl.drAmount), 0), COALESCE(SUM(vl.crAmount), 0)
         FROM VoucherLine vl
         JOIN vl.voucher v
-        WHERE v.status = 'POSTED'
+        WHERE v.status IN ('POSTED', 'REVERSED')
           AND v.deletedDate IS NULL
           AND vl.deletedDate IS NULL
           AND v.date <= :asOf

@@ -95,7 +95,16 @@ public class VendorInvoiceServiceImpl implements VendorInvoiceService {
 
         // Mismatch checks
         BigDecimal tolerance = BigDecimal.ONE;
-        boolean amountMismatch = po.getGrandTotal().subtract(invoice.getGrandTotal()).abs()
+        // A bill for a part delivery should be compared with what was delivered, not with the whole
+        // order. The accepted value of the linked receipt is grossed up by the order's own tax factor.
+        BigDecimal expected = po.getGrandTotal();
+        if (grn != null && po.getSubtotal() != null && po.getSubtotal().signum() > 0
+                && po.getGrandTotal() != null) {
+            BigDecimal taxFactor = po.getGrandTotal().divide(po.getSubtotal(), 6, java.math.RoundingMode.HALF_UP);
+            expected = BigDecimal.valueOf(grn.getTotalAmount()).multiply(taxFactor)
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+        }
+        boolean amountMismatch = expected.subtract(invoice.getGrandTotal()).abs()
                 .compareTo(tolerance) > 0;
         invoice.setAmountMismatch(amountMismatch);
 

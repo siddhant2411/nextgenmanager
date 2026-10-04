@@ -136,6 +136,19 @@ public class FinancialYearServiceImpl implements FinancialYearService {
         if (fyRepo.findByStartDateLessThanEqualAndEndDateGreaterThanEqual(date, date).isPresent()) {
             return;
         }
+        // Auto-provisioning exists so the next year opens itself at roll-over. It must not turn a typo
+        // (2025 for 2026) into a whole new year nobody asked for: once any year exists, only the year
+        // directly after the latest one is created on demand; anything earlier or further out has to
+        // be created deliberately.
+        List<FinancialYear> existing = fyRepo.findAll();
+        if (!existing.isEmpty()) {
+            LocalDate earliest = existing.stream().map(FinancialYear::getStartDate).min(LocalDate::compareTo).get();
+            LocalDate latest = existing.stream().map(FinancialYear::getEndDate).max(LocalDate::compareTo).get();
+            if (date.isBefore(earliest) || date.isAfter(latest.plusYears(1))) {
+                throw new IllegalArgumentException("No financial year covers " + date
+                        + ". Check the date, or create the year under Accounting → Masters → Financial Years.");
+            }
+        }
         int fyStartMonth = configuredFyStartMonth();
         int startYear = date.getMonthValue() >= fyStartMonth ? date.getYear() : date.getYear() - 1;
         buildAndSaveFinancialYear(startYear, null);

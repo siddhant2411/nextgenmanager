@@ -474,7 +474,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
     private void writeLedger(InventoryTransactionDTO req, InventoryItem item, double movement, double closingBalance) {
         double rate = effectiveRate(req, item);
         InventoryLedger ledger = new InventoryLedger();
-        ledger.setMovementDate(LocalDate.now());
+        ledger.setMovementDate(req.getMovementDate() != null ? req.getMovementDate() : LocalDate.now());
         ledger.setTransactionType(req.getTransactionType());
         ledger.setQuantity(movement);
         ledger.setRate(rate);

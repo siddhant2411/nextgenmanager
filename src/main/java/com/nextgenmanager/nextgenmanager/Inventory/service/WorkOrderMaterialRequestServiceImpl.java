@@ -67,7 +67,12 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
         if (approvedQty == null || approvedQty.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Approved quantity must be greater than zero");
         }
-        if (approvedQty.compareTo(mr.getRequestedQuantity()) >= 0) {
+        if (approvedQty.compareTo(mr.getRequestedQuantity()) > 0) {
+            // Quietly turning "approve 500 of 173" into a full approval hid a typing mistake.
+            throw new IllegalArgumentException("Approved quantity " + approvedQty.stripTrailingZeros().toPlainString()
+                    + " is more than the " + mr.getRequestedQuantity().stripTrailingZeros().toPlainString() + " requested");
+        }
+        if (approvedQty.compareTo(mr.getRequestedQuantity()) == 0) {
             return approveMaterialRequest(requestId, approvedBy, force);
         }
 

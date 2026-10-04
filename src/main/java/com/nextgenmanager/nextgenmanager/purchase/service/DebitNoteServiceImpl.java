@@ -2,7 +2,10 @@ package com.nextgenmanager.nextgenmanager.purchase.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptNote;
+import com.nextgenmanager.nextgenmanager.Inventory.model.ItemWarehouseStock;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.GoodsReceiptNoteRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.ItemWarehouseStockRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.WarehouseRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
@@ -38,6 +41,8 @@ public class DebitNoteServiceImpl implements DebitNoteService {
     private final InventoryTransactionService txService;
     private final DebitNoteNumberGenerator numberGenerator;
     private final DomainEventPublisher domainEventPublisher;
+    private final WarehouseRepository warehouseRepo;
+    private final ItemWarehouseStockRepository warehouseStockRepo;
 
     public DebitNoteServiceImpl(DebitNoteRepository debitNoteRepo,
                                 PurchaseOrderRepository poRepo,
@@ -46,7 +51,9 @@ public class DebitNoteServiceImpl implements DebitNoteService {
                                 InventoryItemRepository itemRepo,
                                 InventoryTransactionService txService,
                                 DebitNoteNumberGenerator numberGenerator,
-                                DomainEventPublisher domainEventPublisher) {
+                                DomainEventPublisher domainEventPublisher,
+                                WarehouseRepository warehouseRepo,
+                                ItemWarehouseStockRepository warehouseStockRepo) {
         this.debitNoteRepo   = debitNoteRepo;
         this.poRepo          = poRepo;
         this.grnRepo         = grnRepo;
@@ -55,6 +62,8 @@ public class DebitNoteServiceImpl implements DebitNoteService {
         this.txService       = txService;
         this.numberGenerator = numberGenerator;
         this.domainEventPublisher = domainEventPublisher;
+        this.warehouseRepo   = warehouseRepo;
+        this.warehouseStockRepo = warehouseStockRepo;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -149,6 +158,8 @@ public class DebitNoteServiceImpl implements DebitNoteService {
             throw new IllegalStateException("Only DRAFT debit notes can be confirmed. Current status: " + dn.getStatus());
         }
 
+        assertReturnableFromStock(dn);
+
         // Reduce stock for each returned item
         for (DebitNoteItem line : dn.getItems()) {
             InventoryTransactionDTO dto = new InventoryTransactionDTO();
@@ -169,6 +180,35 @@ public class DebitNoteServiceImpl implements DebitNoteService {
         // Accounting auto-posts the DEBIT_NOTE voucher (listener runs after this tx commits).
         domainEventPublisher.publish(new DebitNoteConfirmedEvent(saved.getId()));
         return toResponseDTO(saved);
+    }
+
+    /**
+     * A purchase return can only send back what the named warehouse actually holds. Without this check
+     * a return larger than the receipt took the warehouse negative and reversed GR/IR and input GST
+     * for goods that never existed.
+     */
+    private void assertReturnableFromStock(DebitNote dn) {
+        java.util.Map<String, Double> requested = new java.util.LinkedHashMap<>();
+        for (DebitNoteItem line : dn.getItems()) {
+            String code = line.getWarehouseFrom();
+            var warehouse = (code == null || code.isBlank())
+                    ? warehouseRepo.findDefault()
+                    : warehouseRepo.findLiveByCode(code.trim());
+            if (warehouse.isEmpty()) {
+                throw new IllegalArgumentException("No warehouse with code " + code + ". Leave it blank to use the default warehouse.");
+            }
+            int itemId = line.getInventoryItem().getInventoryItemId();
+            String key = itemId + "@" + warehouse.get().getId();
+            double total = requested.merge(key, line.getReturnedQty(), Double::sum);
+            double onHand = warehouseStockRepo.find(itemId, warehouse.get().getId())
+                    .map(ItemWarehouseStock::getOnHand)
+                    .map(java.math.BigDecimal::doubleValue)
+                    .orElse(0.0);
+            if (total > onHand + 0.0001) {
+                throw new IllegalArgumentException("Cannot return " + total + " of " + line.getInventoryItem().getItemCode()
+                        + " from " + warehouse.get().getCode() + ": only " + onHand + " on hand there.");
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

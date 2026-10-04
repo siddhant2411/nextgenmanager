@@ -16,6 +16,8 @@ public class InventoryTransactionDTO {
     private String warehouse;
     private double costPerUnit;
     private String createdBy;
+    /** Date the movement belongs to in the books; null means the day it is posted. */
+    private LocalDate movementDate;
 
     // For manual overrides of serial/batch tracked instances (consumption)
     private List<Long> overrideInstanceIds;

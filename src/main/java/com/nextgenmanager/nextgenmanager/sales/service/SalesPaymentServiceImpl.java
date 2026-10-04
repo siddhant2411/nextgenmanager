@@ -32,6 +32,18 @@ public class SalesPaymentServiceImpl implements SalesPaymentService {
         SalesOrder order = salesOrderRepository.findById(salesOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sales order not found: " + salesOrderId));
 
+        if (dto.getAmount() == null || dto.getAmount().signum() <= 0) {
+            throw new IllegalArgumentException("Payment amount must be greater than zero");
+        }
+        if (order.getTotalPayableAmount() != null) {
+            BigDecimal alreadyReceived = paymentRepository.sumAmountBySalesOrderId(salesOrderId);
+            BigDecimal balance = order.getTotalPayableAmount().subtract(alreadyReceived == null ? BigDecimal.ZERO : alreadyReceived);
+            if (dto.getAmount().compareTo(balance.add(new BigDecimal("0.01"))) > 0) {
+                throw new IllegalArgumentException("Receipt of " + dto.getAmount().setScale(2, java.math.RoundingMode.HALF_UP)
+                        + " exceeds the balance due of " + balance.max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP));
+            }
+        }
+
         SalesPayment payment = new SalesPayment();
         payment.setSalesOrder(order);
         payment.setPaymentDate(dto.getPaymentDate());

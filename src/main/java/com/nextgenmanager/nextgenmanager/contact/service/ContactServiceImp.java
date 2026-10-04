@@ -27,6 +27,14 @@ public class ContactServiceImp implements ContactService {
 
     @Override
     public ContactDTO create(ContactRequestDTO request) {
+        // Two records for one registered company split its documents and balances between them.
+        if (request.getGstNumber() != null && !request.getGstNumber().isBlank()
+                && request.getCompanyName() != null
+                && contactRepository.existsByCompanyNameIgnoreCaseAndGstNumberIgnoreCaseAndDeletedDateIsNull(
+                        request.getCompanyName().trim(), request.getGstNumber().trim())) {
+            throw new IllegalArgumentException("A contact named \"" + request.getCompanyName().trim()
+                    + "\" with GSTIN " + request.getGstNumber().trim() + " already exists.");
+        }
         Contact contact = new Contact();
         mapRequestToEntity(request, contact);
         contact.setContactCode(generateCode(request.getContactType()));

@@ -19,4 +19,10 @@ public class AddInventoryRequest {
     private double costPerUnit;
 
     private String createdBy;
+
+    /** Date the stock entered the books (opening stock cut-over date); null means today. */
+    private java.time.LocalDate entryDate;
+
+    /** Lot / batch reference typed on the entry; used for batch-tracked items. */
+    private String batchNo;
 }
