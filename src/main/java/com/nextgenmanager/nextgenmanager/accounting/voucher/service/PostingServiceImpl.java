@@ -34,6 +34,7 @@ public class PostingServiceImpl implements PostingService {
     private final FinancialYearService fyService;
     private final VoucherNumberGenerator numberGenerator;
     private final ApprovalEngine approvalEngine;
+    private final com.nextgenmanager.nextgenmanager.accounting.opening.repository.OpeningBalanceRepository openingBalanceRepo;
 
     @Override
     public VoucherDto post(VoucherDraft draft, String username) {
@@ -137,6 +138,16 @@ public class PostingServiceImpl implements PostingService {
         }
         reversal.setLines(reversalLines);
         Voucher savedReversal = voucherRepo.save(reversal);
+
+        // A reversed OPENING voucher frees its date: the rows it was built from are retired too,
+        // otherwise a corrected file could never be imported for that date again.
+        if (original.getVoucherType() == VoucherType.OPENING) {
+            java.util.Date now = new java.util.Date();
+            for (var ob : openingBalanceRepo.findByOpeningDateAndDeletedDateIsNull(original.getDate())) {
+                ob.setDeletedDate(now);
+                openingBalanceRepo.save(ob);
+            }
+        }
 
         // Mark original as reversed
         original.setStatus(VoucherStatus.REVERSED);

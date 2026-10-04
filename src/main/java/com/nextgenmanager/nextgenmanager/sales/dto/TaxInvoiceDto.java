@@ -27,6 +27,8 @@ public class TaxInvoiceDto {
 
     private BigDecimal subTotal;
     private BigDecimal discountAmount;
+    /** Order-level discount %, so a return can be valued at the net rate actually invoiced. */
+    private BigDecimal discountPercentage;
     private BigDecimal taxableValue;
     private BigDecimal cgstAmount;
     private BigDecimal sgstAmount;

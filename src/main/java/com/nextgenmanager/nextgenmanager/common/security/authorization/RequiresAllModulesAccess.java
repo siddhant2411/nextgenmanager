@@ -9,7 +9,7 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Inherited
 @Documented
-@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER'," +
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_PLANNER','ROLE_ACCOUNTS_ADMIN','ROLE_ACCOUNTS_HEAD','ROLE_ACCOUNTS_USER'," +
         "'ROLE_PRODUCTION_ADMIN','ROLE_PRODUCTION_USER'," +
         "'ROLE_INVENTORY_ADMIN','ROLE_INVENTORY_USER'," +
         "'ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER'," +

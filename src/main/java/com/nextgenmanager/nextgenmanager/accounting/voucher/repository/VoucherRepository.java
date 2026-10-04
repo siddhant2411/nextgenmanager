@@ -24,7 +24,7 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long> {
 
     /** Day Book: JOIN FETCH lines + ledgerAccount in one query to avoid N+1. */
     @Query("SELECT DISTINCT v FROM Voucher v JOIN FETCH v.lines l JOIN FETCH l.ledgerAccount " +
-           "WHERE v.deletedDate IS NULL AND v.status = 'POSTED' " +
+           "WHERE v.deletedDate IS NULL AND v.status IN ('POSTED', 'REVERSED') " +
            "AND v.date BETWEEN :from AND :to " +
            "ORDER BY v.date ASC, v.voucherNumber ASC")
     List<Voucher> findPostedWithLinesByDateRange(@Param("from") LocalDate from, @Param("to") LocalDate to);

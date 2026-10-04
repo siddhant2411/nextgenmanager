@@ -78,8 +78,11 @@ public class OpeningBalanceServiceImpl implements OpeningBalanceService {
             ob.setBillDate(row.getBillDate());
             ob.setDueDate(row.getDueDate());
             if (row.getContactCode() != null && !row.getContactCode().isBlank()) {
-                contactRepo.findByContactCodeAndDeletedDateIsNull(row.getContactCode())
-                        .ifPresent(ob::setContact);
+                // An unknown party code used to be ignored, posting the amount to the control
+                // account with no party behind it. Refuse it so the file can be corrected.
+                ob.setContact(contactRepo.findByContactCodeAndDeletedDateIsNull(row.getContactCode())
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Contact not found: " + row.getContactCode())));
             }
             openingBalanceRepo.save(ob);
 

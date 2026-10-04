@@ -167,9 +167,9 @@
 
                     <div th:text="'M/s.'+ ${companyName}"></div>
                     <div th:text="${companyAddress}"></div>
-                    <div th:text="${contactInfo.personName}"></div>
-                    <div th:text="${contactInfo.phoneNumber}"></div>
-                    <div th:text="${contactInfo.emailId}"></div>
+                    <div th:text="${contactInfo?.personName}"></div>
+                    <div th:text="${contactInfo?.phoneNumber}"></div>
+                    <div th:text="${contactInfo?.emailId}"></div>
                 </div>
                 <div class="document-details">
                     <div class="quotation-details">
@@ -188,11 +188,11 @@
                         <table style="border: 1px solid black; width: 100%;">
                             <tr>
                                 <td style="width: 30%; padding-left: 3px;">Enq No</td>
-                                <td th:text="${enquiryInfo.enqNo}"></td>
+                                <td th:text="${enquiryInfo?.enqNo}"></td>
                             </tr>
                             <tr>
                                 <td style="width: 30%; padding-left: 3px;">Enq Date</td>
-                                <td th:text="${enquiryInfo.enqDate}"></td>
+                                <td th:text="${enquiryInfo?.enqDate}"></td>
                             </tr>
                         </table>
                     </div>
@@ -272,7 +272,7 @@
                                 Discount%
                             </td>
                             <td style="width: 7.9%; text-align: right;"
-                                th:text="${#numbers.formatDecimal(quotationInfo.discountPercentage, 1, 1)} + '%'">
+                                th:text="${quotationInfo.discountPercentage != null ? #numbers.formatDecimal(quotationInfo.discountPercentage, 1, 1) : '0.0'} + '%'">
                             </td>
                             <td style="text-align: right;" th:text="${quotationInfo.discountAmount}">
                             </td>
@@ -319,7 +319,7 @@
                                 GST%
                             </td>
                             <td style="width: 7.9%; text-align: right;"
-                                th:text="${#numbers.formatDecimal(quotationInfo.gstPercentage, 1, 1)} + '%'">
+                                th:text="${quotationInfo.gstPercentage != null ? #numbers.formatDecimal(quotationInfo.gstPercentage, 1, 1) : '0.0'} + '%'">
                             </td>
                             <td style="text-align: right;" th:text="${quotationInfo.gstAmount}">
                             </td>

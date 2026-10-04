@@ -53,9 +53,14 @@ public interface ContactRepository extends JpaRepository<Contact, Integer> {
 
     boolean existsByContactCodeAndDeletedDateIsNull(String contactCode);
 
+    /** Duplicate guard: the same registered company (GSTIN) under the same name. */
+    boolean existsByCompanyNameIgnoreCaseAndGstNumberIgnoreCaseAndDeletedDateIsNull(String companyName, String gstNumber);
+
     /** Last used contactCode prefix to generate next sequential code. */
+    // Soft-deleted rows are deliberately included: their codes stay reserved by the unique index, so
+    // skipping them re-issues a code that then collides. Length first keeps C-1000 above C-999.
     @Query("SELECT c.contactCode FROM Contact c WHERE c.contactCode LIKE :prefix% " +
-           "AND c.deletedDate IS NULL ORDER BY c.contactCode DESC")
+           "ORDER BY LENGTH(c.contactCode) DESC, c.contactCode DESC")
     List<String> findLastCodeByPrefix(@Param("prefix") String prefix, Pageable pageable);
 
     long countByDeletedDateIsNull();

@@ -180,8 +180,10 @@ public class QuotationServiceImp implements QuotationService {
             return templateEngine.process("templates/quotation/quotation", context);
 
         } catch (Exception e) {
-            e.printStackTrace();
-            return "<h3>Error generating quotation template</h3><p>" + e.getMessage() + "</p>";
+            // Rendering an error page into a PDF made the real cause invisible (the caller just saw a
+            // broken download). Fail with the reason instead.
+            logger.error("Quotation template failed for id {}", id, e);
+            throw new IllegalStateException("Could not build the quotation PDF: " + e.getMessage(), e);
         }
     }
 

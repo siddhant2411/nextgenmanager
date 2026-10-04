@@ -30,9 +30,18 @@ public class BomQaParameterServiceImpl implements BomQaParameterService {
                 .stream().map(this::toDTO).collect(Collectors.toList());
     }
 
+    /** A range whose minimum is above its maximum can never pass, so every reading would fail. */
+    private static void requireSaneLimits(BomQaParameterRequestDTO request) {
+        if (request.getMinValue() != null && request.getMaxValue() != null
+                && request.getMinValue().compareTo(request.getMaxValue()) > 0) {
+            throw new IllegalArgumentException("Minimum value cannot be greater than the maximum value");
+        }
+    }
+
     @Override
     @Transactional
     public BomQaParameterDTO addParameter(Long routingOperationId, BomQaParameterRequestDTO request) {
+        requireSaneLimits(request);
         RoutingOperation op = routingOperationRepository.findById(routingOperationId)
                 .orElseThrow(() -> new EntityNotFoundException("RoutingOperation not found: " + routingOperationId));
 
@@ -52,6 +61,7 @@ public class BomQaParameterServiceImpl implements BomQaParameterService {
     @Override
     @Transactional
     public BomQaParameterDTO updateParameter(Long parameterId, BomQaParameterRequestDTO request) {
+        requireSaneLimits(request);
         BomQaParameter param = repository.findById(parameterId)
                 .orElseThrow(() -> new EntityNotFoundException("BomQaParameter not found: " + parameterId));
 

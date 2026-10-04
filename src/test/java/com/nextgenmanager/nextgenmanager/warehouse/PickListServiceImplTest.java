@@ -29,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -136,14 +137,37 @@ class PickListServiceImplTest {
     }
 
     @Test
-    void aTrackedItemCannotBePickedWithoutNamingItsInstances() {
+    void aTrackedItemNamedNoInstancesPicksTheOldestSuitableOnes() {
+        // Nobody should have to read internal unit numbers off a screen that never showed them.
+        PickList pick = pickOf(trackedItem, "2", PickListStatus.RELEASED);
+        when(pickListRepository.findLiveById(3L)).thenReturn(Optional.of(pick));
+        InventoryInstance a = instance(101L, trackedItem, main, "1");
+        InventoryInstance b = instance(102L, trackedItem, main, "1");
+        InventoryInstance c = instance(103L, trackedItem, main, "1");
+        when(inventoryInstanceRepository.findPickableForLine(anyInt(), any(), any()))
+                .thenReturn(List.of(a, b, c));
+        when(inventoryInstanceRepository.findById(101L)).thenReturn(Optional.of(a));
+        when(inventoryInstanceRepository.findById(102L)).thenReturn(Optional.of(b));
+
+        service.confirm(3L, new PickConfirmRequest(null, null,
+                List.of(new PickConfirmRequest.Line(30L, new BigDecimal("2"), List.of()))));
+
+        assertThat(a.getPickListLine()).isSameAs(pick.getLines().get(0));
+        assertThat(b.getPickListLine()).isSameAs(pick.getLines().get(0));
+        assertThat(c.getPickListLine()).isNull();
+        assertThat(pick.getStatus()).isEqualTo(PickListStatus.PICKED);
+    }
+
+    @Test
+    void aTrackedItemWithNothingPickableIsRefused() {
         when(pickListRepository.findLiveById(3L))
                 .thenReturn(Optional.of(pickOf(trackedItem, "3", PickListStatus.RELEASED)));
+        when(inventoryInstanceRepository.findPickableForLine(anyInt(), any(), any())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.confirm(3L, new PickConfirmRequest(null, null,
                 List.of(new PickConfirmRequest.Line(30L, new BigDecimal("3"), List.of())))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("name the instances");
+                .hasMessageContaining("No pickable");
     }
 
     @Test

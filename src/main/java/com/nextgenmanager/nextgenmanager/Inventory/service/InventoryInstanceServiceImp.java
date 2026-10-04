@@ -37,6 +37,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     private static final Logger logger = LoggerFactory.getLogger(InventoryInstanceServiceImp.class);
 
     @Autowired
+    @org.springframework.context.annotation.Lazy
+    private BatchSerialService batchSerialService;
+
+    @Autowired
     private InventoryInstanceRepository inventoryInstanceRepository;
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
@@ -1001,6 +1005,14 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     @Override
     @Transactional
     public List<InventoryInstance> addInventory(AddInventoryRequest request) {
+        // Checked before the try below, which wraps every failure in a generic message. A zero quantity
+        // wrote an empty ledger row and a negative cost was silently replaced by the standard cost.
+        if (request.getQuantity() <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero.");
+        }
+        if (request.getCostPerUnit() < 0) {
+            throw new IllegalArgumentException("Cost per unit cannot be negative.");
+        }
         try {
             int inventoryItemId = request.getInventoryItemId();
             BigDecimal addedQty = BigDecimal.valueOf(request.getQuantity());
@@ -1081,6 +1093,22 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 }
             }
 
+            // Opening stock of a batch-tracked item used to be taken in with no batch record at all, and
+            // the lot number typed on the form was dropped. Give the whole entry one batch so it can be
+            // traced and picked by batch like any received stock.
+            if (request.getProcurementDecision() == ProcurementDecision.OPENING_STOCK
+                    && dbItem.getProductInventorySettings() != null
+                    && dbItem.getProductInventorySettings().isBatchTracked()
+                    && !resultInstances.isEmpty()) {
+                BatchNumber openingBatch = batchSerialService.createBatch(
+                        dbItem, addedQty.doubleValue(), "OPENING_STOCK", "OPENING-STOCK",
+                        null, null, null, request.getBatchNo(), request.getCreatedBy());
+                for (InventoryInstance inst : resultInstances) {
+                    if (inst.getBatchNumber() == null) inst.setBatchNumber(openingBatch);
+                }
+                inventoryInstanceRepository.saveAll(resultInstances);
+            }
+
             InventoryProcurementOrder procurementOrder = new InventoryProcurementOrder();
             procurementOrder.setInventoryItem(dbItem);
             procurementOrder.setPendingInventoryList(resultInstances);
@@ -1105,7 +1133,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             String refDocNo = (request.getReferenceId() > 0)
                     ? "REF-" + request.getReferenceId() : "MANUAL";
             InventoryLedger ledger = new InventoryLedger();
-            ledger.setMovementDate(LocalDate.now());
+            // The date typed on the form is the date the books should show (the cut-over date for
+            // opening stock); it used to be ignored and every entry was stamped with today.
+            ledger.setMovementDate(request.getEntryDate() != null ? request.getEntryDate() : LocalDate.now());
             ledger.setTransactionType(ledgerTxType);
             ledger.setQuantity(addedQty.doubleValue());
             ledger.setRate(finalCost.doubleValue());

@@ -52,10 +52,10 @@ class AuthUserManagementServiceTest {
 
         when(appUserRepository.findByUsernameAndDeletedDateIsNull("john")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("current123", "old-hash")).thenReturn(true);
-        when(passwordEncoder.matches("new123", "old-hash")).thenReturn(false);
-        when(passwordEncoder.encode("new123")).thenReturn("new-hash");
+        when(passwordEncoder.matches("NewPass123", "old-hash")).thenReturn(false);
+        when(passwordEncoder.encode("NewPass123")).thenReturn("new-hash");
 
-        service.changeOwnPassword("john", "current123", "new123");
+        service.changeOwnPassword("john", "current123", "NewPass123");
 
         ArgumentCaptor<AppUser> captor = ArgumentCaptor.forClass(AppUser.class);
         verify(appUserRepository).save(captor.capture());
@@ -73,7 +73,7 @@ class AuthUserManagementServiceTest {
         when(appUserRepository.findByUsernameAndDeletedDateIsNull("john")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrong", "old-hash")).thenReturn(false);
 
-        assertThatThrownBy(() -> service.changeOwnPassword("john", "wrong", "new123"))
+        assertThatThrownBy(() -> service.changeOwnPassword("john", "wrong", "NewPass123"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("currentPassword is invalid");
 

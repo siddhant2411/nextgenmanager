@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
+import com.nextgenmanager.nextgenmanager.sales.dto.SalesPaymentCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.TaxInvoiceCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.TaxInvoiceDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.TaxInvoiceItemDto;
@@ -42,6 +43,7 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
     private final CompanyDetailsRepository companyDetailsRepository;
     private final DeliveryNoteRepository deliveryNoteRepository;
     private final DomainEventPublisher domainEventPublisher;
+    private final SalesPaymentService salesPaymentService;
 
     @Override
     public TaxInvoiceDto createFromSalesOrder(TaxInvoiceCreateDto dto) {
@@ -144,18 +146,26 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
     public TaxInvoiceDto markPaid(Long id, BigDecimal amount) {
         TaxInvoice invoice = fetchById(id);
         assertNotCancelled(invoice);
-        
-        BigDecimal currentPaid = invoice.getPaidAmount() != null ? invoice.getPaidAmount() : BigDecimal.ZERO;
+
         BigDecimal total = invoice.getTotalPayableAmount() != null ? invoice.getTotalPayableAmount() : BigDecimal.ZERO;
-        
-        if (amount == null) {
-            // Mark as fully paid
-            invoice.setPaidAmount(total);
-        } else {
-            // Add incremental payment
-            invoice.setPaidAmount(currentPaid.add(amount));
+        BigDecimal currentPaid = invoice.getPaidAmount() != null ? invoice.getPaidAmount() : BigDecimal.ZERO;
+        // null amount = "mark fully paid": pay whatever is still outstanding.
+        BigDecimal toPay = amount != null ? amount : total.subtract(currentPaid);
+
+        if (toPay.signum() > 0) {
+            // The receipt must reach the books, so it goes through the sales-order payment path, which
+            // validates the balance and posts the RECEIPT voucher. Recording only a number on the invoice
+            // left the bank and the customer ledger untouched.
+            SalesPaymentCreateDto pay = new SalesPaymentCreateDto();
+            pay.setPaymentDate(LocalDate.now());
+            pay.setAmount(toPay);
+            pay.setPaymentMode(PaymentMode.OTHER);
+            pay.setReferenceNumber(invoice.getInvoiceNumber());
+            pay.setNotes("Recorded from invoice " + invoice.getInvoiceNumber());
+            salesPaymentService.recordPayment(invoice.getSalesOrder().getId(), pay);
         }
 
+        invoice.setPaidAmount(currentPaid.add(toPay.max(BigDecimal.ZERO)));
         if (invoice.getPaidAmount().compareTo(total) >= 0) {
             invoice.setStatus(TaxInvoiceStatus.PAID);
         }
@@ -217,6 +227,7 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
         dto.setStatus(inv.getStatus());
         dto.setSubTotal(inv.getSubTotal());
         dto.setTaxableValue(inv.getTaxableValue());
+        if (inv.getSalesOrder() != null) dto.setDiscountPercentage(inv.getSalesOrder().getDiscountPercentage());
         dto.setCgstAmount(inv.getCgstAmount());
         dto.setSgstAmount(inv.getSgstAmount());
         dto.setIgstAmount(inv.getIgstAmount());

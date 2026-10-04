@@ -98,6 +98,7 @@ public class GRNServiceImpl implements GRNService {
                 txn.setWarehouse(request.getWarehouse());
                 txn.setCostPerUnit(lineDto.getRate());
                 txn.setCreatedBy(request.getCreatedBy());
+                txn.setMovementDate(grn.getGrnDate()); // books follow the GRN date, not the day it was keyed
                 // Batch / serial fields from request line
                 txn.setSupplierBatchNo(lineDto.getSupplierBatchNo());
                 txn.setManufacturingDate(lineDto.getManufacturingDate());
@@ -129,6 +130,7 @@ public class GRNServiceImpl implements GRNService {
                 rejectTxn.setWarehouse(quarantine != null ? quarantine.getCode() : request.getWarehouse());
                 rejectTxn.setCostPerUnit(lineDto.getRate());
                 rejectTxn.setCreatedBy(request.getCreatedBy());
+                rejectTxn.setMovementDate(grn.getGrnDate());
                 rejectTxn.setSupplierBatchNo(lineDto.getSupplierBatchNo());
                 rejectTxn.setQualityStatus(QualityStatus.FAILED);
                 rejectTxn.setOverrideReason(lineDto.getRejectionReason() != null

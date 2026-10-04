@@ -150,9 +150,12 @@ public class PickListServiceImpl implements PickListService {
 
             boolean tracked = isTracked(line.getInventoryItem());
             if (tracked && instanceIds.isEmpty()) {
-                throw new IllegalArgumentException(String.format(
-                        "%s is batch or serial tracked — name the instances picked for it",
-                        line.getInventoryItem().getItemCode()));
+                // Nobody had to read internal unit numbers off a screen that never showed them: when
+                // the picker names none, the oldest suitable units are taken (those reserved for this
+                // order line first).
+                BigDecimal want = asked != null && asked.quantityPicked() != null
+                        ? asked.quantityPicked() : line.getQuantityToPick();
+                instanceIds = autoSelectInstances(pick, line, want);
             }
 
             List<InventoryInstance> instances = resolveInstances(pick, line, instanceIds);
@@ -245,6 +248,28 @@ public class PickListServiceImpl implements PickListService {
     private boolean isTracked(InventoryItem item) {
         ProductInventorySettings s = item.getProductInventorySettings();
         return s != null && (s.isBatchTracked() || s.isSerialTracked());
+    }
+
+    /** Oldest-first units for a tracked line, up to {@code want}; fewer when the shelf holds fewer. */
+    private List<Long> autoSelectInstances(PickList pick, PickListLine line, BigDecimal want) {
+        Long soItemId = line.getSalesOrderItem() != null ? line.getSalesOrderItem().getId() : null;
+        List<InventoryInstance> candidates = inventoryInstanceRepository.findPickableForLine(
+                line.getInventoryItem().getInventoryItemId(), pick.getWarehouse().getId(), soItemId);
+        List<Long> chosen = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        for (InventoryInstance inst : candidates) {
+            if (total.compareTo(want) >= 0) break;
+            BigDecimal qty = inst.getQuantity() != null ? inst.getQuantity() : BigDecimal.ONE;
+            if (total.add(qty).compareTo(want) > 0) continue; // never overshoot with a bigger lot
+            chosen.add(inst.getId());
+            total = total.add(qty);
+        }
+        if (chosen.isEmpty()) {
+            throw new IllegalArgumentException(String.format(
+                    "No pickable %s units in %s to pick for this line",
+                    line.getInventoryItem().getItemCode(), pick.getWarehouse().getCode()));
+        }
+        return chosen;
     }
 
     private PickConfirmRequest.Line lineRequest(PickConfirmRequest request, PickListLine line) {

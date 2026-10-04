@@ -193,10 +193,20 @@ public class WorkOrder {
     // ─── Yield Metrics (computed, not persisted) ──────────────────────────────
 
     public BigDecimal getTotalOperationGoodQuantity() {
+        // Good output is what leaves the LAST operation of each line — not the sum over every
+        // operation, which counted one piece once per step and reported 488% first-pass yield.
+        List<WorkOrderLine> live = activeLines();
+        if (live != null && !live.isEmpty()) {
+            return live.stream()
+                    .map(WorkOrderLine::getTotalOperationGoodQuantity)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
         if (operations == null) return BigDecimal.ZERO;
         return operations.stream()
+                .filter(op -> op.getDeletedDate() == null)
+                .max(java.util.Comparator.comparingInt(WorkOrderOperation::getSequence))
                 .map(WorkOrderOperation::getCompletedQuantity)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .orElse(BigDecimal.ZERO);
     }
 
     public BigDecimal getTotalOperationRejectedQuantity() {

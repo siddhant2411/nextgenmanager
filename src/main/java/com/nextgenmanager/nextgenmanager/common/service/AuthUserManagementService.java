@@ -75,6 +75,7 @@ public class AuthUserManagementService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username and password are required");
         }
 
+        requireAcceptablePassword(request.password());
         String username = request.username().trim();
         String email = normalizeEmail(request.email());
         List<String> requestedRoles = request.roleNames();
@@ -279,6 +280,9 @@ public class AuthUserManagementService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
         enforceSuperAdminMutationPolicy(user, isSuperAdmin);
 
+        if (temporaryPassword != null && !temporaryPassword.isBlank()) {
+            requireAcceptablePassword(temporaryPassword);
+        }
         String password = (temporaryPassword != null && !temporaryPassword.isBlank())
                 ? temporaryPassword
                 : generateTemporaryPassword();
@@ -306,6 +310,7 @@ public class AuthUserManagementService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username and newPassword are required");
         }
 
+        requireAcceptablePassword(newPassword);
         AppUser user = appUserRepository.findByUsernameAndDeletedDateIsNull(username.trim())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found"));
 
@@ -315,6 +320,17 @@ public class AuthUserManagementService {
         appUserRepository.save(user);
         refreshTokenService.revokeAllForUser(user.getId(), "RECOVERY");
         logger.warn("Password reset via recovery secret for username {}", username);
+    }
+
+    /** A password of "1" or "123" was accepted everywhere; a floor keeps the obvious ones out. */
+    private static void requireAcceptablePassword(String password) {
+        boolean longEnough = password != null && password.length() >= 8;
+        boolean hasLetter = password != null && password.chars().anyMatch(Character::isLetter);
+        boolean hasDigit = password != null && password.chars().anyMatch(Character::isDigit);
+        if (!longEnough || !hasLetter || !hasDigit) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Password must be at least 8 characters and contain a letter and a digit");
+        }
     }
 
     private String generateTemporaryPassword() {
@@ -336,6 +352,7 @@ public class AuthUserManagementService {
         if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "newPassword must be different from current password");
         }
+        requireAcceptablePassword(newPassword);
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setUpdatedBy(username);

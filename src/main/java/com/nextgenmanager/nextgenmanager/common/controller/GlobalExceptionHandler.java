@@ -64,6 +64,33 @@ public class GlobalExceptionHandler {
         );
     }
 
+    // A GET on a path that has no GET mapping, or a call missing a required parameter, is the caller's
+    // mistake. It used to fall through to the catch-all and come back as a 500 "unexpected error".
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiError> handleMethodNotAllowed(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(buildError(HttpStatus.METHOD_NOT_ALLOWED,
+                        "Method " + ex.getMethod() + " is not supported for this path", request));
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiError> handleMissingParameter(
+            org.springframework.web.bind.MissingServletRequestParameterException ex, HttpServletRequest request) {
+        return ResponseEntity.badRequest()
+                .body(buildError(HttpStatus.BAD_REQUEST,
+                        "Required parameter '" + ex.getParameterName() + "' is missing", request));
+    }
+
+    // A deactivated or locked account is a refusal, not a server fault.
+    @ExceptionHandler({org.springframework.security.authentication.LockedException.class,
+            org.springframework.security.authentication.DisabledException.class})
+    public ResponseEntity<ApiError> handleAccountUnavailable(
+            org.springframework.security.core.AuthenticationException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(buildError(HttpStatus.UNAUTHORIZED, "This account is locked or deactivated. Contact your administrator.", request));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
