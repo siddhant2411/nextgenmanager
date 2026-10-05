@@ -15,6 +15,9 @@ FROM eclipse-temurin:17-jdk-jammy
 
 WORKDIR /app
 
+# curl backs the container health check in deploy/aws/docker-compose.yml.
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/target/nextgenmanager-0.0.1-SNAPSHOT.jar .
 
 EXPOSE 8080
