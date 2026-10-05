@@ -1,0 +1,81 @@
+# Production stack for one customer on one EC2 instance.
+#
+#   browser ──https──> caddy ──/api/*──> backend (Spring Boot) ──> RDS PostgreSQL
+#                        └────────────> frontend (nginx, React build)   └──> S3 (attachments)
+#
+# Caddy gets and renews the HTTPS certificate for $DOMAIN automatically. The UI and API share one
+# origin, so there is no CORS to configure and only ports 80/443 are open to the internet.
+# The database and file storage are AWS managed services, not containers, so the instance holds no
+# data that a lost disk could take with it.
+#
+# Usage (from this directory, with .env filled in from .env.example):
+#   docker compose up -d --build
+
+services:
+  backend:
+    build:
+      context: ../..
+    image: nextgenmanager-backend:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Kolkata
+      FRONTEND_URL: https://${DOMAIN}
+      # Production log and surface hardening (the defaults suit development).
+      SPRING_JPA_SHOW_SQL: "false"
+      LOGGING_LEVEL_ORG_HIBERNATE_TYPE_DESCRIPTOR_SQL_BASICBINDER: WARN
+      SPRINGDOC_API_DOCS_ENABLED: "false"
+      SPRINGDOC_SWAGGER_UI_ENABLED: "false"
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70 -Duser.timezone=Asia/Kolkata
+    volumes:
+      # Per-customer files, e.g. user-agreement.html (set APP_AGREEMENT_LOCATION=file:/config/user-agreement.html).
+      - ./config:/config:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/api/auth/recovery/info > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  frontend:
+    build:
+      context: ${UI_DIR:-../../../ui}
+      args:
+        # Relative: the UI calls the API on its own origin, through Caddy.
+        REACT_APP_API_BASE_URL: /api
+        REACT_APP_API_URL: /api
+    image: nextgenmanager-frontend:latest
+    restart: unless-stopped
+    expose:
+      - "80"
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

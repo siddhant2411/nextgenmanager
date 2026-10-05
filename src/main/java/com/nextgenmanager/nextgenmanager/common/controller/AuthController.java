@@ -16,6 +16,8 @@ import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthAdminResetPasswordR
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthRecoveryResetRequest;
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthUserListItemResponse;
 import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthUserResponse;
+import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthAcceptAgreementRequest;
+import com.nextgenmanager.nextgenmanager.common.dto.auth.AuthAgreementResponse;
 import com.nextgenmanager.nextgenmanager.common.model.AppUser;
 import com.nextgenmanager.nextgenmanager.common.repository.AppUserRepository;
 import com.nextgenmanager.nextgenmanager.common.security.JwtService;
@@ -23,7 +25,9 @@ import com.nextgenmanager.nextgenmanager.common.service.AuthRoleManagementServic
 import com.nextgenmanager.nextgenmanager.common.service.AuthUserManagementService;
 import com.nextgenmanager.nextgenmanager.common.service.CustomUserDetailsService;
 import com.nextgenmanager.nextgenmanager.common.service.RefreshTokenService;
+import com.nextgenmanager.nextgenmanager.common.service.UserAgreementService;
 import io.jsonwebtoken.Claims;
+import jakarta.servlet.http.HttpServletRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -76,6 +80,7 @@ public class AuthController {
     private final AuthRoleManagementService authRoleManagementService;
     private final CustomUserDetailsService customUserDetailsService;
     private final RefreshTokenService refreshTokenService;
+    private final UserAgreementService userAgreementService;
 
     @PostMapping("/login")
     @Operation(summary = "Authenticate user and issue access/refresh tokens")
@@ -220,7 +225,45 @@ public class AuthController {
                 .map(GrantedAuthority::getAuthority)
                 .toList();
 
-        return ResponseEntity.ok(new AuthUserResponse(authentication.getName(), roles));
+        return ResponseEntity.ok(new AuthUserResponse(
+                authentication.getName(),
+                roles,
+                userAgreementService.hasAcceptedCurrent(authentication.getName()),
+                userAgreementService.getCurrentVersion()
+        ));
+    }
+
+    @GetMapping("/agreement")
+    @Operation(summary = "Get the current user agreement and whether the caller has accepted it")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<AuthAgreementResponse> getAgreement(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        return ResponseEntity.ok(userAgreementService.getAgreement(authentication.getName()));
+    }
+
+    @PostMapping("/agreement/accept")
+    @Operation(summary = "Accept the current user agreement")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Acceptance recorded"),
+            @ApiResponse(responseCode = "409", description = "The agreement changed since the caller loaded it")
+    })
+    public ResponseEntity<AuthAgreementResponse> acceptAgreement(
+            @RequestBody AuthAcceptAgreementRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest
+    ) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        return ResponseEntity.ok(userAgreementService.accept(
+                authentication.getName(),
+                request == null ? null : request.version(),
+                httpRequest.getRemoteAddr(),
+                httpRequest.getHeader(HttpHeaders.USER_AGENT)
+        ));
     }
 
     @PostMapping("/users")
