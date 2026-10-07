@@ -15,4 +15,7 @@ public interface DowntimeEventRepository extends JpaRepository<DowntimeEvent, Lo
     Optional<DowntimeEvent> findActiveEventByMachine(Long machineId);
 
     List<DowntimeEvent> findByMachineIdAndStartTimeBetween(Long machineId, java.util.Date start, java.util.Date end);
+
+    /** Downtime with a known end still ahead of {@code after} — the stoppages a schedule must avoid. */
+    List<DowntimeEvent> findByMachineIdAndEndTimeAfter(Long machineId, java.util.Date after);
 }

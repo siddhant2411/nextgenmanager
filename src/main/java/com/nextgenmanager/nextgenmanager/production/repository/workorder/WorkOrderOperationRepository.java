@@ -100,6 +100,23 @@ public interface WorkOrderOperationRepository extends JpaRepository<WorkOrderOpe
     List<WorkOrderOperation> findByAssignedMachineIdAndStatusOrderByPlannedStartDateAsc(
             Long machineId, OperationStatus status);
 
+    /**
+     * Every operation that still holds a resource after {@code from}: the load a scheduling run
+     * has to plan around. Finished and cancelled work no longer occupies anything.
+     */
+    @Query("SELECT op FROM WorkOrderOperation op " +
+           "JOIN FETCH op.workOrder wo " +
+           "LEFT JOIN FETCH op.workCenter " +
+           "LEFT JOIN FETCH op.assignedMachine " +
+           "WHERE op.plannedStartDate IS NOT NULL AND op.plannedEndDate > :from " +
+           "AND op.deletedDate IS NULL " +
+           "AND op.status NOT IN :finishedOperationStatuses " +
+           "AND wo.workOrderStatus NOT IN :finishedWorkOrderStatuses")
+    List<WorkOrderOperation> findBookedLoad(
+            @Param("from") Date from,
+            @Param("finishedOperationStatuses") List<OperationStatus> finishedOperationStatuses,
+            @Param("finishedWorkOrderStatuses") List<com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus> finishedWorkOrderStatuses);
+
     // ── Schedule view queries ──
     // All queries: exclude soft-deleted ops + cancelled ops + soft-deleted WOs
 
