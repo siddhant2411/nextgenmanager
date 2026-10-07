@@ -60,7 +60,9 @@
 </head>
 <body>
     <div class="container">
-        <div class="title">Delivery Challan</div>
+        <div th:replace="~{fragments/brand :: topBand}"></div>
+        <table th:replace="~{fragments/brand :: logoTitleBar('Delivery Challan')}"></table>
+        <div class="title" th:unless="${brand.logo}">Delivery Challan</div>
         
         <table class="header-table">
             <tr>
@@ -94,9 +96,14 @@
             <tr>
                 <td style="width: 50%; border-right: 1px solid #000; border-top: 1px solid #000;">
                     <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Consignee (Ship to)</div>
-                    <b th:text="${dn.salesOrder.customer.companyName}">Customer Pvt Ltd</b><br/>
-                    <span th:text="${dn.salesOrder.deliveryAddress}">Delivery Address String</span><br/>
-                    <span class="label">GSTIN:</span> <span th:text="${dn.salesOrder.customer.gstNumber}">24XXXXX0000X1Z5</span>
+                    <b th:text="${shipTo.name}">Customer Pvt Ltd</b><br/>
+                    <span th:text="${shipTo.address}">Address String</span><br/>
+                    <th:block th:if="${shipTo.gstin != null or shipTo.stateLabel != null}">
+                        <th:block th:if="${shipTo.gstin != null}"><span class="label">GSTIN:</span> <span th:text="${shipTo.gstin}">24XXXXX0000X1Z5</span></th:block>
+                        <th:block th:if="${shipTo.stateLabel != null}"><span class="label">State:</span> <span th:text="${shipTo.stateLabel}">Gujarat (24)</span></th:block>
+                        <br/>
+                    </th:block>
+                    <th:block th:if="${shipTo.name != billTo.name}"><span class="label">Buyer (Bill to):</span> <span th:text="${billTo.name}">Buyer Pvt Ltd</span></th:block>
                 </td>
                 <td style="width: 50%; border-top: 1px solid #000;">
                     <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Dispatch Details</div>
@@ -133,7 +140,7 @@
                         <span th:text="${item.inventoryItem.uom}">NOS</span>
                     </td>
                 </tr>
-                <tr th:if="${dn.items.size() < 10}" th:each="i : ${#numbers.sequence(dn.items.size() + 1, 10)}">
+                <tr th:if="${dn.items.size() < fillerRows}" th:each="i : ${#numbers.sequence(dn.items.size() + 1, fillerRows)}">
                     <td style="height: 35px;"></td><td></td><td></td><td></td>
                 </tr>
             </tbody>

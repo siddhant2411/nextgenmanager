@@ -15,6 +15,8 @@ public interface SalesOrderMapper {
     @Mapping(target = "enquiryId", source = "enquiry.id")
     @Mapping(target = "enquiryNumber", source = "enquiry.enqNo")
     @Mapping(target = "items", source = "items")
+    @Mapping(target = "billTo", ignore = true)
+    @Mapping(target = "shipTo", ignore = true)
     SalesOrderDto toDTO(SalesOrder entity);
 
     @Mapping(target = "customer", ignore = true)

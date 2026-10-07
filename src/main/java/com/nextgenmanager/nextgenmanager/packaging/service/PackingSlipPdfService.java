@@ -2,8 +2,10 @@ package com.nextgenmanager.nextgenmanager.packaging.service;
 
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.packaging.model.PackingSlip;
 import com.nextgenmanager.nextgenmanager.packaging.repository.PackingSlipRepository;
+import com.nextgenmanager.nextgenmanager.sales.service.SalesParties;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ public class PackingSlipPdfService {
     private final TemplateEngine templateEngine;
     private final PackingSlipRepository packingSlipRepository;
     private final CompanyDetailsRepository companyDetailsRepository;
+    private final DocumentBrandingService documentBrandingService;
 
     @Transactional(readOnly = true)
     public byte[] generatePdf(Long id) {
@@ -31,8 +34,11 @@ public class PackingSlipPdfService {
                 .orElse(new CompanyDetails());
 
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         context.setVariable("slip", slip);
         context.setVariable("company", company);
+        context.setVariable("billTo", SalesParties.billTo(slip.getSalesOrder()));
+        context.setVariable("shipTo", SalesParties.shipTo(slip.getSalesOrder()));
 
         String html = templateEngine.process("invoice/packing_list", context)
                 .replace("&nbsp;", "&#160;");

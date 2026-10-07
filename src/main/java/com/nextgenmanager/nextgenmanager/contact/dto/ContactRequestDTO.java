@@ -28,6 +28,8 @@ public class ContactRequestDTO {
     private String gstNumber;
     private GstType gstType = GstType.REGULAR;
     private String panNumber;
+    /** 2-digit GST state code. Only needed for a party with no GSTIN; a GSTIN decides it. */
+    private String stateCode;
 
     // MSME
     private boolean msmeRegistered = false;

@@ -137,7 +137,9 @@
 <body>
 
     <div class="header">
-        <div style="text-align: center;">
+        <div th:replace="~{fragments/brand :: band}"></div>
+        <div th:unless="${brand.replacesHeader}" th:style="${brand.logo} ? 'text-align: left;' : 'text-align: center;'">
+            <img th:replace="~{fragments/brand :: floatLogo}"/>
             <h1 th:text="${appCompany.companyName}" style="color: #0097d9; margin: 0; font-size: 28px; text-transform: uppercase;">Company Name</h1>
             <div style="font-size: 12px; color: #666; margin-top: 2mm;">
                 <span th:text="${appCompany.street1} + ', ' + ${appCompany.street2} + ', ' + ${appCompany.city} + ' - ' + ${appCompany.pinCode} + ', ' + ${appCompany.state} + ', ' + ${appCompany.country}"></span>
@@ -147,6 +149,7 @@
                 <span th:if="${appCompany.email}" th:text="' | Email: ' + ${appCompany.email}"></span>
                 <span th:if="${appCompany.website}" th:text="' | Website: ' + ${appCompany.website}"></span>
             </div>
+            <div style="clear: both;"></div>
         </div>
     </div>
     <div class="content">
@@ -167,9 +170,9 @@
 
                     <div th:text="'M/s.'+ ${companyName}"></div>
                     <div th:text="${companyAddress}"></div>
-                    <div th:text="${contactInfo?.personName}"></div>
-                    <div th:text="${contactInfo?.phoneNumber}"></div>
-                    <div th:text="${contactInfo?.emailId}"></div>
+                    <div th:text="${contactInfo != null ? contactInfo.personName : ''}"></div>
+                    <div th:text="${contactInfo != null ? contactInfo.phoneNumber : ''}"></div>
+                    <div th:text="${contactInfo != null ? contactInfo.emailId : ''}"></div>
                 </div>
                 <div class="document-details">
                     <div class="quotation-details">
@@ -188,11 +191,11 @@
                         <table style="border: 1px solid black; width: 100%;">
                             <tr>
                                 <td style="width: 30%; padding-left: 3px;">Enq No</td>
-                                <td th:text="${enquiryInfo?.enqNo}"></td>
+                                <td th:text="${enquiryInfo != null ? enquiryInfo.enqNo : ''}"></td>
                             </tr>
                             <tr>
                                 <td style="width: 30%; padding-left: 3px;">Enq Date</td>
-                                <td th:text="${enquiryInfo?.enqDate}"></td>
+                                <td th:text="${enquiryInfo != null ? enquiryInfo.enqDate : ''}"></td>
                             </tr>
                         </table>
                     </div>

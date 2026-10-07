@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.purchase.service;
 
+import com.nextgenmanager.nextgenmanager.common.gst.GstState;
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
@@ -22,10 +23,7 @@ public class GstResolver {
      * Priority: stored stateCode → parsed from GSTIN → null.
      */
     public String resolveVendorStateCode(Contact vendor) {
-        if (StringUtils.hasText(vendor.getStateCode())) {
-            return vendor.getStateCode();
-        }
-        return parseStateCodeFromGstin(vendor.getGstNumber());
+        return stateCodeOf(vendor.getStateCode(), vendor.getGstNumber());
     }
 
     /**
@@ -34,9 +32,7 @@ public class GstResolver {
      */
     public String resolveCompanyStateCode() {
         return companyDetailsRepository.findAll().stream().findFirst()
-                .map(c -> StringUtils.hasText(c.getStateCode())
-                        ? c.getStateCode()
-                        : parseStateCodeFromGstin(c.getGstNumber()))
+                .map(c -> stateCodeOf(c.getStateCode(), c.getGstNumber()))
                 .orElse(null);
     }
 
@@ -61,11 +57,28 @@ public class GstResolver {
                 : GstTreatment.INTER_STATE;
     }
 
-    /** Extracts first 2 chars of a valid 15-char GSTIN as the state code. */
+    /** A party's state: the code stored on it, else the one its GSTIN was registered in, else null. */
+    public static String stateCodeOf(String storedStateCode, String gstin) {
+        GstState stored = GstState.fromCode(storedStateCode);
+        return stored != null ? stored.getCode() : parseStateCodeFromGstin(gstin);
+    }
+
+    /** The first 2 chars of a GSTIN when they are a GST state code; null otherwise. */
     public static String parseStateCodeFromGstin(String gstin) {
-        if (StringUtils.hasText(gstin) && gstin.length() >= 2) {
-            return gstin.substring(0, 2);
-        }
-        return null;
+        return GstState.codeFromGstin(gstin);
+    }
+
+    /**
+     * The state code to store on a party when it is saved. A GSTIN settles it, since the first two
+     * digits are the state of registration; an unregistered party has what was chosen for it, and
+     * failing that the state named on its address.
+     */
+    public static String stateCodeToStore(String gstin, String chosenStateCode, String addressStateName) {
+        String fromGstin = parseStateCodeFromGstin(gstin);
+        if (fromGstin != null) return fromGstin;
+        String chosen = GstState.requireCode(chosenStateCode, "State code");
+        if (chosen != null) return chosen;
+        GstState named = GstState.fromName(addressStateName);
+        return named != null ? named.getCode() : null;
     }
 }

@@ -4,6 +4,7 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ProductSpecification;
@@ -35,6 +36,9 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
     @Autowired
     private TestTemplateService testTemplateService;
 
+    @Autowired
+    private DocumentBrandingService documentBrandingService;
+
     private final TemplateEngine templateEngine;
 
     public WorkOrderExportServiceImpl() {
@@ -55,6 +59,7 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
         WorkOrder wo = findWorkOrder(workOrderId);
 
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
 
         Bom bom = firstLineBom(wo);
         String parentCode = producedItemCodes(wo);
@@ -193,6 +198,7 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
         List<Map<String, Object>> materials = buildMaterialRows(wo);
 
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         context.setVariable("woNumber", wo.getWorkOrderNumber());
         context.setVariable("parentCode", parentCode);
         context.setVariable("parentName", parentName);
@@ -368,6 +374,7 @@ public class WorkOrderExportServiceImpl implements WorkOrderExportService {
                         .collect(Collectors.toList());
 
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         context.setVariable("report", report);
         context.setVariable("resultsWithRemarks", withRemarks);
 

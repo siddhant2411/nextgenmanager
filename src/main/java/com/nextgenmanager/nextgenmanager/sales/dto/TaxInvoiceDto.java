@@ -21,6 +21,19 @@ public class TaxInvoiceDto {
     
     private String deliveryAddress;
 
+    // Bill to / ship to as issued. customerAddress and deliveryAddress above carry the same two
+    // addresses for callers that predate these.
+    private String billToName;
+    private String billToAddress;
+    private String billToGstin;
+    private String billToState;                 // "Gujarat (24)"
+    private String shipToName;
+    private String shipToAddress;
+    private String shipToGstin;
+    private String shipToState;
+    /** True when the goods go to a different name or address than the bill-to. */
+    private boolean shipToDiffers;
+
     private LocalDate invoiceDate;
     private LocalDate dueDate;
     private TaxInvoiceStatus status;

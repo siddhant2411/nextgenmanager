@@ -67,8 +67,18 @@ public class SalesOrderDto {
     private String incoterms;
     private String currency;
 
-    // Logistics
+    // Bill to / ship to, as entered on the order (blank where the order leaves it to the default)
+    private String billToAddress;
     private String deliveryAddress;
+    private String shipToName;
+    private String shipToGstin;
+    private String shipToStateCode;
+
+    // The two parties as they will print, blanks filled in. Read-only: set by getSalesOrderById.
+    private DocumentParty billTo;
+    private DocumentParty shipTo;
+
+    // Logistics
     private String dispatchThrough;
     private String transportMode;
     private String ewayBillNumber;

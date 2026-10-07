@@ -98,8 +98,17 @@ public class SalesOrder {
     @Column(length = 200) private String incoterms;                      // e.g. “FOB, Indian Port”
     @Column(length = 20)  private String currency;                       // e.g. “INR”
 
+    // — Bill to / ship to —
+    // All optional. Read them through SalesParties, which fills the blanks: no billToAddress means
+    // the customer's billing address, no deliveryAddress means ship to the bill-to address, and no
+    // shipToName means the consignee is the customer.
+    @Column(length = 500) private String billToAddress;
+    @Column(length = 500) private String deliveryAddress;                // the ship-to address
+    @Column(length = 255) private String shipToName;                     // consignee, when not the customer
+    @Column(length = 15)  private String shipToGstin;
+    @Column(length = 2)   private String shipToStateCode;                // e.g. "27"
+
     // — Logistics —
-    @Column(length = 500) private String deliveryAddress;
     @Column(length = 100) private String dispatchThrough;                // e.g. “By Road”
     @Column(length = 50)  private String transportMode;                  // e.g. “Truck”
     @Column(length = 50)  private String ewayBillNumber;

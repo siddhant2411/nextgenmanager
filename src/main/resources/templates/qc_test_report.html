@@ -74,7 +74,7 @@
 <table class="header-block">
     <tr>
         <td style="width:60%">
-            <span class="company-name">NextGen Manager</span><br/>
+            <img th:replace="~{fragments/brand :: smallLogo}"/> <span class="company-name" th:text="${brand.companyName}">Company Name</span><br/>
             <span style="font-size:8pt;color:#555">Quality Control &amp; Testing Report</span>
         </td>
         <td style="width:40%; text-align:right">

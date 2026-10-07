@@ -159,7 +159,13 @@
 </head>
 <body>
 
+<!-- Branding is for the copy a customer sees; the internal sheet stays plain. -->
+<div th:if="${!internal and brand.replacesHeader}" style="margin-bottom:4mm;">
+    <div th:replace="~{fragments/brand :: band}"></div>
+</div>
+
 <div class="header">
+    <th:block th:if="${!internal}"><img th:replace="~{fragments/brand :: floatLogo}"/></th:block>
     <h1 th:text="${title}">Price List</h1>
     <div class="meta">
         <span th:if="${customerName}">Prepared for: <b th:text="${customerName}">Customer</b></span>
@@ -167,6 +173,7 @@
         <span>Currency: <b>Rs. (INR)</b></span>
         <span th:if="${preparedBy}">Prepared by: <b th:text="${preparedBy}">user</b></span>
     </div>
+    <div style="clear:both;"></div>
 </div>
 
 <div class="banner" th:if="${internal}">

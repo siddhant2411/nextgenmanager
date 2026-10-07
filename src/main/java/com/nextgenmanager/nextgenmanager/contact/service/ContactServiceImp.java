@@ -3,6 +3,8 @@ package com.nextgenmanager.nextgenmanager.contact.service;
 import com.nextgenmanager.nextgenmanager.contact.dto.*;
 import com.nextgenmanager.nextgenmanager.contact.model.*;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
+import com.nextgenmanager.nextgenmanager.common.gst.GstState;
+import com.nextgenmanager.nextgenmanager.purchase.service.GstResolver;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -153,6 +155,12 @@ public class ContactServiceImp implements ContactService {
             }
         }
 
+        // The state comes after the addresses, because an unregistered party's state is read off one.
+        // A caller that does not mention the state at all leaves the stored one standing.
+        String chosen = req.getStateCode() != null ? req.getStateCode()
+                : GstResolver.stateCodeOf(c.getStateCode(), null);
+        c.setStateCode(GstResolver.stateCodeToStore(c.getGstNumber(), chosen, stateNameOf(c)));
+
         // Person details
         if (req.getPersonDetails() != null) {
             if (c.getPersonDetails() != null) c.getPersonDetails().clear();
@@ -170,6 +178,16 @@ public class ContactServiceImp implements ContactService {
                 c.getPersonDetails().add(person);
             }
         }
+    }
+
+    /** The state on the default address, else on the first address that names one. */
+    private static String stateNameOf(Contact c) {
+        if (c.getAddresses() == null) return null;
+        return c.getAddresses().stream()
+                .filter(a -> GstState.fromName(a.getState()) != null)
+                .min(java.util.Comparator.comparing(a -> !a.isDefault()))
+                .map(ContactAddress::getState)
+                .orElse(null);
     }
 
     /**

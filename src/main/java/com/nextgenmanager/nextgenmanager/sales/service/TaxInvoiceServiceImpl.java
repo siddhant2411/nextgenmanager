@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
+import com.nextgenmanager.nextgenmanager.sales.dto.DocumentParty;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesPaymentCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.TaxInvoiceCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.TaxInvoiceDto;
@@ -76,6 +77,9 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
         invoice.setSgstAmount(so.getSgstAmount());
         invoice.setIgstAmount(so.getIgstAmount());
         invoice.setTotalPayableAmount(so.getTotalPayableAmount());
+
+        // The invoice keeps its own copy of who it was billed and shipped to
+        SalesParties.freezeOnto(invoice, so);
 
         // Copy line items from SO
         for (SalesOrderItem soItem : so.getItems()) {
@@ -239,22 +243,26 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
         if (inv.getSalesOrder() != null) {
             dto.setSalesOrderId(inv.getSalesOrder().getId());
             dto.setSalesOrderNumber(inv.getSalesOrder().getOrderNumber());
-            dto.setDeliveryAddress(inv.getSalesOrder().getDeliveryAddress());
             dto.setDiscountAmount(inv.getSalesOrder().getDiscountAmount());
-            if (inv.getSalesOrder().getCustomer() != null) {
-                dto.setCustomerName(inv.getSalesOrder().getCustomer().getCompanyName());
-                dto.setCustomerGstin(inv.getSalesOrder().getCustomer().getGstNumber());
-                if (inv.getSalesOrder().getCustomer().getAddresses() != null && !inv.getSalesOrder().getCustomer().getAddresses().isEmpty()) {
-                    com.nextgenmanager.nextgenmanager.contact.model.ContactAddress addr = inv.getSalesOrder().getCustomer().getAddresses().get(0);
-                    String addressStr = addr.getStreet1() != null ? addr.getStreet1() : "";
-                    if (addr.getStreet2() != null) addressStr += ", " + addr.getStreet2();
-                    if (addr.getCity() != null) addressStr += ", " + addr.getCity();
-                    if (addr.getState() != null) addressStr += ", " + addr.getState();
-                    if (addr.getPinCode() != null) addressStr += " - " + addr.getPinCode();
-                    dto.setCustomerAddress(addressStr);
-                }
-            }
-            
+
+            DocumentParty billTo = SalesParties.billTo(inv);
+            DocumentParty shipTo = SalesParties.shipTo(inv);
+            dto.setCustomerName(billTo.getName());
+            dto.setCustomerGstin(billTo.getGstin());
+            dto.setCustomerAddress(billTo.getAddress());
+            dto.setDeliveryAddress(shipTo.getAddress());
+            dto.setBillToName(billTo.getName());
+            dto.setBillToAddress(billTo.getAddress());
+            dto.setBillToGstin(billTo.getGstin());
+            dto.setBillToState(billTo.getStateLabel());
+            dto.setShipToName(shipTo.getName());
+            dto.setShipToAddress(shipTo.getAddress());
+            dto.setShipToGstin(shipTo.getGstin());
+            dto.setShipToState(shipTo.getStateLabel());
+            dto.setShipToDiffers(!java.util.Objects.equals(billTo.getName(), shipTo.getName())
+                    || !java.util.Objects.equals(billTo.getAddress(), shipTo.getAddress()));
+
+
             // Fetch related Delivery Notes (Challans)
             List<DeliveryNote> dns = deliveryNoteRepository.findBySalesOrderId(inv.getSalesOrder().getId(), PageRequest.of(0, 100)).getContent();
             dto.setDeliveryNoteNumbers(dns.stream().map(DeliveryNote::getDeliveryNoteNo).toList());

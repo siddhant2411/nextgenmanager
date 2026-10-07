@@ -4,6 +4,8 @@ import com.nextgenmanager.nextgenmanager.bom.dto.BomCostBreakdownDTO;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
+import com.nextgenmanager.nextgenmanager.company.dto.DocumentBrand;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.items.DTO.ItemPriceDTO;
 import com.nextgenmanager.nextgenmanager.items.DTO.PriceListExportRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -32,6 +34,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,6 +51,7 @@ class PriceListExportServiceTest {
     @Mock private InventoryItemService inventoryItemService;
     @Mock private BomRepository bomRepository;
     @Mock private BomService bomService;
+    @Mock private DocumentBrandingService documentBrandingService;
 
     private PriceListExportService service;
 
@@ -61,8 +65,11 @@ class PriceListExportServiceTest {
         TemplateEngine engine = new TemplateEngine();
         engine.setTemplateResolver(resolver);
 
+        // No branding saved: the price list prints with its plain header, as it always has.
+        lenient().when(documentBrandingService.current()).thenReturn(DocumentBrand.of(null, null, null));
+
         service = new PriceListExportService(inventoryItemRepository, inventoryItemService,
-                bomRepository, bomService, engine);
+                bomRepository, bomService, engine, documentBrandingService);
     }
 
     // ── fixtures ──

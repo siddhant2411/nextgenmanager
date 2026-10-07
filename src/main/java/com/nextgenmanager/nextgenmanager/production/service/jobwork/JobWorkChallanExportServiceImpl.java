@@ -4,8 +4,10 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
+import com.nextgenmanager.nextgenmanager.common.service.PdfPageFit;
 import com.nextgenmanager.nextgenmanager.company.dto.CompanyDetailsDTO;
 import com.nextgenmanager.nextgenmanager.company.service.CompanyDetailsService;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.production.dto.JobWorkChallanDTO;
@@ -36,6 +38,10 @@ public class JobWorkChallanExportServiceImpl implements JobWorkChallanExportServ
     @Autowired private JobWorkChallanRepository challanRepo;
     @Autowired private JobWorkChallanService     challanService;
     @Autowired private CompanyDetailsService     companyDetailsService;
+    @Autowired private DocumentBrandingService   documentBrandingService;
+
+    /** The line table is padded with blank rows to this many, as long as that does not add a sheet. */
+    private static final int PADDED_ROWS = 8;
 
     private final TemplateEngine templateEngine;
     private static final SimpleDateFormat DATE_FMT = new SimpleDateFormat("dd MMM yyyy");
@@ -98,11 +104,6 @@ public class JobWorkChallanExportServiceImpl implements JobWorkChallanExportServ
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // ── Padding rows ────────────────────────────────────────────────────
-        int padCount = Math.max(0, 8 - dto.getLines().size());
-        List<Integer> paddingRows = new ArrayList<>();
-        for (int i = 0; i < padCount; i++) paddingRows.add(i);
-
         // ── Dates ───────────────────────────────────────────────────────────
         Date ref = dto.getDispatchDate() != null ? dto.getDispatchDate() : dto.getCreationDate();
         String issueDate     = ref != null ? DATE_FMT.format(ref) : DATE_FMT.format(new Date());
@@ -115,6 +116,7 @@ public class JobWorkChallanExportServiceImpl implements JobWorkChallanExportServ
 
         // ── Thymeleaf context ────────────────────────────────────────────────
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         context.setVariable("challan",            dto);
         context.setVariable("company",            company);
         context.setVariable("companyAddress",     companyAddress);
@@ -125,15 +127,24 @@ public class JobWorkChallanExportServiceImpl implements JobWorkChallanExportServ
         context.setVariable("totalValue",         totalValue.toPlainString());
         context.setVariable("totalQtyDispatched", totalQtyDispatched.toPlainString());
         context.setVariable("totalQtyPending",    totalQtyPending.toPlainString());
-        context.setVariable("paddingRows",        paddingRows);
         context.setVariable("issueDate",          issueDate);
         context.setVariable("dispatchDate",       dispatchDate);
         context.setVariable("returnByDate",       returnByDate);
         context.setVariable("generatedDate",      generatedDate);
         context.setVariable("qrCode",             qrCode);
 
-        String html = templateEngine.process("job_work_challan", context);
-        return renderPdf(html);
+        // ── Padding rows: blank lines up to PADDED_ROWS, fewer if that would add a sheet ──
+        int lineCount = dto.getLines().size();
+        return PdfPageFit.withFillerRows(PADDED_ROWS, rows -> {
+            List<Integer> paddingRows = new ArrayList<>();
+            for (int i = lineCount; i < rows; i++) paddingRows.add(i);
+            context.setVariable("paddingRows", paddingRows);
+            try {
+                return renderPdf(templateEngine.process("job_work_challan", context));
+            } catch (Exception e) {
+                throw new IllegalStateException("Error generating Job Work Challan PDF", e);
+            }
+        });
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

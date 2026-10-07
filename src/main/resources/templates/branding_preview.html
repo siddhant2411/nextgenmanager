@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Document Branding Preview</title>
+    <!--
+        A sample page for Company Details > Document branding. It is laid out exactly as the
+        invoice, proforma invoice and order acknowledgement are (same page box, same header
+        fragment, same styles), so what the header looks like here is what it looks like there.
+        The body is placeholder rows: no document is read to build it.
+    -->
+    <style>
+        @page { size: A4; margin: 10mm 12mm 10mm 12mm; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #000; background: #fff; }
+        .invoice-page { width: 100%; border: 1.5px solid #000; }
+
+        .doc-header { border-bottom: 1px solid #000; padding: 8px 12px; text-align: center; }
+        .company-name { font-size: 20px; font-weight: bold; letter-spacing: 1px; }
+        .company-sub  { font-size: 11px; margin-top: 3px; color: #333; }
+        .doc-title    { font-size: 15px; font-weight: bold; text-align: center; letter-spacing: 2px;
+                        border-top: 1px solid #000; border-bottom: 1px solid #000;
+                        padding: 4px 0; margin-top: 5px; }
+
+        .addr-row { display: table; width: 100%; border-bottom: 1px solid #000; }
+        .addr-cell { display: table-cell; vertical-align: top; padding: 8px 10px; width: 50%; }
+        .addr-cell.left { border-right: 1px solid #000; }
+        .addr-label { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 3px; }
+        .addr-name  { font-size: 14px; font-weight: bold; }
+        .addr-line  { font-size: 11px; line-height: 1.6; }
+
+        .items-table { width: 100%; border-collapse: collapse; border-bottom: 1px solid #000; }
+        .items-table th { background: #f0f0f0; border: 1px solid #999; padding: 5px 6px;
+                          font-size: 11px; text-align: center; font-weight: bold; }
+        .items-table td { border: 1px solid #ccc; padding: 2px 6px; font-size: 11px;
+                          vertical-align: middle; height: 32px; color: #777; }
+        .items-table td.num { text-align: right; }
+        .items-table td.ctr { text-align: center; }
+
+        .note { padding: 10px; font-size: 11px; line-height: 1.6; color: #333; }
+    </style>
+</head>
+<body>
+<div class="invoice-page">
+
+    <div th:replace="~{fragments/brand :: salesHeader('SAMPLE DOCUMENT', null)}"></div>
+
+    <div class="addr-row">
+        <div class="addr-cell left">
+            <div class="addr-label">Bill To</div>
+            <div class="addr-name">Sample Customer Pvt. Ltd.</div>
+            <div class="addr-line">12, Industrial Area, Sample City - 000000</div>
+            <div class="addr-line">GSTIN: 00AAAAA0000A0Z0</div>
+        </div>
+        <div class="addr-cell">
+            <div class="addr-label">Delivery / Ship To</div>
+            <div class="addr-name">Sample Customer Pvt. Ltd.</div>
+            <div class="addr-line">12, Industrial Area, Sample City - 000000</div>
+        </div>
+    </div>
+
+    <table class="items-table">
+        <thead>
+        <tr>
+            <th style="width:6%">#</th>
+            <th style="width:50%">Description of Goods</th>
+            <th style="width:12%">HSN/SAC</th>
+            <th style="width:10%">Qty</th>
+            <th style="width:22%">Amount</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${#numbers.sequence(1, 5)}">
+            <td class="ctr" th:text="${row}"></td>
+            <td>Sample item</td>
+            <td class="ctr">0000</td>
+            <td class="num">1</td>
+            <td class="num">0.00</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <div class="note">
+        <b>This is a sample page, not a document.</b>
+        It shows the header as it prints on the invoice, proforma invoice and order acknowledgement.
+        <span th:if="${brand.mode.name() == 'NONE'}">Documents are headed with the company name and address as text.</span>
+        <span th:if="${brand.mode.name() == 'LOGO'}">Documents are headed with the logo beside the company name and address.</span>
+        <span th:if="${brand.mode.name() == 'LETTERHEAD'}">Documents are headed with the letterhead image, with the GSTIN, PAN and CIN printed on one line beneath it.</span>
+        <span th:if="${brand.mode.name() == 'PREPRINTED'}">The top 30 mm of the page is left blank for the letterhead already printed on the paper, with the GSTIN, PAN and CIN printed on one line beneath it.</span>
+    </div>
+
+</div>
+</body>
+</html>
