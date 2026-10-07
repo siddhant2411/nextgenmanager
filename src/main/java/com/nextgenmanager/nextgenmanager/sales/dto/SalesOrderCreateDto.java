@@ -60,8 +60,19 @@ public class SalesOrderCreateDto {
     @DecimalMin(value = "0.0", inclusive = true, message = "freightAndForwardingCharges must be >= 0")
     private BigDecimal freightAndForwardingCharges;
 
+    /** Blank bills the customer at the billing address on their master record. */
+    @Size(max = 500)
+    private String billToAddress;
+    /** The ship-to address. Blank ships to the bill-to address. */
     @Size(max = 500)
     private String deliveryAddress;
+    /** Consignee, when the goods go to somebody other than the customer. */
+    @Size(max = 255)
+    private String shipToName;
+    @Size(max = 15)
+    private String shipToGstin;
+    @Size(max = 2)
+    private String shipToStateCode;
     @Size(max = 100)
     private String dispatchThrough;
     @Size(max = 50)

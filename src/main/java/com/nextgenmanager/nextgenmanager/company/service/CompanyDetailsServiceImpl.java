@@ -4,6 +4,7 @@ import com.nextgenmanager.nextgenmanager.company.dto.CompanyDetailsDTO;
 import com.nextgenmanager.nextgenmanager.company.dto.CompanyDetailsRequestDTO;
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
+import com.nextgenmanager.nextgenmanager.purchase.service.GstResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -46,6 +47,7 @@ public class CompanyDetailsServiceImpl implements CompanyDetailsService {
         entity.setCity(request.city());
         entity.setState(request.state());
         entity.setPinCode(request.pinCode());
+        entity.setStateCode(GstResolver.stateCodeToStore(request.gstNumber(), null, request.state()));
         entity.setCountry(request.country() != null ? request.country() : "India");
         entity.setCurrency(request.currency() != null ? request.currency() : "INR");
         entity.setFinancialYearStartMonth(request.financialYearStartMonth() != null ? request.financialYearStartMonth() : 4);

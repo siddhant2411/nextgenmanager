@@ -127,7 +127,9 @@
 </head>
 <body>
     <div class="container">
-        <div class="invoice-title">TAX INVOICE</div>
+        <div th:replace="~{fragments/brand :: topBand}"></div>
+        <table th:replace="~{fragments/brand :: logoTitleBar('TAX INVOICE')}"></table>
+        <div class="invoice-title" th:unless="${brand.logo}">TAX INVOICE</div>
         
         <table class="header-table">
             <tr>
@@ -171,15 +173,23 @@
             <tr>
                 <td style="width: 50%; border-right: 1px solid #000; border-top: 1px solid #000;">
                     <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Details of Receiver (Billed to)</div>
-                    <b th:text="${invoice.salesOrder.customer.companyName}">Customer Pvt Ltd</b><br/>
-                    <span th:text="${billingAddress}">Customer Address String</span><br/>
-                    <span class="label">GSTIN:</span> <span th:text="${invoice.salesOrder.customer.gstNumber}">24XXXXX0000X1Z5</span><br/>
-                    <span class="label">State Code:</span> <span th:text="${invoice.salesOrder.customer.stateCode}">24</span>
+                    <b th:text="${billTo.name}">Customer Pvt Ltd</b><br/>
+                    <span th:text="${billTo.address}">Address String</span><br/>
+                    <th:block th:if="${billTo.gstin != null or billTo.stateLabel != null}">
+                        <th:block th:if="${billTo.gstin != null}"><span class="label">GSTIN:</span> <span th:text="${billTo.gstin}">24XXXXX0000X1Z5</span></th:block>
+                        <th:block th:if="${billTo.stateLabel != null}"><span class="label">State:</span> <span th:text="${billTo.stateLabel}">Gujarat (24)</span></th:block>
+                        <br/>
+                    </th:block>
                 </td>
                 <td style="width: 50%; border-top: 1px solid #000;">
                     <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Details of Consignee (Shipped to)</div>
-                    <b th:text="${invoice.salesOrder.customer.companyName}">Customer Pvt Ltd</b><br/>
-                    <span th:text="${invoice.salesOrder.deliveryAddress}">Delivery Address String</span><br/>
+                    <b th:text="${shipTo.name}">Customer Pvt Ltd</b><br/>
+                    <span th:text="${shipTo.address}">Address String</span><br/>
+                    <th:block th:if="${shipTo.gstin != null or shipTo.stateLabel != null}">
+                        <th:block th:if="${shipTo.gstin != null}"><span class="label">GSTIN:</span> <span th:text="${shipTo.gstin}">24XXXXX0000X1Z5</span></th:block>
+                        <th:block th:if="${shipTo.stateLabel != null}"><span class="label">State:</span> <span th:text="${shipTo.stateLabel}">Gujarat (24)</span></th:block>
+                        <br/>
+                    </th:block>
                     <span class="label">Transport:</span> <span th:text="${invoice.salesOrder.dispatchThrough}">By Road</span>
                 </td>
             </tr>
@@ -213,7 +223,7 @@
                     <td class="text-right" th:text="${#numbers.formatDecimal(item.totalAmount, 1, 'COMMA', 2, 'POINT')}">10,000.00</td>
                 </tr>
                 <!-- Spacer rows to push totals down if needed -->
-                <tr th:if="${invoice.items.size() < 8}" th:each="i : ${#numbers.sequence(invoice.items.size() + 1, 8)}">
+                <tr th:if="${invoice.items.size() < fillerRows}" th:each="i : ${#numbers.sequence(invoice.items.size() + 1, fillerRows)}">
                     <td style="height: 25px;"></td><td></td><td></td><td></td><td></td><td></td><td></td>
                 </tr>
             </tbody>

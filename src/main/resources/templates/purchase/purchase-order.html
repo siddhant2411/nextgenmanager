@@ -34,8 +34,10 @@
 <body>
 <div class="container">
 
-    <!-- Company header -->
-    <div class="header">
+    <!-- Company header: letterhead (or the band left for pre-printed paper), else text with an optional logo -->
+    <div th:replace="~{fragments/brand :: letterhead}"></div>
+    <div class="header" th:unless="${brand.replacesHeader}" th:style="${brand.logo} ? 'text-align:left;' : ''">
+        <img th:replace="~{fragments/brand :: floatLogo}"/>
         <h1 th:text="${company != null ? company.companyName : ''}"></h1>
         <p th:if="${company != null}"
            th:text="${company.street1 + (company.street2 != null ? ', ' + company.street2 : '') + ', ' + company.city + ' - ' + company.pinCode + ', ' + company.state}"></p>
@@ -44,6 +46,7 @@
             &#160;|&#160; PAN: <span th:text="${company.panNumber}"></span>
             <span th:if="${company.phone != null}"> &#160;|&#160; Ph: <span th:text="${company.phone}"></span></span>
         </p>
+        <div style="clear:both;"></div>
     </div>
 
     <div class="doc-title">PURCHASE ORDER</div>
@@ -69,15 +72,39 @@
         <div class="meta-col">
             <p class="label">Vendor:</p>
             <p th:if="${po.vendor != null}" style="font-weight:bold;" th:text="${po.vendor.companyName}"></p>
-            <p th:if="${po.vendor != null and po.vendor.tradeName != null}" th:text="${'(' + po.vendor.tradeName + ')'}"></p>
-            <div th:if="${po.vendorBillingAddress != null}">
-                <p th:text="${po.vendorBillingAddress.street1}"></p>
-                <p th:if="${po.vendorBillingAddress.street2 != null}" th:text="${po.vendorBillingAddress.street2}"></p>
-                <p th:text="${po.vendorBillingAddress.city + ' - ' + po.vendorBillingAddress.pinCode}"></p>
-                <p th:text="${po.vendorBillingAddress.state}"></p>
+            <p th:if="${po.vendor != null and po.vendor.tradeName != null and !#strings.isEmpty(po.vendor.tradeName)}" th:text="${'(' + po.vendor.tradeName + ')'}"></p>
+            <!-- vendorAddress is the address on the order, or the vendor's default when the order has none -->
+            <div th:if="${vendorAddress != null}">
+                <p th:if="${!#strings.isEmpty(vendorAddress.street1)}" th:text="${vendorAddress.street1}"></p>
+                <p th:if="${!#strings.isEmpty(vendorAddress.street2)}" th:text="${vendorAddress.street2}"></p>
+                <p>
+                    <span th:if="${!#strings.isEmpty(vendorAddress.city)}" th:text="${vendorAddress.city}"></span>
+                    <span th:if="${!#strings.isEmpty(vendorAddress.pinCode)}" th:text="${'- ' + vendorAddress.pinCode}"></span>
+                </p>
+                <p th:if="${!#strings.isEmpty(vendorAddress.state)}">
+                    <span th:text="${vendorAddress.state}"></span>
+                    <span th:if="${po.vendor != null and !#strings.isEmpty(po.vendor.stateCode)}"
+                          th:text="${'(State Code: ' + po.vendor.stateCode + ')'}"></span>
+                </p>
             </div>
-            <p th:if="${po.vendor != null and po.vendor.gstNumber != null}">
-               <span class="label">GSTIN:</span> <span th:text="${po.vendor.gstNumber}"></span></p>
+            <th:block th:if="${po.vendor != null}">
+                <p th:if="${!#strings.isEmpty(po.vendor.gstNumber)}">
+                    <span class="label">GSTIN:</span> <span th:text="${po.vendor.gstNumber}"></span></p>
+                <p th:if="${#strings.isEmpty(po.vendor.gstNumber)}">
+                    <span class="label">GSTIN:</span> Unregistered</p>
+                <p th:if="${!#strings.isEmpty(po.vendor.panNumber)}">
+                    <span class="label">PAN:</span> <span th:text="${po.vendor.panNumber}"></span></p>
+                <p th:if="${po.vendor.msmeRegistered and !#strings.isEmpty(po.vendor.msmeNumber)}">
+                    <span class="label">MSME (Udyam):</span> <span th:text="${po.vendor.msmeNumber}"></span></p>
+                <p th:if="${!#strings.isEmpty(po.vendor.phone)}">
+                    <span class="label">Ph:</span> <span th:text="${po.vendor.phone}"></span></p>
+                <p th:if="${!#strings.isEmpty(po.vendor.email)}">
+                    <span class="label">Email:</span> <span th:text="${po.vendor.email}"></span></p>
+            </th:block>
+            <p th:if="${vendorPerson != null and !#strings.isEmpty(vendorPerson.personName)}">
+                <span class="label">Kind Attn:</span> <span th:text="${vendorPerson.personName}"></span>
+                <span th:if="${!#strings.isEmpty(vendorPerson.phoneNumber)}" th:text="${'(' + vendorPerson.phoneNumber + ')'}"></span>
+            </p>
         </div>
     </div>
 

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!--
+    Document branding fragments. Every print template is rendered with a `brand` variable
+    (DocumentBrand); these fragments are the only place that turns it into markup.
+
+    All sizes come from `brand` in millimetres. Nothing here lets an image decide its own size,
+    so the height each fragment takes is known before the page is laid out.
+
+    Kept to plain property access so the same file works under both the OGNL engine most
+    documents use and the Spring engine the quotation uses.
+-->
+
+<!-- Letterhead image, or the blank band left for pre-printed paper. Renders nothing in other modes. -->
+<div th:fragment="band" th:if="${brand.replacesHeader}" th:style="${brand.bandStyle}">
+    <img th:if="${brand.banner}" th:src="${brand.bannerUri}" th:style="${brand.bannerStyle}" alt=""/>
+</div>
+
+<!-- GSTIN / PAN / CIN on one line. A letterhead image cannot be trusted to carry them. -->
+<div th:fragment="strip" th:if="${brand.replacesHeader and brand.statutoryLine != null}"
+     style="text-align:center; font-size:10px; line-height:1.3; padding:1.5mm 0 0 0; color:#000;"
+     th:text="${brand.statutoryLine}"></div>
+
+<!-- Logo for customer-facing documents (45 x 18mm box). -->
+<img th:fragment="logo" th:if="${brand.logo}" th:src="${brand.logoUri}" th:style="${brand.logoStyle}" alt=""/>
+
+<!-- Logo for shop-floor documents (24 x 8mm box), set inline before the company name. -->
+<img th:fragment="smallLogo" th:if="${brand.smallLogo}" th:src="${brand.logoUri}" th:style="${brand.smallLogoStyle}" alt=""/>
+
+<!-- The same logo, floated left of a header's text. End the header with a clear. -->
+<img th:fragment="floatLogo" th:if="${brand.logo}" th:src="${brand.logoUri}"
+     th:style="'float:left; margin-right:4mm; ' + ${brand.logoStyle}" alt=""/>
+
+<!-- The band as the first thing inside a bordered document box. The seller box stays below it. -->
+<div th:fragment="topBand" th:if="${brand.replacesHeader}" style="border-bottom:1px solid #000; padding:2mm 0;">
+    <div th:replace="~{fragments/brand :: band}"></div>
+</div>
+
+<!-- The band standing in for a text header, so it carries the statutory line with it. -->
+<div th:fragment="letterhead" th:if="${brand.replacesHeader}" style="border-bottom:1px solid #000; padding:2mm 0;">
+    <div th:replace="~{fragments/brand :: band}"></div>
+    <div th:replace="~{fragments/brand :: strip}"></div>
+</div>
+
+<!--
+    Title bar with the logo at its left, for documents whose company details sit in a seller box
+    rather than a header. The empty right-hand cell keeps the title centred on the page.
+-->
+<table th:fragment="logoTitleBar(title)" th:if="${brand.logo}"
+       style="width:100%; border-collapse:collapse; border-bottom:1px solid #000; background-color:#f8f9fa;">
+    <tr>
+        <td style="width:46mm; padding:2mm 3mm; vertical-align:middle; text-align:left; border:none;">
+            <img th:replace="~{fragments/brand :: logo}"/>
+        </td>
+        <td style="padding:0; vertical-align:middle; text-align:center; font-size:20px; font-weight:bold; text-transform:uppercase; border:none;"
+            th:text="${title}"></td>
+        <td style="width:46mm; padding:0; border:none;"></td>
+    </tr>
+</table>
+
+<!-- Company name and contact line, as the sales documents print it. -->
+<th:block th:fragment="companyLines">
+    <div class="company-name" th:text="${company.companyName}"></div>
+    <!-- Each contact item is one piece of text in one box, so a line breaks between items and never inside one. -->
+    <div class="company-sub">
+        <span th:text="${companyAddress}"></span>
+        <th:block th:if="${company.email != null}">&#160;| <span style="white-space:nowrap;" th:text="'E-mail: ' + ${company.email}"></span></th:block>
+        <th:block th:if="${company.phone != null}">&#160;| <span style="white-space:nowrap;" th:text="'Ph: ' + ${company.phone}"></span></th:block>
+        <th:block th:if="${company.gstNumber != null}">&#160;| <span style="white-space:nowrap;" th:text="'GSTIN: ' + ${company.gstNumber}"></span></th:block>
+    </div>
+</th:block>
+
+<!--
+    Header of the invoice, proforma invoice and order acknowledgement.
+    Needs `company`, `companyAddress` and the host's .doc-header / .company-name / .company-sub /
+    .doc-title styles.
+-->
+<div th:fragment="salesHeader(title, note)" class="doc-header">
+    <th:block th:if="${brand.replacesHeader}">
+        <div th:replace="~{fragments/brand :: band}"></div>
+        <div th:replace="~{fragments/brand :: strip}"></div>
+    </th:block>
+    <th:block th:unless="${brand.replacesHeader}">
+        <!-- Logo at the left, company text set against it: one block, read left to right. -->
+        <table th:if="${brand.logo}" style="width:100%; border-collapse:collapse;">
+            <tr>
+                <td th:style="${brand.logoCellStyle}">
+                    <img th:replace="~{fragments/brand :: logo}"/>
+                </td>
+                <td style="vertical-align:middle; text-align:left;">
+                    <th:block th:replace="~{fragments/brand :: companyLines}"></th:block>
+                </td>
+            </tr>
+        </table>
+        <th:block th:unless="${brand.logo}">
+            <th:block th:replace="~{fragments/brand :: companyLines}"></th:block>
+        </th:block>
+    </th:block>
+    <div class="doc-title" th:text="${title}"></div>
+    <div class="proforma-note" th:if="${note != null}" th:text="${note}"></div>
+</div>
+
+</body>
+</html>

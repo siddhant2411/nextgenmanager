@@ -262,15 +262,19 @@
 <!-- ═══════════════════════════════════════════════════════
      DOCUMENT HEADER
 ═══════════════════════════════════════════════════════ -->
+<div th:if="${brand.replacesHeader}" style="margin-bottom:5px;">
+    <div th:replace="~{fragments/brand :: band}"></div>
+</div>
+
 <div class="header-wrap">
 
-    <!-- Top band: company identity + document title -->
+    <!-- Top band: company identity + document title. Under a letterhead the name is not repeated. -->
     <table class="header-top">
         <tr>
             <td style="width:60%;">
-                <div class="company-name" th:text="${company.companyName}">Your Company Pvt. Ltd.</div>
+                <div class="company-name" th:unless="${brand.replacesHeader}" th:text="${company.companyName}">Your Company Pvt. Ltd.</div>
                 <div class="company-sub"
-                     th:if="${company.legalName != null and !#strings.isEmpty(company.legalName)}"
+                     th:if="${!brand.replacesHeader and company.legalName != null and !#strings.isEmpty(company.legalName)}"
                      th:text="${company.legalName}"></div>
                 <div class="company-sub">
                     <span th:if="${company.gstNumber != null and !#strings.isEmpty(company.gstNumber)}">GSTIN:&#160;<span th:text="${company.gstNumber}"></span></span>
@@ -288,7 +292,10 @@
     <!-- Address band -->
     <table class="header-addr">
         <tr>
-            <td style="width:72%;">
+            <td th:if="${brand.logo}" th:style="${brand.logoCellStyle}">
+                <img th:replace="~{fragments/brand :: logo}"/>
+            </td>
+            <td th:style="${brand.logo} ? 'width:48%;' : 'width:72%;'">
                 <div class="addr-text">
                     <span th:if="${!#strings.isEmpty(companyAddress)}" th:text="${companyAddress}"></span>
                     <span th:if="${#strings.isEmpty(companyAddress)}" style="color:#aaa; font-style:italic;">Address not configured</span>

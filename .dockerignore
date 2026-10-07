@@ -1,0 +1,15 @@
+.git
+target
+docs
+social_media
+website
+bulk_import
+scratch
+graphify-out
+deploy
+*.md
+*.html
+*.json
+*.png
+*.xlsx
+.env

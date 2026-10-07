@@ -4,6 +4,7 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
@@ -34,6 +35,9 @@ public class BomExportServiceImpl implements BomExportService {
 
     @Autowired
     private InventoryItemRepository inventoryItemRepository;
+
+    @Autowired
+    private DocumentBrandingService documentBrandingService;
 
     private final TemplateEngine templateEngine;
 
@@ -209,6 +213,7 @@ public class BomExportServiceImpl implements BomExportService {
         List<Bom> boms = bomRepository.findAllById(bomIds);
         
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         List<Map<String, Object>> bomDatas = new ArrayList<>();
 
         for (Bom bom : boms) {
@@ -280,6 +285,7 @@ public class BomExportServiceImpl implements BomExportService {
         List<Bom> boms = bomRepository.findAllById(bomIds);
 
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         List<Map<String, Object>> bomDatas = new ArrayList<>();
 
         for (Bom bom : boms) {

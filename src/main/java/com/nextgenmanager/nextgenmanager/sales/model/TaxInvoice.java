@@ -52,6 +52,17 @@ public class TaxInvoice {
     @Column(precision = 12, scale = 2) private BigDecimal totalPayableAmount;
     @Column(precision = 12, scale = 2) private BigDecimal paidAmount = BigDecimal.ZERO;
 
+    // Both parties as they stood when the invoice was raised (SalesParties.freezeOnto). Null on
+    // invoices older than V179, which read from their sales order instead.
+    @Column(length = 255) private String billToName;
+    @Column(length = 500) private String billToAddress;
+    @Column(length = 15)  private String billToGstin;
+    @Column(length = 2)   private String billToStateCode;
+    @Column(length = 255) private String shipToName;
+    @Column(length = 500) private String shipToAddress;
+    @Column(length = 15)  private String shipToGstin;
+    @Column(length = 2)   private String shipToStateCode;
+
     @OneToMany(mappedBy = "taxInvoice", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<InvoiceItem> items = new ArrayList<>();
 

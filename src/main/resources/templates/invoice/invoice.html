@@ -85,17 +85,8 @@
 <th:block th:each="page, pageIter : ${itemPages}">
 <div class="invoice-page" th:style="${!pageIter.last ? 'page-break-after: always;' : ''}">
 
-    <!-- Company header -->
-    <div class="doc-header">
-        <div class="company-name" th:text="${company.companyName}"></div>
-        <div class="company-sub">
-            <span th:text="${companyAddress}"></span>
-            <th:block th:if="${company.email != null}">&#160;|&#160; E-mail: <span th:text="${company.email}"></span></th:block>
-            <th:block th:if="${company.phone != null}">&#160;|&#160; Ph: <span th:text="${company.phone}"></span></th:block>
-            <th:block th:if="${company.gstNumber != null}">&#160;|&#160; GSTIN: <span th:text="${company.gstNumber}"></span></th:block>
-        </div>
-        <div class="doc-title">TAX INVOICE</div>
-    </div>
+    <!-- Company header: text, logo or letterhead, as Company Details > Document branding says -->
+    <div th:replace="~{fragments/brand :: salesHeader('TAX INVOICE', null)}"></div>
 
     <div class="page-info" th:if="${itemPages.size() > 1}">
         Page <span th:text="${pageIter.index + 1}"></span> of <span th:text="${itemPages.size()}"></span>
@@ -105,17 +96,23 @@
     <div class="addr-row">
         <div class="addr-cell left">
             <div class="addr-label">Bill To</div>
-            <div class="addr-name" th:text="${salesOrder.customer.companyName}"></div>
-            <div class="addr-line" th:if="${billingAddress != null and billingAddress != ''}"
-                 th:text="${billingAddress}"></div>
-            <div class="addr-line">
-                GSTIN: <span th:text="${salesOrder.customer.gstNumber} ?: 'N/A'"></span>
+            <div class="addr-name" th:text="${billTo.name}"></div>
+            <div class="addr-line" th:if="${billTo.address != null}" th:text="${billTo.address}"></div>
+            <div class="addr-line" th:if="${billTo.gstin != null or billTo.stateLabel != null}">
+                <span th:if="${billTo.gstin != null}" th:text="${'GSTIN: ' + billTo.gstin}"></span>
+                <span th:if="${billTo.gstin != null and billTo.stateLabel != null}">|</span>
+                <span th:if="${billTo.stateLabel != null}" th:text="${'State: ' + billTo.stateLabel}"></span>
             </div>
         </div>
         <div class="addr-cell right">
-            <div class="addr-label">Delivery / Ship To</div>
-            <div class="addr-name" th:text="${salesOrder.customer.companyName}"></div>
-            <div class="addr-line" th:text="${salesOrder.deliveryAddress}"></div>
+            <div class="addr-label">Ship To</div>
+            <div class="addr-name" th:text="${shipTo.name}"></div>
+            <div class="addr-line" th:if="${shipTo.address != null}" th:text="${shipTo.address}"></div>
+            <div class="addr-line" th:if="${shipTo.gstin != null or shipTo.stateLabel != null}">
+                <span th:if="${shipTo.gstin != null}" th:text="${'GSTIN: ' + shipTo.gstin}"></span>
+                <span th:if="${shipTo.gstin != null and shipTo.stateLabel != null}">|</span>
+                <span th:if="${shipTo.stateLabel != null}" th:text="${'State: ' + shipTo.stateLabel}"></span>
+            </div>
         </div>
     </div>
 
@@ -138,7 +135,7 @@
         </tr>
     </table>
 
-    <!-- Line items — exactly 10 rows per page -->
+    <!-- Line items: a fixed number of rows per page, set by InvoicePdfService -->
     <table class="items-table">
         <thead>
         <tr>
@@ -154,7 +151,7 @@
         </thead>
         <tbody>
         <tr th:each="item, rowIter : ${page}">
-            <td class="ctr" th:text="${item != null ? pageIter.index * 10 + rowIter.index + 1 : ''}"></td>
+            <td class="ctr" th:text="${item != null ? pageIter.index * rowsPerPage + rowIter.index + 1 : ''}"></td>
             <td th:if="${item != null}">
                 <span class="item-name" th:text="${item.inventoryItem.name}"></span>
                 <span class="item-code" th:if="${item.inventoryItem.itemCode != null}"> &#160;(<span th:text="${item.inventoryItem.itemCode}"></span>)</span>

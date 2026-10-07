@@ -61,7 +61,7 @@
     <!-- ── Document Header ── -->
     <table class="header-block">
         <tr>
-            <td colspan="4" class="company-name">NEXTGEN MANAGER ERP</td>
+            <td colspan="4" class="company-name"><img th:replace="~{fragments/brand :: smallLogo}"/> <span th:text="${brand.companyName}">Company Name</span></td>
             <td rowspan="2" class="qr-code">
                 <img th:src="'data:image/png;base64,' + ${qrCode}" alt="QR"/>
             </td>

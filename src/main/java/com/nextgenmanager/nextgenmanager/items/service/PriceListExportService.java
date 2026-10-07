@@ -5,6 +5,7 @@ import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.BomService;
 import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.DTO.ItemPriceDTO;
 import com.nextgenmanager.nextgenmanager.items.DTO.PriceListExportRequest;
@@ -64,17 +65,20 @@ public class PriceListExportService {
     private final BomRepository bomRepository;
     private final BomService bomService;
     private final TemplateEngine templateEngine;
+    private final DocumentBrandingService documentBrandingService;
 
     public PriceListExportService(InventoryItemRepository inventoryItemRepository,
                                   InventoryItemService inventoryItemService,
                                   BomRepository bomRepository,
                                   BomService bomService,
-                                  TemplateEngine templateEngine) {
+                                  TemplateEngine templateEngine,
+                                  DocumentBrandingService documentBrandingService) {
         this.inventoryItemRepository = inventoryItemRepository;
         this.inventoryItemService = inventoryItemService;
         this.bomRepository = bomRepository;
         this.bomService = bomService;
         this.templateEngine = templateEngine;
+        this.documentBrandingService = documentBrandingService;
     }
 
     /** Resolves the requested items and reduces them to priced, sorted price rows. */
@@ -162,6 +166,7 @@ public class PriceListExportService {
         List<ItemPriceDTO> rows = buildRows(request);
 
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         context.setVariable("rows", rows);
         context.setVariable("internal", request.isInternal());
         context.setVariable("title", request.resolvedTitle());

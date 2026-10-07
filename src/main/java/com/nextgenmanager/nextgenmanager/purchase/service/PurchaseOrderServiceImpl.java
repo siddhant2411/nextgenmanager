@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.purchase.service;
 
+import com.nextgenmanager.nextgenmanager.common.gst.GstState;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
@@ -308,7 +309,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (poType != null)              po.setPoType(poType);
         if (orderDate != null)           po.setOrderDate(orderDate);
         if (expectedDeliveryDate != null) po.setExpectedDeliveryDate(expectedDeliveryDate);
-        if (StringUtils.hasText(placeOfSupply)) po.setPlaceOfSupply(placeOfSupply);
+        if (StringUtils.hasText(placeOfSupply))
+            po.setPlaceOfSupply(GstState.requireCode(placeOfSupply, "Place of supply"));
         if (StringUtils.hasText(currency))      po.setCurrency(currency);
         if (exchangeRate != null)        po.setExchangeRate(exchangeRate);
         if (StringUtils.hasText(paymentTerms))  po.setPaymentTerms(paymentTerms);

@@ -2,10 +2,11 @@ package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
-import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.purchase.service.AmountInWords;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxInvoice;
 import com.nextgenmanager.nextgenmanager.sales.repository.TaxInvoiceRepository;
+import com.nextgenmanager.nextgenmanager.common.service.PdfPageFit;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,9 +24,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TaxInvoicePdfService {
 
+    /** The item table is padded with blank rows to this many, as long as that does not add a sheet. */
+    private static final int FILLER_ROWS = 8;
+
     private final TemplateEngine templateEngine;
     private final TaxInvoiceRepository taxInvoiceRepository;
     private final CompanyDetailsRepository companyDetailsRepository;
+    private final DocumentBrandingService documentBrandingService;
 
     @Transactional(readOnly = true)
     public byte[] generatePdf(Long id) {
@@ -36,17 +41,13 @@ public class TaxInvoicePdfService {
                 .orElse(new CompanyDetails());
 
         Context context = new Context();
+        context.setVariable("brand", documentBrandingService.current());
         context.setVariable("invoice", invoice);
         context.setVariable("company", company);
         context.setVariable("amountInWords", AmountInWords.convert(invoice.getTotalPayableAmount()));
         
-        // Billing Address Logic
-        String billingAddress = invoice.getSalesOrder().getCustomer().getAddresses().stream()
-                .filter(ContactAddress::isDefault)
-                .map(a -> a.getStreet1() + (a.getStreet2() != null ? ", " + a.getStreet2() : "") + ", " + a.getCity() + ", " + a.getState() + " - " + a.getPinCode())
-                .findFirst()
-                .orElse("N/A");
-        context.setVariable("billingAddress", billingAddress);
+        context.setVariable("billTo", SalesParties.billTo(invoice));
+        context.setVariable("shipTo", SalesParties.shipTo(invoice));
 
         // Bank Details (Using established hardcoded values for now)
         context.setVariable("bankName", "Canara Bank");
@@ -93,6 +94,13 @@ public class TaxInvoicePdfService {
         context.setVariable("effectiveTaxPct", invEffectiveTaxPct);
         context.setVariable("effectiveHalfTaxPct", invEffectiveHalfTaxPct);
 
+        return PdfPageFit.withFillerRows(FILLER_ROWS, fillerRows -> {
+            context.setVariable("fillerRows", fillerRows);
+            return render(context);
+        });
+    }
+
+    private byte[] render(Context context) {
         String html = templateEngine.process("invoice/tax_invoice_premium", context)
                 .replace("&nbsp;", "&#160;");
 

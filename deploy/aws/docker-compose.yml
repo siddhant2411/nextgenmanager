@@ -15,7 +15,7 @@ services:
   backend:
     build:
       context: ../..
-    image: nextgenmanager-backend:latest
+    image: ${BACKEND_IMAGE:-nextgenmanager-backend:latest}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -51,7 +51,7 @@ services:
         # Relative: the UI calls the API on its own origin, through Caddy.
         REACT_APP_API_BASE_URL: /api
         REACT_APP_API_URL: /api
-    image: nextgenmanager-frontend:latest
+    image: ${FRONTEND_IMAGE:-nextgenmanager-frontend:latest}
     restart: unless-stopped
     expose:
       - "80"

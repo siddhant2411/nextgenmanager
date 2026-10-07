@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.marketing.quotation.service;
 
 import com.itextpdf.html2pdf.HtmlConverter;
+import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
@@ -20,8 +21,8 @@ import org.springframework.data.domain.*;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
-import org.thymeleaf.spring5.SpringTemplateEngine;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 import org.thymeleaf.templatemode.TemplateMode;
 
@@ -35,6 +36,7 @@ import java.util.*;
 public class QuotationServiceImp implements QuotationService {
 
     @Autowired private QuotationRepository quotationRepository;
+    @Autowired private DocumentBrandingService documentBrandingService;
     @Autowired private InventoryInstanceRepository inventoryInstanceRepository;
     @Autowired private EnquiryRepository enquiryRepository;
     @Autowired private com.nextgenmanager.nextgenmanager.company.service.CompanyDetailsService companyService;
@@ -127,6 +129,8 @@ public class QuotationServiceImp implements QuotationService {
             // Initialize template resolver
             ClassLoaderTemplateResolver templateResolver = new ClassLoaderTemplateResolver();
             templateResolver.setTemplateMode(TemplateMode.HTML);
+            // Same root as the shared engine, so the quotation can include fragments/brand.
+            templateResolver.setPrefix("templates/");
             templateResolver.setSuffix(".html");
 
             // Fetch quotation object
@@ -170,14 +174,18 @@ public class QuotationServiceImp implements QuotationService {
             templateVariables.put("enquiryInfo", enquiryInfo);
             templateVariables.put("quotationProducts", quotationProducts);
             templateVariables.put("appCompany", appCompany);
+            templateVariables.put("brand", documentBrandingService.current());
             context.setVariables(templateVariables);
 
             // Initialize template engine
-            SpringTemplateEngine templateEngine = new SpringTemplateEngine();
+            // The plain engine, as every other document uses. The Spring one (thymeleaf-spring5 3.1.5)
+            // calls into a newer Thymeleaf core than the 3.1.2 this build runs on and failed on the
+            // first expression of any template.
+            TemplateEngine templateEngine = new TemplateEngine();
             templateEngine.setTemplateResolver(templateResolver);
 
             // Process template
-            return templateEngine.process("templates/quotation/quotation", context);
+            return templateEngine.process("quotation/quotation", context);
 
         } catch (Exception e) {
             // Rendering an error page into a PDF made the real cause invisible (the caller just saw a

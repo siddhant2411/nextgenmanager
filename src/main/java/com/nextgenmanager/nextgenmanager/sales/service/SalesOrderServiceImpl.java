@@ -4,6 +4,7 @@ import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequestSource;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryInstanceService;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
+import com.nextgenmanager.nextgenmanager.common.gst.GstState;
 import com.nextgenmanager.nextgenmanager.sales.events.SalesOrderApprovedEvent;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
@@ -103,6 +104,8 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         SalesOrder salesOrder = salesOrderRepository.findById(id)
                 .orElseThrow(() -> new SalesOrderNotFoundException(id));
         SalesOrderDto dto = salesOrderMapper.toDTO(salesOrder);
+        dto.setBillTo(SalesParties.billTo(salesOrder));
+        dto.setShipTo(SalesParties.shipTo(salesOrder));
         populateItemTracking(salesOrder, dto);
         populatePaymentTotals(id, dto);
         return dto;
@@ -252,8 +255,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         so.setIncludeFreightCharges(dto.isIncludeFreightCharges());
         so.setFreightAndForwardingCharges(
                 dto.getFreightAndForwardingCharges() != null ? dto.getFreightAndForwardingCharges() : BigDecimal.ZERO);
-        so.setPlaceOfSupply(dto.getPlaceOfSupply());
-        so.setPlaceOfSupplyStateCode(dto.getPlaceOfSupplyStateCode());
+        // The code is what counts; the name printed beside it always comes from the same list.
+        String posCode = GstState.requireCode(dto.getPlaceOfSupplyStateCode(), "Place of supply state code");
+        if (posCode == null) {
+            GstState named = GstState.fromName(dto.getPlaceOfSupply());
+            posCode = named != null ? named.getCode() : null;
+        }
+        so.setPlaceOfSupplyStateCode(posCode);
+        so.setPlaceOfSupply(posCode != null ? GstState.nameFor(posCode) : blankToNull(dto.getPlaceOfSupply()));
     }
 
     private void applyItems(SalesOrder so, List<SalesOrderItemDto> itemDtos, boolean newOrder) {
@@ -290,13 +299,22 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     private void applyLogistics(SalesOrder so, SalesOrderCreateDto dto) {
-        so.setDeliveryAddress(dto.getDeliveryAddress());
+        so.setBillToAddress(blankToNull(dto.getBillToAddress()));
+        so.setDeliveryAddress(blankToNull(dto.getDeliveryAddress()));
+        so.setShipToName(blankToNull(dto.getShipToName()));
+        so.setShipToGstin(dto.getShipToGstin() != null ? blankToNull(dto.getShipToGstin().toUpperCase()) : null);
+        so.setShipToStateCode(GstState.requireCode(dto.getShipToStateCode(), "Ship-to state code"));
         so.setDispatchThrough(dto.getDispatchThrough());
         so.setTransportMode(dto.getTransportMode());
         so.setDeliveryDate(dto.getDeliveryDate());
         so.setPackagingInstructions(dto.getPackagingInstructions());
         so.setRemarks(dto.getRemarks());
         so.setReference(dto.getReference());
+    }
+
+    /** A blank address or consignee is stored as null, which is what tells SalesParties to use the default. */
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     /**
