@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.purchase.dto;
 
 import com.nextgenmanager.nextgenmanager.purchase.model.GstTreatment;
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderType;
+import com.nextgenmanager.nextgenmanager.purchase.model.ShipToKind;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -39,5 +40,12 @@ public record PurchaseOrderCreateDto(
         List<PurchaseOrderItemCreateDto> items,
         String termsAndConditions,
         String internalNotes,
-        String remarks
+        String remarks,
+        /**
+         * Where the goods are to be delivered. Left null, the ship-to is not touched (an importer
+         * that knows nothing about it changes nothing); COMPANY clears any plant or party chosen
+         * earlier, PLANT needs shipToWarehouseId and PARTY needs shipToAddressId.
+         */
+        ShipToKind shipToKind,
+        Long shipToWarehouseId
 ) {}

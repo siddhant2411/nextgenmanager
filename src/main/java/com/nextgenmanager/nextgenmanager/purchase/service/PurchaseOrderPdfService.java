@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.purchase.service;
 
+import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
@@ -62,7 +63,11 @@ public class PurchaseOrderPdfService {
         Context ctx = new Context();
         ctx.setVariable("brand", documentBrandingService.current());
         ctx.setVariable("po", po);
-        ctx.setVariable("company", companyRepo.findAll().stream().findFirst().orElse(null));
+        CompanyDetails company = companyRepo.findAll().stream().findFirst().orElse(null);
+        ctx.setVariable("company", company);
+        ctx.setVariable("billTo", PurchaseParties.billTo(company));
+        ctx.setVariable("shipTo", PurchaseParties.shipTo(po, company));
+        ctx.setVariable("shipToKind", PurchaseParties.kindOf(po));
         ctx.setVariable("amountInWords", AmountInWords.convert(po.getGrandTotal()));
         ctx.setVariable("vendorAddress", vendorAddress(po));
         ctx.setVariable("vendorPerson", vendorPerson(po.getVendor()));

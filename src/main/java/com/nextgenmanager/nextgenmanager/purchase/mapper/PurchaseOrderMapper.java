@@ -18,6 +18,10 @@ public interface PurchaseOrderMapper {
     @Mapping(target = "shipToAddressId",       source = "shipToAddress.id")
     @Mapping(target = "salesOrderId",          source = "salesOrder.id")
     @Mapping(target = "grandTotalInWords",     ignore = true)   // populated by service
+    @Mapping(target = "shipToWarehouseId",     source = "shipToWarehouse.id")
+    @Mapping(target = "shipToKind",            ignore = true)   // populated by service
+    @Mapping(target = "billTo",                ignore = true)   // populated by service
+    @Mapping(target = "shipTo",                ignore = true)   // populated by service
     PurchaseOrderDto toDto(PurchaseOrder entity);
 
     @Mapping(target = "vendorId",    source = "vendor.id")

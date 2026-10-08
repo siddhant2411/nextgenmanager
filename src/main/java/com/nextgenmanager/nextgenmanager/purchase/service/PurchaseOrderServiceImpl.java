@@ -17,6 +17,10 @@ import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderItem;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import jakarta.persistence.EntityManager;
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
+import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
+import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
+import com.nextgenmanager.nextgenmanager.purchase.model.ShipToKind;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -51,6 +55,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     private final PurchaseOrderApprovalService approvalService;
     private final PurchaseOrderPdfService pdfService;
     private final PurchaseOrderMapper mapper;
+    private final CompanyDetailsRepository companyRepo;
 
     public PurchaseOrderServiceImpl(PurchaseOrderRepository poRepo,
                                     ContactRepository contactRepo,
@@ -62,7 +67,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                                     PurchaseOrderNumberGenerator numberGen,
                                     PurchaseOrderApprovalService approvalService,
                                     PurchaseOrderPdfService pdfService,
-                                    PurchaseOrderMapper mapper) {
+                                    PurchaseOrderMapper mapper,
+                                    CompanyDetailsRepository companyRepo) {
         this.poRepo = poRepo;
         this.contactRepo = contactRepo;
         this.itemRepo = itemRepo;
@@ -74,6 +80,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         this.approvalService = approvalService;
         this.pdfService = pdfService;
         this.mapper = mapper;
+        this.companyRepo = companyRepo;
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -88,6 +95,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.vendorBillingAddressId(), dto.shipToAddressId(), dto.salesOrderId(),
                 dto.quotationNumber(), dto.quotationDate(), dto.reference(),
                 dto.termsAndConditions(), dto.internalNotes(), dto.remarks());
+        applyShipTo(po, dto.shipToKind(), dto.shipToAddressId(), dto.shipToWarehouseId());
         po.setItems(buildItems(po, dto.items()));
         applyGstTreatmentAndRecalculate(po, dto.gstTreatment());
         return toDto(poRepo.save(po));
@@ -165,6 +173,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.vendorBillingAddressId(), dto.shipToAddressId(), dto.salesOrderId(),
                 dto.quotationNumber(), dto.quotationDate(), dto.reference(),
                 dto.termsAndConditions(), dto.internalNotes(), dto.remarks());
+        applyShipTo(po, dto.shipToKind(), dto.shipToAddressId(), dto.shipToWarehouseId());
         if (dto.items() != null) {
             po.getItems().clear();
             po.getItems().addAll(buildItems(po, dto.items()));
@@ -317,8 +326,6 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (creditDays != null)          po.setCreditDays(creditDays);
         if (vendorBillingAddressId != null)
             po.setVendorBillingAddress(em.getReference(ContactAddress.class, vendorBillingAddressId));
-        if (shipToAddressId != null)
-            po.setShipToAddress(em.getReference(ContactAddress.class, shipToAddressId));
         if (salesOrderId != null)
             po.setSalesOrder(em.getReference(SalesOrder.class, salesOrderId));
         if (quotationNumber != null) po.setQuotationNumber(quotationNumber.isBlank() ? null : quotationNumber);
@@ -327,6 +334,44 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (termsAndConditions != null) po.setTermsAndConditions(termsAndConditions);
         if (internalNotes != null)      po.setInternalNotes(internalNotes);
         if (remarks != null)            po.setRemarks(remarks);
+    }
+
+    /**
+     * Sets where the goods go. The two destinations exclude each other, and choosing COMPANY clears
+     * both, which is the only way an order sent to a plant or a customer can be brought back to
+     * the registered address. With no kind given the ids are applied as they come, so a caller
+     * that sends neither leaves the order as it was.
+     */
+    private void applyShipTo(PurchaseOrder po, ShipToKind kind, Integer shipToAddressId, Long shipToWarehouseId) {
+        if (kind == null) {
+            kind = shipToWarehouseId != null ? ShipToKind.PLANT
+                    : shipToAddressId != null ? ShipToKind.PARTY : null;
+            if (kind == null) return;
+        }
+        switch (kind) {
+            case COMPANY -> {
+                po.setShipToAddress(null);
+                po.setShipToWarehouse(null);
+            }
+            case PLANT -> {
+                if (shipToWarehouseId == null) {
+                    throw new IllegalArgumentException("Choose the plant the goods are to be delivered to.");
+                }
+                Warehouse plant = em.find(Warehouse.class, shipToWarehouseId);
+                if (plant == null || plant.getDeletedDate() != null) {
+                    throw new IllegalArgumentException("Plant not found: " + shipToWarehouseId);
+                }
+                po.setShipToWarehouse(plant);
+                po.setShipToAddress(null);
+            }
+            case PARTY -> {
+                if (shipToAddressId == null) {
+                    throw new IllegalArgumentException("Choose the party and address the goods are to be delivered to.");
+                }
+                po.setShipToAddress(em.getReference(ContactAddress.class, shipToAddressId));
+                po.setShipToWarehouse(null);
+            }
+        }
     }
 
     private List<PurchaseOrderItem> buildItems(PurchaseOrder po,
@@ -455,6 +500,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     private PurchaseOrderDto toDto(PurchaseOrder po) {
         PurchaseOrderDto dto = mapper.toDto(po);
+        CompanyDetails company = companyRepo.findAll().stream().findFirst().orElse(null);
         return new PurchaseOrderDto(
                 dto.id(), dto.purchaseOrderNumber(), dto.poType(),
                 dto.vendorId(), dto.vendorName(), dto.vendorGstin(),
@@ -474,6 +520,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.revisionNo(), dto.parentPoId(), dto.salesOrderId(),
                 dto.termsAndConditions(), dto.internalNotes(), dto.remarks(),
                 dto.createdDate(), dto.updatedDate(),
-                dto.items());
+                dto.items(),
+                PurchaseParties.kindOf(po), dto.shipToWarehouseId(),
+                PurchaseParties.billTo(company), PurchaseParties.shipTo(po, company));
     }
 }

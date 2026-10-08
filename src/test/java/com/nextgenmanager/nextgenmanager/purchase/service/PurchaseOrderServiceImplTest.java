@@ -68,6 +68,7 @@ class PurchaseOrderServiceImplTest {
     @Mock private PurchaseOrderApprovalService approvalService;
     @Mock private PurchaseOrderPdfService pdfService;
     @Mock private PurchaseOrderMapper mapper;
+    @Mock private com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository companyRepo;
 
     private PurchaseOrderServiceImpl service;
 
@@ -77,7 +78,7 @@ class PurchaseOrderServiceImplTest {
         // mocking it would hide the thing these tests are checking.
         service = new PurchaseOrderServiceImpl(poRepo, contactRepo, itemRepo, salesOrderRepo, em,
                 gstResolver, new PurchaseOrderTaxCalculator(), numberGen, approvalService,
-                pdfService, mapper);
+                pdfService, mapper, companyRepo);
 
         when(numberGen.next()).thenReturn("PO/2026-27/0001");
         when(poRepo.save(any(PurchaseOrder.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -229,7 +230,7 @@ class PurchaseOrderServiceImplTest {
                 null, null, null, null,
                 List.of(new PurchaseOrderItemCreateDto(
                         null, null, null, 1, BigDecimal.TEN, null, null, null, null, null)),
-                null, null, null);
+                null, null, null, null, null);
 
         assertThatThrownBy(() -> service.create(dto))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -247,7 +248,7 @@ class PurchaseOrderServiceImplTest {
                 List.of(new PurchaseOrderItemCreateDto(
                         42L, null, null, 10, new BigDecimal("100"), BigDecimal.ZERO,
                         new BigDecimal("18"), null, null, null)),
-                null, null, null);
+                null, null, null, null, null);
 
         service.create(dto);
 
@@ -289,7 +290,7 @@ class PurchaseOrderServiceImplTest {
         return new PurchaseOrderDto(1L, "PO/2026-27/0001", null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null, List.of());
+                null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null, null, null, null);
     }
 
     private PurchaseOrderListDto emptyListDto() {

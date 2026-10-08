@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.purchase.model;
 
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
@@ -60,10 +61,18 @@ public class PurchaseOrder {
     @JoinColumn(name = "vendorBillingAddressId")
     private ContactAddress vendorBillingAddress;
 
-    /** Our warehouse / delivery address. */
+    // Where the goods are to be delivered. At most one of the two is set, and neither means the
+    // registered address of the company. Read the result through PurchaseParties.shipTo.
+
+    /** Another party's address: a customer the vendor delivers to directly, or a job worker. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "shipToAddressId")
     private ContactAddress shipToAddress;
+
+    /** One of our own plants or stores. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shipToWarehouseId")
+    private Warehouse shipToWarehouse;
 
     @Column(length = 3, nullable = false)
     private String currency = "INR";

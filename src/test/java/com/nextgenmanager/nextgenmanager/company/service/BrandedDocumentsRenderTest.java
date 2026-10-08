@@ -135,10 +135,12 @@ class BrandedDocumentsRenderTest {
         switch (doc.identity()) {
             case HEADER -> {
                 brandImages = brand.mode() == BrandingMode.LOGO || brand.mode() == BrandingMode.LETTERHEAD ? 1 : 0;
-                if (replaced) {
-                    // The address is header text and nothing else on these documents repeats it.
-                    assertThat(first).doesNotContain("Plot No. 214/B");
-                } else {
+                // The address is header text, so a letterhead takes one copy of it away. The purchase
+                // order keeps a second in its bill-to box, which is then the only place it is typed.
+                int addressedAsPlainText = BrandingFixtures.count(asPlainText.get(0).replaceAll("\\s+", " "), "Plot No. 214/B");
+                assertThat(BrandingFixtures.count(first, "Plot No. 214/B"))
+                        .isEqualTo(replaced ? addressedAsPlainText - 1 : addressedAsPlainText);
+                if (!replaced) {
                     assertThat(first).contains(COMPANY).contains("Plot No. 214/B");
                 }
             }
