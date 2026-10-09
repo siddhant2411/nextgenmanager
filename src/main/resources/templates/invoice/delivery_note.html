@@ -47,7 +47,8 @@
         .company-name { font-size: 18px; font-weight: bold; display: block; margin-bottom: 5px; }
         .label { font-weight: bold; color: #555; }
         table.content-table { width: 100%; border-collapse: collapse; }
-        table.content-table th, table.content-table td { border: 1px solid #000; padding: 12px; text-align: left; }
+        table.content-table th, table.content-table td { border: 1px solid #000; padding: 12px 8px; text-align: left; }
+        table.content-table td.total-label { text-align: right; font-weight: bold; color: #555; }
         table.content-table th { background-color: #f1f3f5; font-weight: bold; text-transform: uppercase; font-size: 11px; }
         .text-right { text-align: right !important; }
         .text-center { text-align: center !important; }
@@ -103,7 +104,8 @@
                         <th:block th:if="${shipTo.stateLabel != null}"><span class="label">State:</span> <span th:text="${shipTo.stateLabel}">Gujarat (24)</span></th:block>
                         <br/>
                     </th:block>
-                    <th:block th:if="${shipTo.name != billTo.name}"><span class="label">Buyer (Bill to):</span> <span th:text="${billTo.name}">Buyer Pvt Ltd</span></th:block>
+                    <th:block th:if="${shipTo.name != billTo.name}"><span class="label">Buyer (Bill to):</span> <span th:text="${billTo.name}">Buyer Pvt Ltd</span><br/></th:block>
+                    <th:block th:if="${billTo.stateLabel != null}"><span class="label">Place of Supply:</span> <span th:text="${billTo.stateLabel}">Gujarat (24)</span></th:block>
                 </td>
                 <td style="width: 50%; border-top: 1px solid #000;">
                     <div class="label" style="margin-bottom: 5px; text-decoration: underline;">Dispatch Details</div>
@@ -117,13 +119,16 @@
             <thead>
                 <tr>
                     <th style="width: 5%;">#</th>
-                    <th style="width: 65%;">Description of Goods</th>
-                    <th style="width: 15%;">HSN Code</th>
-                    <th style="width: 15%;">Quantity</th>
+                    <th style="width: 33%;">Description of Goods</th>
+                    <th style="width: 12%;">HSN Code</th>
+                    <th style="width: 13%;">Quantity</th>
+                    <th style="width: 13%;" class="text-right">Rate</th>
+                    <th style="width: 8%;" class="text-center">GST %</th>
+                    <th style="width: 16%;" class="text-right">Taxable Value</th>
                 </tr>
             </thead>
             <tbody>
-                <tr th:each="item, iter : ${dn.items}">
+                <tr th:each="line, iter : ${value.lines}" th:with="item=${line.item}">
                     <td class="text-center" th:text="${iter.index + 1}">1</td>
                     <td>
                         <b th:text="${item.inventoryItem.name}">Product Name</b>
@@ -139,10 +144,36 @@
                         <b th:text="${item.quantityDelivered.stripTrailingZeros().toPlainString()}">10</b> 
                         <span th:text="${item.inventoryItem.uom}">NOS</span>
                     </td>
+                    <td class="text-right" th:text="${line.rate != null ? #numbers.formatDecimal(line.rate, 1, 'COMMA', 2, 'POINT') : '-'}">1,000.00</td>
+                    <td class="text-center" th:text="${line.gstRate != null ? line.gstRate.toPlainString() : '-'}">18</td>
+                    <td class="text-right" th:text="${line.taxableValue != null ? #numbers.formatDecimal(line.taxableValue, 1, 'COMMA', 2, 'POINT') : '-'}">10,000.00</td>
                 </tr>
                 <tr th:if="${dn.items.size() < fillerRows}" th:each="i : ${#numbers.sequence(dn.items.size() + 1, fillerRows)}">
-                    <td style="height: 35px;"></td><td></td><td></td><td></td>
+                    <td style="height: 35px;"></td><td></td><td></td><td></td><td></td><td></td><td></td>
                 </tr>
+                <!-- Rule 55: the taxable value of the goods, and the tax on them when they move as a supply. -->
+                <th:block th:if="${value.complete}">
+                    <tr>
+                        <td colspan="6" class="total-label">Total Taxable Value</td>
+                        <td class="text-right"><b th:text="${#numbers.formatDecimal(value.taxableValue, 1, 'COMMA', 2, 'POINT')}">10,000.00</b></td>
+                    </tr>
+                    <tr th:if="${value.cgst > 0}">
+                        <td colspan="6" class="total-label">CGST</td>
+                        <td class="text-right" th:text="${#numbers.formatDecimal(value.cgst, 1, 'COMMA', 2, 'POINT')}">900.00</td>
+                    </tr>
+                    <tr th:if="${value.sgst > 0}">
+                        <td colspan="6" class="total-label">SGST</td>
+                        <td class="text-right" th:text="${#numbers.formatDecimal(value.sgst, 1, 'COMMA', 2, 'POINT')}">900.00</td>
+                    </tr>
+                    <tr th:if="${value.igst > 0}">
+                        <td colspan="6" class="total-label">IGST</td>
+                        <td class="text-right" th:text="${#numbers.formatDecimal(value.igst, 1, 'COMMA', 2, 'POINT')}">1,800.00</td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" class="total-label">Total Value of Goods</td>
+                        <td class="text-right"><b th:text="${#numbers.formatDecimal(value.totalValue, 1, 'COMMA', 2, 'POINT')}">11,800.00</b></td>
+                    </tr>
+                </th:block>
             </tbody>
         </table>
 

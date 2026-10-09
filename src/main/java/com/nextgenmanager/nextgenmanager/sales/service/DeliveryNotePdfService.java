@@ -41,6 +41,7 @@ public class DeliveryNotePdfService {
         context.setVariable("company", company);
         context.setVariable("billTo", SalesParties.billTo(dn.getSalesOrder()));
         context.setVariable("shipTo", SalesParties.shipTo(dn.getSalesOrder()));
+        context.setVariable("value", DeliveryChallanValue.of(dn));
 
         return PdfPageFit.withFillerRows(FILLER_ROWS, fillerRows -> {
             context.setVariable("fillerRows", fillerRows);
