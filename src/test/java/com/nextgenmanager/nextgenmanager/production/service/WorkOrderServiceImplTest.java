@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
@@ -565,6 +566,86 @@ class WorkOrderServiceImplTest {
         List<WorkOrderMaterial> mats = (List<WorkOrderMaterial>) matsCaptor.getValue();
         assertThat(ops).isNotEmpty().allMatch(op -> op.getWorkOrderLine() == line);
         assertThat(mats).isNotEmpty().allMatch(m -> m.getWorkOrderLine() == line);
+    }
+
+    @Test
+    void production_putsFinishedGoodsInTheWorkCentresWarehouse_notTheDefaultOne() {
+        // Two plants. A job run at Plant 2 must put its output on Plant 2's shelf; before the
+        // work centre carried a warehouse every movement named none and fell to the default
+        // store, so Plant 2's production showed up as Plant 1's stock.
+        Warehouse plantTwo = new Warehouse();
+        plantTwo.setCode("PLANT-2");
+        WorkCenter plantTwoCnc = new WorkCenter();
+        plantTwoCnc.setWarehouse(plantTwo);
+
+        WorkOrder wo = buildWorkOrder(1, "WO/2026-27/0101", new BigDecimal("10"), WorkOrderStatus.IN_PROGRESS);
+        wo.setWorkCenter(plantTwoCnc);
+
+        InventoryItem pump = inventoryItem(901, "FIN-PUMP", "Pump 100");
+        WorkOrderLine line = buildLine(wo, 1, pump, new BigDecimal("10"));
+        wo.setLines(List.of(line));
+        WorkOrderMaterial material = buildLineMaterial(wo, line, 1L, "5000", "10");
+        WorkOrderOperation operation = buildLineOperation(wo, line, 1, "10");
+
+        ReflectionTestUtils.invokeMethod(service, "produceFinishedGoodsPerLine", wo,
+                List.of(material), List.of(operation));
+
+        ArgumentCaptor<InventoryTransactionDTO> produced =
+                ArgumentCaptor.forClass(InventoryTransactionDTO.class);
+        verify(inventoryTransactionService).produceStock(produced.capture());
+        assertThat(produced.getValue().getWarehouse()).isEqualTo("PLANT-2");
+    }
+
+    @Test
+    void stockWarehouse_comesFromTheEarliestOperation_whenTheOrderNamesNoWorkCentre() {
+        // The work order screen rarely sets a work centre on the order itself; the routing's
+        // operations carry them. The store must still be found, and from the first operation
+        // that names one -- a shared inspection centre with no store must not hide the plant.
+        Warehouse plantTwo = new Warehouse();
+        plantTwo.setCode("PLANT-2");
+        WorkCenter plantTwoCnc = new WorkCenter();
+        plantTwoCnc.setWarehouse(plantTwo);
+        Warehouse plantOne = new Warehouse();
+        plantOne.setCode("PLANT-1");
+        WorkCenter plantOneAssembly = new WorkCenter();
+        plantOneAssembly.setWarehouse(plantOne);
+
+        WorkOrder wo = buildWorkOrder(1, "WO/2026-27/0103", new BigDecimal("10"), WorkOrderStatus.IN_PROGRESS);
+        WorkOrderOperation inspection = buildOperation(wo, 1, BigDecimal.ZERO, new BigDecimal("10"));
+        inspection.setWorkCenter(new WorkCenter());
+        WorkOrderOperation machining = buildOperation(wo, 2, BigDecimal.ZERO, new BigDecimal("10"));
+        machining.setWorkCenter(plantTwoCnc);
+        WorkOrderOperation assembly = buildOperation(wo, 3, BigDecimal.ZERO, new BigDecimal("10"));
+        assembly.setWorkCenter(plantOneAssembly);
+        wo.setOperations(List.of(assembly, machining, inspection));
+
+        assertThat(wo.stockWarehouseCode()).isEqualTo("PLANT-2");
+
+        // The order's own work centre, when it names a store, overrides the routing.
+        wo.setWorkCenter(plantOneAssembly);
+        assertThat(wo.stockWarehouseCode()).isEqualTo("PLANT-1");
+    }
+
+    @Test
+    void production_namesNoWarehouse_whenTheWorkCentreHasNone() {
+        // The single-site case must be untouched: no warehouse named, so the stock service
+        // resolves the default one exactly as it always has.
+        WorkOrder wo = buildWorkOrder(1, "WO/2026-27/0102", new BigDecimal("10"), WorkOrderStatus.IN_PROGRESS);
+        wo.setWorkCenter(new WorkCenter());
+
+        InventoryItem pump = inventoryItem(901, "FIN-PUMP", "Pump 100");
+        WorkOrderLine line = buildLine(wo, 1, pump, new BigDecimal("10"));
+        wo.setLines(List.of(line));
+        WorkOrderMaterial material = buildLineMaterial(wo, line, 1L, "5000", "10");
+        WorkOrderOperation operation = buildLineOperation(wo, line, 1, "10");
+
+        ReflectionTestUtils.invokeMethod(service, "produceFinishedGoodsPerLine", wo,
+                List.of(material), List.of(operation));
+
+        ArgumentCaptor<InventoryTransactionDTO> produced =
+                ArgumentCaptor.forClass(InventoryTransactionDTO.class);
+        verify(inventoryTransactionService).produceStock(produced.capture());
+        assertThat(produced.getValue().getWarehouse()).isNull();
     }
 
     @Test

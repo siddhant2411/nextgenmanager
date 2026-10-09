@@ -1023,6 +1023,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             produceDto.setTransactionType("PRODUCE");
             produceDto.setReferenceType("WORK_ORDER");
             produceDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+            produceDto.setWarehouse(workOrder.stockWarehouseCode());
             try {
                 produceDto.setCreatedBy(
                         org.springframework.security.core.context.SecurityContextHolder
@@ -1043,6 +1044,8 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     reserveDto.setQuantity(lineCompleted.doubleValue());
                     reserveDto.setTransactionType("RESERVE");
                     reserveDto.setReferenceDocNo(workOrder.getSalesOrder().getOrderNumber());
+                    // Reserved where it was just produced, not in the default store.
+                    reserveDto.setWarehouse(workOrder.stockWarehouseCode());
                     inventoryTransactionService.reserveStock(reserveDto);
                     logger.info("Auto-reserved {} units of {} for SalesOrder {}",
                             lineCompleted, produced.getItemCode(),
@@ -2178,6 +2181,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     issueDto.setTransactionType("ISSUE");
                     issueDto.setReferenceType("WORK_ORDER");
                     issueDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                    issueDto.setWarehouse(workOrder.stockWarehouseCode());
                     if (item.getOverrideInstanceIds() != null && !item.getOverrideInstanceIds().isEmpty()) {
                         issueDto.setOverrideInstanceIds(item.getOverrideInstanceIds());
                         issueDto.setOverrideReason(item.getOverrideReason());
@@ -2616,6 +2620,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 consumeDto.setTransactionType("CONSUME");
                 consumeDto.setReferenceType("WORK_ORDER");
                 consumeDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                consumeDto.setWarehouse(workOrder.stockWarehouseCode());
                 inventoryTransactionService.consumeStock(consumeDto);
             } catch (Exception e) {
                 throw new IllegalStateException("Consumption failed for '" +
@@ -3019,6 +3024,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     returnDto.setQuantity(toReturn.doubleValue());
                     returnDto.setTransactionType("RETURN");
                     returnDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                    returnDto.setWarehouse(workOrder.stockWarehouseCode());
                     inventoryTransactionService.returnStock(returnDto);
                 } catch (Exception e) {
                     logger.warn("Could not return stock for material {} on WO cancel: {}", material.getComponent().getItemCode(), e.getMessage());
@@ -3175,6 +3181,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             produceDto.setTransactionType("PRODUCE");
             produceDto.setReferenceType("WORK_ORDER");
             produceDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+            produceDto.setWarehouse(workOrder.stockWarehouseCode());
             try {
                 produceDto.setCreatedBy(
                         org.springframework.security.core.context.SecurityContextHolder
@@ -3189,6 +3196,8 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     reserveDto.setQuantity(lineCompleted.doubleValue());
                     reserveDto.setTransactionType("RESERVE");
                     reserveDto.setReferenceDocNo(workOrder.getSalesOrder().getOrderNumber());
+                    // Reserved where it was just produced, not in the default store.
+                    reserveDto.setWarehouse(workOrder.stockWarehouseCode());
                     inventoryTransactionService.reserveStock(reserveDto);
                 } catch (Exception e) {
                     logger.error("Auto-reserve for SalesOrder failed on short-close (WO {} line {}): {}",
@@ -3222,6 +3231,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     returnDto.setTransactionType("RETURN");
                     returnDto.setReferenceType("WORK_ORDER");
                     returnDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
+                    returnDto.setWarehouse(workOrder.stockWarehouseCode());
                     inventoryTransactionService.returnStock(returnDto);
 
                     logger.info("Short-close: Returned {} units of {} | WO {}",

@@ -1,5 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.service.workcenter;
 
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.WarehouseRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkCenterResponseDTO;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkCenterResponseMapper;
@@ -28,13 +30,28 @@ public class WorkCenterServiceImpl implements WorkCenterService {
     @Autowired
     private WorkCenterResponseMapper workCenterResponseMapper;
 
+    @Autowired
+    private WarehouseRepository warehouseRepository;
+
     @Override
     public WorkCenterResponseDTO createWorkCenter(WorkCenter workCenter) {
         if (workCenterRepository.existsByCenterCode(workCenter.getCenterCode())) {
             throw new ResourceNotFoundException("Work Center code already exists.");
         }
+        workCenter.setWarehouse(resolveWarehouse(workCenter));
         return workCenterResponseMapper.toDTO(workCenterRepository.save(workCenter));
 
+    }
+
+    /**
+     * The request names a warehouse by id only. Load the real row so a retired or made-up id is
+     * refused here rather than surfacing later as a foreign-key failure.
+     */
+    private Warehouse resolveWarehouse(WorkCenter incoming) {
+        Warehouse requested = incoming.getWarehouse();
+        if (requested == null || requested.getId() == null) return null;
+        return warehouseRepository.findLiveById(requested.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Warehouse does not exist"));
     }
 
     @Override
@@ -55,6 +72,7 @@ public class WorkCenterServiceImpl implements WorkCenterService {
         existingCenter.setWorkCenterStatus(updatedCenter.getWorkCenterStatus());
         existingCenter.setDepartment(updatedCenter.getDepartment());
         existingCenter.setLocation(updatedCenter.getLocation());
+        existingCenter.setWarehouse(resolveWarehouse(updatedCenter));
         existingCenter.setMaxLoadPercentage(updatedCenter.getMaxLoadPercentage());
         existingCenter.setSupervisor(updatedCenter.getSupervisor());
         existingCenter.setAvailableShifts(updatedCenter.getAvailableShifts());
