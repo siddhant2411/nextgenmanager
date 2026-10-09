@@ -4,6 +4,8 @@ import com.nextgenmanager.nextgenmanager.purchase.model.GstTreatment;
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderApprovalStatus;
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderStatus;
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderType;
+import com.nextgenmanager.nextgenmanager.purchase.model.ShipToKind;
+import com.nextgenmanager.nextgenmanager.sales.dto.DocumentParty;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -78,5 +80,12 @@ public record PurchaseOrderDto(
         Date createdDate,
         Date updatedDate,
 
-        List<PurchaseOrderItemDto> items
+        List<PurchaseOrderItemDto> items,
+
+        // Delivery destination: which kind it is, the plant when it is one of ours, and both
+        // parties as they print (the company as bill-to, and wherever the goods are going)
+        ShipToKind shipToKind,
+        Long shipToWarehouseId,
+        DocumentParty billTo,
+        DocumentParty shipTo
 ) {}

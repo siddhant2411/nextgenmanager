@@ -127,6 +127,7 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
             returnDto.setQuantity(mr.getApprovedQuantity().doubleValue());
             returnDto.setTransactionType("RETURN");
             returnDto.setReferenceDocNo(mr.getReferenceNumber());
+            returnDto.setWarehouse(warehouseCodeFor(mr));
             inventoryTransactionService.returnStock(returnDto);
             logger.info("MR {} {} approval reversed — returned {} units to available stock",
                     requestId, mr.getApprovalStatus(), mr.getApprovedQuantity());
@@ -219,7 +220,22 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
         dto.setQuantity(qty.doubleValue());
         dto.setTransactionType("RESERVE");
         dto.setReferenceDocNo(mr.getReferenceNumber());
+        dto.setWarehouse(warehouseCodeFor(mr));
         inventoryTransactionService.reserveStock(dto);
+    }
+
+    /**
+     * The store the requesting work order draws from. Approval reserves there because that is
+     * where the order will later consume; reserving in the default store instead would leave one
+     * warehouse holding a reservation nothing ever uses up. Null falls to the default warehouse.
+     */
+    private String warehouseCodeFor(InventoryRequest mr) {
+        if (mr.getRequestSource() != InventoryRequestSource.WORK_ORDER || mr.getSourceId() == null) {
+            return null;
+        }
+        return workOrderRepository.findById(mr.getSourceId().intValue())
+                .map(WorkOrder::stockWarehouseCode)
+                .orElse(null);
     }
 
     /**

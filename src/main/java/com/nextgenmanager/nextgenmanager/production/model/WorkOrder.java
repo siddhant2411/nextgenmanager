@@ -155,6 +155,31 @@ public class WorkOrder {
     // mean producing the wrong item or costing against the wrong BOM. Multi-line creation stays
     // blocked until every caller is line-aware, at which point this whole block is deleted.
 
+    /**
+     * Code of the warehouse this order's stock moves through: the store its work centre belongs
+     * to. Every movement an order makes -- reserve, issue, consume, return, produce -- must use
+     * this one answer, or the per-warehouse counters reserve in one place and consume in another.
+     *
+     * <p>The order's own work centre decides when it names a store. Most orders carry none, so
+     * the routing decides instead: the earliest operation whose work centre names a store, which
+     * is where the material is first needed. Null when nothing names one, which the stock
+     * services read as the default warehouse.
+     */
+    public String stockWarehouseCode() {
+        if (workCenter != null && workCenter.getWarehouse() != null) {
+            return workCenter.getWarehouse().getCode();
+        }
+        if (operations == null) return null;
+        return operations.stream()
+                .filter(op -> op.getDeletedDate() == null
+                        && op.getWorkCenter() != null
+                        && op.getWorkCenter().getWarehouse() != null)
+                .min(java.util.Comparator.comparingInt(
+                        op -> op.getSequence() != null ? op.getSequence() : Integer.MAX_VALUE))
+                .map(op -> op.getWorkCenter().getWarehouse().getCode())
+                .orElse(null);
+    }
+
     /** Live, non-deleted lines in line-number order. */
     public List<WorkOrderLine> activeLines() {
         if (lines == null) return List.of();

@@ -25,6 +25,9 @@ public class WorkCenterResponseDTO {
     private WorkCenter.WorkCenterStatus workCenterStatus;
     private String department;
     private String location;
+    private Long warehouseId;
+    private String warehouseCode;
+    private String warehouseName;
     private Integer maxLoadPercentage;
     private String supervisor;
     private List<String> availableShifts;

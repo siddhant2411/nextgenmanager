@@ -260,7 +260,8 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
                 poItems,
                 null,
                 "Generated from requisition " + pr.getPrNumber(),
-                null
+                null,
+                null, null                  // ship-to: the company address, as before
         );
 
         PurchaseOrderDto created = purchaseOrderService.create(poDto);

@@ -108,6 +108,28 @@
         </div>
     </div>
 
+    <!-- Who the vendor invoices, and where the goods are to be delivered (PurchaseParties) -->
+    <div class="meta-grid">
+        <div class="meta-col">
+            <p class="label">Bill To (Invoice To):</p>
+            <p style="font-weight:bold;" th:text="${billTo.name}"></p>
+            <p th:if="${billTo.address != null}" th:text="${billTo.address}"></p>
+            <p th:if="${billTo.gstin != null or billTo.stateLabel != null}">
+                <span th:if="${billTo.gstin != null}"><span class="label">GSTIN:</span> <span th:text="${billTo.gstin}"></span></span>
+                <span th:if="${billTo.stateLabel != null}"><span class="label">State:</span> <span th:text="${billTo.stateLabel}"></span></span>
+            </p>
+        </div>
+        <div class="meta-col">
+            <p class="label" th:text="${shipToKind.name() == 'PARTY' ? 'Ship To (Deliver Directly To):' : 'Ship To (Deliver To):'}"></p>
+            <p style="font-weight:bold;" th:text="${shipTo.name}"></p>
+            <p th:if="${shipTo.address != null}" th:text="${shipTo.address}"></p>
+            <p th:if="${shipTo.gstin != null or shipTo.stateLabel != null}">
+                <span th:if="${shipTo.gstin != null}"><span class="label">GSTIN:</span> <span th:text="${shipTo.gstin}"></span></span>
+                <span th:if="${shipTo.stateLabel != null}"><span class="label">State:</span> <span th:text="${shipTo.stateLabel}"></span></span>
+            </p>
+        </div>
+    </div>
+
     <!-- Line items table -->
     <table>
         <thead>

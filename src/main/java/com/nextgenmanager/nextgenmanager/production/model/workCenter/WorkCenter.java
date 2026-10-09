@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.production.model.workCenter;
 
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -62,6 +63,15 @@ public class WorkCenter {
     private String department;
 
     private String location;
+
+    /**
+     * The store this centre draws material from and produces into -- which is what makes a
+     * work centre belong to a plant. Null means the default warehouse, so a single-site
+     * installation never has to set it.
+     */
+    @ManyToOne
+    @JoinColumn(name = "warehouse_id")
+    private Warehouse warehouse;
 
     private Integer maxLoadPercentage;
 

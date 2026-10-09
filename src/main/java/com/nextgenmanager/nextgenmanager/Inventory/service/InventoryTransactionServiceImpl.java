@@ -25,6 +25,7 @@ import org.springframework.data.domain.PageRequest;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -58,8 +59,9 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         assertStockSufficient(item, settings, settings.getAvailableQuantity(), qty, "reserve");
 
         if (isTracked) {
-            List<InventoryInstance> toReserve = inventoryInstanceRepository
-                    .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.AVAILABLE.name());
+            List<InventoryInstance> toReserve = preferWarehouse(inventoryInstanceRepository
+                    .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.AVAILABLE.name()),
+                    req.getWarehouse());
             double remaining = qty;
             for (InventoryInstance inst : toReserve) {
                 if (remaining <= 0) break;
@@ -95,7 +97,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
                 InventoryInstance backfill = new InventoryInstance();
                 backfill.setInventoryItem(item);
                 // Synthetic row standing in for stock the counters claim but no instance records.
-                backfill.setWarehouse(warehouseService.resolveDefaultWarehouse());
+                backfill.setWarehouse(warehouseService.resolveByCodeOrDefault(req.getWarehouse()));
                 backfill.setEntryDate(new Date());
                 backfill.setQuantity(BigDecimal.valueOf(remaining));
                 backfill.setCostPerUnit(BigDecimal.ZERO);
@@ -143,7 +145,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
 
         if (isTracked) {
             consumeTrackedInstances(item, qty, req.getReferenceDocNo(),
-                    req.getOverrideInstanceIds(), req.getOverrideReason());
+                    req.getOverrideInstanceIds(), req.getOverrideReason(), req.getWarehouse());
         }
 
         // Deduct from reservedQty first; overflow (unplanned consumption) comes from availableQty
@@ -267,8 +269,9 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
 
         if (settings.isBatchTracked() || settings.isSerialTracked()) {
             // Return REQUESTED instances back to AVAILABLE (FIFO order of most-recently reserved)
-            List<InventoryInstance> reserved = inventoryInstanceRepository
-                    .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.REQUESTED.name());
+            List<InventoryInstance> reserved = preferWarehouse(inventoryInstanceRepository
+                    .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.REQUESTED.name()),
+                    req.getWarehouse());
             double remaining = qty;
             for (InventoryInstance inst : reserved) {
                 if (remaining <= 0) break;
@@ -382,6 +385,28 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         return item;
     }
 
+
+    /**
+     * Puts the units held in the named warehouse ahead of the rest, keeping FIFO order within
+     * each group.
+     *
+     * <p>A movement that names a warehouse moves that warehouse's counters, so it should take
+     * that warehouse's units too -- otherwise a job at one plant quietly uses up the batch
+     * sitting at the other while the counters say the opposite. Units elsewhere stay in the list
+     * as a fallback rather than being refused: the company-wide check has already passed, and a
+     * shortfall at one site is for a transfer to settle, not for production to stop on.
+     *
+     * <p>A blank code means the caller named no warehouse; the list is returned untouched.
+     */
+    private List<InventoryInstance> preferWarehouse(List<InventoryInstance> instances, String warehouseCode) {
+        if (warehouseCode == null || warehouseCode.isBlank()) return instances;
+        Long warehouseId = warehouseService.resolveByCodeOrDefault(warehouseCode).getId();
+        List<InventoryInstance> ordered = new ArrayList<>(instances);
+        // List.sort is stable, so FIFO survives inside each group.
+        ordered.sort(Comparator.comparing(inst -> inst.getWarehouse() == null
+                || !warehouseId.equals(inst.getWarehouse().getId())));
+        return ordered;
+    }
 
     /**
      * Mirrors a movement into the per-warehouse counters.
@@ -534,7 +559,8 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
     }
 
     private void consumeTrackedInstances(InventoryItem item, double qty, String refDocNo,
-                                          List<Long> overrideIds, String overrideReason) {
+                                          List<Long> overrideIds, String overrideReason,
+                                          String warehouseCode) {
         double remaining = qty;
         List<InventoryInstance> candidates;
 
@@ -542,12 +568,14 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
             candidates = inventoryInstanceRepository.findAllById(overrideIds);
         } else {
             // FIFO from REQUESTED pool (reserved for this order)
-            candidates = inventoryInstanceRepository
-                    .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.REQUESTED.name());
+            candidates = preferWarehouse(inventoryInstanceRepository
+                    .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.REQUESTED.name()),
+                    warehouseCode);
             // If still short, fall back to AVAILABLE (unplanned consumption)
             if (candidates.stream().mapToDouble(i -> i.getQuantity().doubleValue()).sum() < qty) {
-                List<InventoryInstance> available = inventoryInstanceRepository
-                        .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.AVAILABLE.name());
+                List<InventoryInstance> available = preferWarehouse(inventoryInstanceRepository
+                        .findByItemAndStatusFIFO(item.getInventoryItemId(), InventoryInstanceStatus.AVAILABLE.name()),
+                        warehouseCode);
                 candidates = new ArrayList<>(candidates);
                 candidates.addAll(available);
             }
