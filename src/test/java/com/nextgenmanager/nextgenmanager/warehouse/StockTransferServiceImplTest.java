@@ -45,6 +45,7 @@ class StockTransferServiceImplTest {
     @Mock private InventoryItemRepository inventoryItemRepository;
     @Mock private WarehouseService warehouseService;
     @Mock private StockTransferNumberGenerator numberGenerator;
+    @Mock private com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository inventoryInstanceRepository;
 
     @InjectMocks private StockTransferServiceImpl service;
 
@@ -128,6 +129,116 @@ class StockTransferServiceImplTest {
         line.setReceivedQuantity(BigDecimal.ZERO);
         t.getLines().add(line);
         return t;
+    }
+
+    // ─── batch and serial units travel with the counters ──────────────────────
+
+    private void makeTracked(boolean serial) {
+        com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings settings =
+                new com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings();
+        settings.setSerialTracked(serial);
+        settings.setBatchTracked(!serial);
+        item.setProductInventorySettings(settings);
+    }
+
+    private InventoryInstance unit(long id, String qty) {
+        InventoryInstance u = new InventoryInstance();
+        u.setId(id);
+        u.setInventoryItem(item);
+        u.setWarehouse(main);
+        u.setQuantity(new BigDecimal(qty));
+        u.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+        return u;
+    }
+
+    @Test
+    void dispatchTiesTheOldestUnitsToTheTransfer() {
+        makeTracked(true);
+        seed(main, "3", "0");
+        StockTransfer t = transferOf("2", StockTransferStatus.DRAFT);
+        InventoryInstance a = unit(1, "1"), b = unit(2, "1"), c = unit(3, "1");
+        when(stockTransferRepository.findLiveById(9L)).thenReturn(Optional.of(t));
+        when(inventoryInstanceRepository.findTransferableUnits(ITEM_ID, 1L)).thenReturn(List.of(a, b, c));
+
+        service.dispatch(9L);
+
+        // In transit, so off every pick; still recorded at the source until they arrive.
+        assertThat(a.getStockTransferLine()).isSameAs(t.getLines().get(0));
+        assertThat(b.getStockTransferLine()).isSameAs(t.getLines().get(0));
+        assertThat(c.getStockTransferLine()).isNull();
+        assertThat(a.getWarehouse()).isSameAs(main);
+    }
+
+    @Test
+    void aBatchLotBiggerThanTheTransferIsSplit() {
+        makeTracked(false);
+        seed(main, "100", "0");
+        StockTransfer t = transferOf("40", StockTransferStatus.DRAFT);
+        InventoryInstance lot = unit(1, "100");
+        when(stockTransferRepository.findLiveById(9L)).thenReturn(Optional.of(t));
+        when(inventoryInstanceRepository.findTransferableUnits(ITEM_ID, 1L)).thenReturn(List.of(lot));
+        org.mockito.ArgumentCaptor<InventoryInstance> saved =
+                org.mockito.ArgumentCaptor.forClass(InventoryInstance.class);
+
+        service.dispatch(9L);
+
+        org.mockito.Mockito.verify(inventoryInstanceRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+        // Sixty stays on the shelf and stays pickable; forty goes.
+        assertThat(lot.getQuantity()).isEqualByComparingTo("60");
+        assertThat(lot.getStockTransferLine()).isNull();
+        InventoryInstance travelling = saved.getAllValues().get(1);
+        assertThat(travelling.getQuantity()).isEqualByComparingTo("40");
+        assertThat(travelling.getStockTransferLine()).isSameAs(t.getLines().get(0));
+    }
+
+    @Test
+    void receiptMovesTheUnitsIntoTheDestination() {
+        makeTracked(true);
+        seed(main, "1", "2");
+        StockTransfer t = transferOf("2", StockTransferStatus.DISPATCHED);
+        InventoryInstance a = unit(1, "1"), b = unit(2, "1");
+        a.setStockTransferLine(t.getLines().get(0));
+        b.setStockTransferLine(t.getLines().get(0));
+        when(stockTransferRepository.findLiveById(9L)).thenReturn(Optional.of(t));
+        when(inventoryInstanceRepository.findByStockTransferLineId(90L)).thenReturn(List.of(a, b));
+
+        service.receive(9L, null);
+
+        // This is what was missing: the counter said SPARE held the stock while every unit still
+        // pointed at MAIN, so nothing could be picked there.
+        assertThat(a.getWarehouse()).isSameAs(spare);
+        assertThat(b.getWarehouse()).isSameAs(spare);
+        assertThat(a.getStockTransferLine()).isNull();
+        assertThat(onHand(spare)).isEqualByComparingTo("2");
+    }
+
+    @Test
+    void whatDidNotArriveStaysInTransit() {
+        makeTracked(true);
+        seed(main, "0", "2");
+        StockTransfer t = transferOf("2", StockTransferStatus.DISPATCHED);
+        InventoryInstance a = unit(1, "1"), b = unit(2, "1");
+        a.setStockTransferLine(t.getLines().get(0));
+        b.setStockTransferLine(t.getLines().get(0));
+        when(stockTransferRepository.findLiveById(9L)).thenReturn(Optional.of(t));
+        when(inventoryInstanceRepository.findByStockTransferLineId(90L)).thenReturn(List.of(a, b));
+
+        service.receive(9L, new StockTransferReceiveRequest(
+                List.of(new StockTransferReceiveRequest.Line(90L, BigDecimal.ONE)), null));
+
+        assertThat(a.getWarehouse()).isSameAs(spare);
+        assertThat(b.getWarehouse()).isSameAs(main);
+        assertThat(b.getStockTransferLine()).isNotNull(); // still on the vehicle: not pickable anywhere
+    }
+
+    @Test
+    void anUntrackedItemMovesNoUnits() {
+        seed(main, "10", "0");
+        when(stockTransferRepository.findLiveById(9L)).thenReturn(Optional.of(transferOf("4", StockTransferStatus.DRAFT)));
+
+        service.dispatch(9L);
+
+        verifyNoInteractions(inventoryInstanceRepository);
     }
 
     // ─── dispatch ─────────────────────────────────────────────────────────────

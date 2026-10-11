@@ -12,6 +12,8 @@ public interface PurchaseRequisitionMapper {
     @Mapping(target = "workCenterId",   expression = "java(entity.getWorkCenter() == null ? null : entity.getWorkCenter().getId())")
     @Mapping(target = "workCenterCode", expression = "java(entity.getWorkCenter() == null ? null : entity.getWorkCenter().getCenterCode())")
     @Mapping(target = "workCenterName", expression = "java(entity.getWorkCenter() == null ? null : entity.getWorkCenter().getCenterName())")
+    @Mapping(target = "deliverToWarehouseCode", source = "deliverToWarehouse.code")
+    @Mapping(target = "deliverToWarehouseName", source = "deliverToWarehouse.name")
     PurchaseRequisitionDto toDto(PurchaseRequisition entity);
 
     @Mapping(target = "itemCount",

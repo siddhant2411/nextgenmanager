@@ -8,6 +8,7 @@ import com.nextgenmanager.nextgenmanager.items.DTO.InventoryItemDTO;
 import com.nextgenmanager.nextgenmanager.items.DTO.InventorySettingsBackfillDto;
 import com.nextgenmanager.nextgenmanager.items.DTO.PriceListExportRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemExportService;
 import com.nextgenmanager.nextgenmanager.items.service.PriceListExportService;
@@ -68,6 +69,52 @@ public class InventoryItemController {
                                a.getAuthority().equals("ROLE_SALES_ADMIN"));
     }
 
+    private boolean canViewSellingPrice() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SALES_USER") ||
+                               a.getAuthority().equals("ROLE_SALES_MANAGER"));
+    }
+
+    private boolean canViewCost() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_PURCHASE_ADMIN") ||
+                               a.getAuthority().equals("ROLE_PURCHASE_USER"));
+    }
+
+    /**
+     * Strips finance data the caller may not see. Sales users quote and book orders, so they keep
+     * the selling price, the tax it carries and the minimum they may go down to -- but never cost
+     * or margin. Purchase users raise orders against cost, so they keep the standard cost and the
+     * tax -- but never the selling side. Everyone else without finance visibility gets nothing.
+     */
+    private void restrictFinance(InventoryItem item) {
+        if (item == null || canViewFinance()) return;
+        ProductFinanceSettings full = item.getProductFinanceSettings();
+        boolean selling = canViewSellingPrice();
+        boolean cost = canViewCost();
+        if (full == null || (!selling && !cost)) {
+            item.setProductFinanceSettings(null);
+            return;
+        }
+        ProductFinanceSettings visible = new ProductFinanceSettings();
+        visible.setId(full.getId());
+        visible.setCurrency(full.getCurrency());
+        visible.setGstRate(full.getGstRate());
+        visible.setTaxCategory(full.getTaxCategory());
+        if (selling) {
+            visible.setSellingPrice(full.getSellingPrice());
+            visible.setMinimumSellingPrice(full.getMinimumSellingPrice());
+        }
+        if (cost) {
+            visible.setStandardCost(full.getStandardCost());
+        }
+        item.setProductFinanceSettings(visible);
+    }
+
 
     @PostMapping(
             value = "/add",
@@ -82,9 +129,7 @@ public class InventoryItemController {
 
         inventoryItem.setAttachments(attachments);
         InventoryItem savedItem = inventoryItemService.addInventoryItem(inventoryItem);
-        if (!canViewFinance() && savedItem != null) {
-            savedItem.setProductFinanceSettings(null);
-        }
+        restrictFinance(savedItem);
         return ResponseEntity.status(HttpStatus.CREATED).body(savedItem);
     }
 
@@ -94,9 +139,7 @@ public class InventoryItemController {
         logger.debug("Received request to fetch inventory item with id: {}", Integer.parseInt(id));
         try {
             InventoryItem inventoryItem = inventoryItemService.getInventoryItem(Integer.parseInt(id));
-            if (!canViewFinance() && inventoryItem != null) {
-                inventoryItem.setProductFinanceSettings(null);
-            }
+            restrictFinance(inventoryItem);
             return ResponseEntity.ok(inventoryItem);
         } catch (Exception e) {
             logger.error("Error fetching inventory item: {}", e.getMessage());
@@ -115,7 +158,7 @@ public class InventoryItemController {
         logger.debug("Received request to fetch all active inventory items with pagination and sorting");
         try {
             Page<InventoryItemDTO> items = inventoryItemService.getAllInventoryItems(page, size, sortBy, sortDir,search);
-            if (!canViewFinance() && items != null) {
+            if (!canViewFinance() && !canViewCost() && items != null) {
                 items.forEach(dto -> dto.setStandardCost(null));
             }
             return ResponseEntity.ok(items);
@@ -148,8 +191,8 @@ public class InventoryItemController {
         logger.debug("Received request to fetch all inventory items including deleted");
         try {
             List<InventoryItem> items = inventoryItemService.getAllInventoryItemsWithDeleted();
-            if (!canViewFinance() && items != null) {
-                items.forEach(item -> item.setProductFinanceSettings(null));
+            if (items != null) {
+                items.forEach(this::restrictFinance);
             }
             return ResponseEntity.ok(items);
         } catch (Exception e) {
@@ -185,9 +228,7 @@ public class InventoryItemController {
         logger.debug("Received request to edit inventory item with id: {}", id);
         updatedItem.setAttachments(attachments);
         InventoryItem savedItem = inventoryItemService.editInventoryItem(id, updatedItem);
-        if (!canViewFinance() && savedItem != null) {
-            savedItem.setProductFinanceSettings(null);
-        }
+        restrictFinance(savedItem);
         return ResponseEntity.ok(savedItem);
     }
 
@@ -199,8 +240,8 @@ public class InventoryItemController {
             @RequestParam(defaultValue = "5"
             ) int size) {
         Page<InventoryItem> result = inventoryItemService.searchInventoryItems(query, page, size);
-        if (!canViewFinance() && result != null) {
-            result.forEach(item -> item.setProductFinanceSettings(null));
+        if (result != null) {
+            result.forEach(this::restrictFinance);
         }
         return result;
     }
@@ -280,7 +321,7 @@ public class InventoryItemController {
     @RequiresAllModulesAccess
     public Page<InventoryItemDTO> filterInventoryItems(@RequestBody FilterRequest request) {
         Page<InventoryItemDTO> result = inventoryItemService.filterInventoryItems(request);
-        if (!canViewFinance() && result != null) {
+        if (!canViewFinance() && !canViewCost() && result != null) {
             result.forEach(dto -> dto.setStandardCost(null));
         }
         return result;

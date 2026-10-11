@@ -5,9 +5,11 @@ import com.nextgenmanager.nextgenmanager.Inventory.dto.StockTransferDto;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.StockTransferLineDto;
 import com.nextgenmanager.nextgenmanager.Inventory.dto.StockTransferReceiveRequest;
 import com.nextgenmanager.nextgenmanager.Inventory.model.*;
+import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.ItemWarehouseStockRepository;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.StockTransferRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -33,6 +35,11 @@ import java.util.List;
  * <p>No ledger row is written. The ledger's {@code closingBalance} is a company-wide running
  * balance that a transfer does not change, and rows whose balance never moves would add noise
  * without information. The transfer document itself is the audit trail for the movement.
+ *
+ * <p>Batch and serial units travel with the counters. At dispatch the oldest free units in the
+ * source are tied to the transfer line, which takes them off every pick; at receipt they are moved
+ * to the destination and untied. Without this the destination's counter said the stock had
+ * arrived while every unit still pointed at the warehouse it left, and nothing could be picked.
  */
 @Service
 @RequiredArgsConstructor
@@ -43,6 +50,7 @@ public class StockTransferServiceImpl implements StockTransferService {
     private final StockTransferRepository stockTransferRepository;
     private final ItemWarehouseStockRepository itemWarehouseStockRepository;
     private final InventoryItemRepository inventoryItemRepository;
+    private final InventoryInstanceRepository inventoryInstanceRepository;
     private final WarehouseService warehouseService;
     private final StockTransferNumberGenerator numberGenerator;
 
@@ -138,6 +146,7 @@ public class StockTransferServiceImpl implements StockTransferService {
         for (StockTransferLine line : t.getLines()) {
             adjust(line.getInventoryItem(), t.getFromWarehouse(),
                     line.getQuantity().negate(), line.getQuantity());
+            loadUnits(line, t.getFromWarehouse());
         }
 
         t.setStatus(StockTransferStatus.DISPATCHED);
@@ -166,6 +175,7 @@ public class StockTransferServiceImpl implements StockTransferService {
             // stock that left and never arrived is something to investigate, not to round off.
             adjust(line.getInventoryItem(), t.getFromWarehouse(), BigDecimal.ZERO, received.negate());
             adjust(line.getInventoryItem(), t.getToWarehouse(), received, BigDecimal.ZERO);
+            landUnits(line, t.getToWarehouse(), received);
 
             line.setReceivedQuantity(received);
         }
@@ -223,6 +233,93 @@ public class StockTransferServiceImpl implements StockTransferService {
                 .findFirst()
                 .map(l -> l.receivedQuantity() != null ? l.receivedQuantity() : line.getQuantity())
                 .orElse(line.getQuantity());
+    }
+
+    private boolean isTracked(InventoryItem item) {
+        ProductInventorySettings s = item.getProductInventorySettings();
+        return s != null && (s.isBatchTracked() || s.isSerialTracked());
+    }
+
+    /**
+     * Ties the oldest free units in the source to this line, up to the quantity leaving. A batch
+     * lot larger than what is going is split, so the part staying behind stays pickable.
+     *
+     * <p>Fewer units than the quantity is tolerated rather than refused: stock that predates unit
+     * records has counters and no units, and refusing would make it impossible to move at all.
+     * The counters still move in full; the units that exist go with them.
+     */
+    private void loadUnits(StockTransferLine line, Warehouse from) {
+        InventoryItem item = line.getInventoryItem();
+        if (!isTracked(item)) return;
+
+        BigDecimal remaining = line.getQuantity();
+        for (InventoryInstance unit : inventoryInstanceRepository
+                .findTransferableUnits(item.getInventoryItemId(), from.getId())) {
+            if (remaining.signum() <= 0) break;
+            BigDecimal unitQty = unit.getQuantity() != null ? unit.getQuantity() : BigDecimal.ZERO;
+            if (unitQty.signum() <= 0) continue;
+
+            InventoryInstance travelling = unitQty.compareTo(remaining) > 0
+                    ? splitOff(unit, remaining) : unit;
+            travelling.setStockTransferLine(line);
+            inventoryInstanceRepository.save(travelling);
+            remaining = remaining.subtract(travelling.getQuantity());
+        }
+        if (remaining.signum() > 0) {
+            logger.warn("{}: {} of {} left {} with no unit record behind it",
+                    line.getStockTransfer().getTransferNumber(), remaining.toPlainString(),
+                    item.getItemCode(), from.getCode());
+        }
+    }
+
+    /**
+     * Moves the units this line is carrying into the destination, up to what was received. Anything
+     * not received stays tied to the line — in transit, like its counter — so it cannot be picked
+     * from a shelf it is not on.
+     */
+    private void landUnits(StockTransferLine line, Warehouse to, BigDecimal received) {
+        if (line.getId() == null || !isTracked(line.getInventoryItem())) return;
+
+        BigDecimal remaining = received;
+        for (InventoryInstance unit : inventoryInstanceRepository.findByStockTransferLineId(line.getId())) {
+            if (remaining.signum() <= 0) break;
+            BigDecimal unitQty = unit.getQuantity() != null ? unit.getQuantity() : BigDecimal.ZERO;
+
+            InventoryInstance arriving = unitQty.compareTo(remaining) > 0
+                    ? splitOff(unit, remaining) : unit;
+            arriving.setWarehouse(to);
+            arriving.setStorageLocation(null); // a bin belongs to the warehouse it left
+            arriving.setStockTransferLine(null);
+            if (arriving.getSerialNumber() != null) {
+                arriving.getSerialNumber().setWarehouse(to);
+            }
+            inventoryInstanceRepository.save(arriving);
+            remaining = remaining.subtract(arriving.getQuantity());
+        }
+    }
+
+    /**
+     * Takes {@code quantity} out of a larger unit as a unit of its own, leaving the rest where it
+     * was. Only ever a batch lot: a serial unit is a quantity of one and is never larger than what
+     * is asked for.
+     */
+    private InventoryInstance splitOff(InventoryInstance source, BigDecimal quantity) {
+        source.setQuantity(source.getQuantity().subtract(quantity));
+        inventoryInstanceRepository.save(source);
+
+        InventoryInstance part = new InventoryInstance();
+        part.setInventoryItem(source.getInventoryItem());
+        part.setWarehouse(source.getWarehouse());
+        part.setStorageLocation(source.getStorageLocation());
+        part.setEntryDate(source.getEntryDate());
+        part.setQuantity(quantity);
+        part.setCostPerUnit(source.getCostPerUnit());
+        part.setSellPricePerUnit(source.getSellPricePerUnit());
+        part.setInventoryInstanceStatus(source.getInventoryInstanceStatus());
+        part.setQualityStatus(source.getQualityStatus());
+        part.setBatchNumber(source.getBatchNumber());
+        part.setStockTransferLine(source.getStockTransferLine());
+        return part;
     }
 
     private BigDecimal onHandAt(InventoryItem item, Warehouse warehouse) {

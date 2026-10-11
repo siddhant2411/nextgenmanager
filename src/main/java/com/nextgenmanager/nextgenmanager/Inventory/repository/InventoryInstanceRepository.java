@@ -145,7 +145,7 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
      */
     @Query("SELECT i FROM InventoryInstance i WHERE i.inventoryItem.inventoryItemId = :itemId "
             + "AND i.warehouse.id = :warehouseId AND i.deletedDate IS NULL AND i.pickListLine IS NULL "
-            + "AND i.isConsumed = false "
+            + "AND i.stockTransferLine IS NULL AND i.isConsumed = false "
             + "AND i.inventoryInstanceStatus IN (com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstanceStatus.AVAILABLE, "
             + "com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstanceStatus.BOOKED) "
             + "AND i.qualityStatus IN (com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus.PASSED, "
@@ -154,6 +154,25 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     List<InventoryInstance> findPickableForLine(@Param("itemId") int itemId,
                                                 @Param("warehouseId") Long warehouseId,
                                                 @Param("soItemId") Long soItemId);
+
+    /**
+     * Units a stock transfer can take from a warehouse: free, fit to use, on the shelf, and not
+     * already claimed by a pick or by another transfer. Oldest first.
+     */
+    @Query("SELECT i FROM InventoryInstance i WHERE i.inventoryItem.inventoryItemId = :itemId "
+            + "AND i.warehouse.id = :warehouseId AND i.deletedDate IS NULL AND i.pickListLine IS NULL "
+            + "AND i.stockTransferLine IS NULL AND i.isConsumed = false AND i.quantity > 0 "
+            + "AND i.inventoryInstanceStatus = com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstanceStatus.AVAILABLE "
+            + "AND i.qualityStatus IN (com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus.PASSED, "
+            + "com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus.WAIVED) "
+            + "ORDER BY i.entryDate ASC, i.id ASC")
+    List<InventoryInstance> findTransferableUnits(@Param("itemId") int itemId,
+                                                  @Param("warehouseId") Long warehouseId);
+
+    /** Units a transfer line is carrying. Oldest first, so a short receipt lands the oldest. */
+    @Query("SELECT i FROM InventoryInstance i WHERE i.stockTransferLine.id = :lineId "
+            + "AND i.deletedDate IS NULL ORDER BY i.entryDate ASC, i.id ASC")
+    List<InventoryInstance> findByStockTransferLineId(@Param("lineId") Long lineId);
 
     /** Units allocated to a pick line. Used to release them again when a pick is cancelled. */
     @Query("SELECT i FROM InventoryInstance i WHERE i.pickListLine.id = :lineId AND i.deletedDate IS NULL")

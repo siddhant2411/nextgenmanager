@@ -430,6 +430,38 @@ public class WorkOrderController {
     }
 
     /**
+     * Changes the warehouse the finished goods are wanted in. Allowed until the goods are booked,
+     * which is later than the rest of the header can be edited.
+     *
+     * @param body {@code warehouse}: the warehouse code, or blank for the store the order works out of
+     */
+    @PatchMapping("/{id}/produce-into")
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> changeProduceInto(@PathVariable int id,
+                                               @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String warehouse = body != null ? body.get("warehouse") : null;
+            return ResponseEntity.ok(workOrderService.changeProduceInto(id, warehouse));
+
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "WorkOrder not found with ID: " + id));
+
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage()));
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+
+        } catch (Exception e) {
+            logger.error("Error changing the destination of WorkOrder id: {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to change the destination: " + e.getMessage()));
+        }
+    }
+
+    /**
      * Split quantity off a work order into a new one.
      *
      * <p>Quantities are stated per line. Produced units and issued material stay with the source;

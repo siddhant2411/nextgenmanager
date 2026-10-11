@@ -58,7 +58,15 @@ public class GRNServiceImpl implements GRNService {
             if (grn.getVendor() == null && po.getVendor() != null) {
                 grn.setVendor(po.getVendor());
             }
+            // Nothing keyed at the gate: the goods go into the plant the order said to deliver
+            // them to. A warehouse named on the receipt still wins -- it is where they arrived.
+            boolean keyed = request.getWarehouse() != null && !request.getWarehouse().isBlank();
+            if (!keyed && po.getShipToWarehouse() != null) {
+                grn.setWarehouse(po.getShipToWarehouse());
+            }
         }
+        // One answer for the header and every movement under it.
+        final String receivedInto = grn.getWarehouse().getCode();
 
         if (request.getVendorId() != null) {
             Contact vendor = contactRepository.findById(request.getVendorId().intValue())
@@ -95,7 +103,7 @@ public class GRNServiceImpl implements GRNService {
                 txn.setTransactionType("GRN");
                 txn.setReferenceType("GRN");
                 txn.setReferenceDocNo(grn.getGrnNumber());
-                txn.setWarehouse(request.getWarehouse());
+                txn.setWarehouse(receivedInto);
                 txn.setCostPerUnit(lineDto.getRate());
                 txn.setCreatedBy(request.getCreatedBy());
                 txn.setMovementDate(grn.getGrnDate()); // books follow the GRN date, not the day it was keyed
@@ -127,7 +135,7 @@ public class GRNServiceImpl implements GRNService {
                 rejectTxn.setTransactionType("GRN");
                 rejectTxn.setReferenceType("GRN_REJECTED");
                 rejectTxn.setReferenceDocNo(grn.getGrnNumber());
-                rejectTxn.setWarehouse(quarantine != null ? quarantine.getCode() : request.getWarehouse());
+                rejectTxn.setWarehouse(quarantine != null ? quarantine.getCode() : receivedInto);
                 rejectTxn.setCostPerUnit(lineDto.getRate());
                 rejectTxn.setCreatedBy(request.getCreatedBy());
                 rejectTxn.setMovementDate(grn.getGrnDate());

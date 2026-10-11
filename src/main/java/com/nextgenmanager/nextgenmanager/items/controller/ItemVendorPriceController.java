@@ -52,7 +52,7 @@ public class ItemVendorPriceController {
 
     /** POST /api/items/{itemId}/vendor-prices */
     @PostMapping
-    @RequiresAdminOnly
+    @RequiresPurchaseAdminAccess
     @Operation(
         summary = "Add a vendor price for an item",
         description = "Set priceType=PURCHASE for buy prices; priceType=JOB_WORK for subcontract/job-work rates. " +
@@ -67,7 +67,7 @@ public class ItemVendorPriceController {
 
     /** PUT /api/items/{itemId}/vendor-prices/{id} */
     @PutMapping("/{id}")
-    @RequiresAdminOnly
+    @RequiresPurchaseAdminAccess
     @Operation(summary = "Update price, lead time, validity or preferred flag")
     public ResponseEntity<ItemVendorPriceDTO> update(
             @PathVariable int itemId,
@@ -79,7 +79,7 @@ public class ItemVendorPriceController {
 
     /** PATCH /api/items/{itemId}/vendor-prices/{id}/set-preferred */
     @PatchMapping("/{id}/set-preferred")
-    @RequiresAdminOnly
+    @RequiresPurchaseAdminAccess
     @Operation(
         summary = "Mark this vendor as the preferred source for Make-or-Buy analysis",
         description = "Clears the preferred flag on any previously preferred entry for the same item+priceType."
@@ -100,7 +100,7 @@ public class ItemVendorPriceController {
 
     /** DELETE /api/items/{itemId}/vendor-prices/{id} */
     @DeleteMapping("/{id}")
-    @RequiresAdminOnly
+    @RequiresPurchaseAdminAccess
     public ResponseEntity<Void> delete(
             @PathVariable int itemId, @PathVariable Long id) {
         service.delete(id);

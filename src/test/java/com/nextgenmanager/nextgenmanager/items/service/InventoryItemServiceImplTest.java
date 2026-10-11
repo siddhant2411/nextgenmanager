@@ -202,6 +202,45 @@ class InventoryItemServiceImplTest {
         verify(inventoryItemRepository, never()).itemCodeTakenByAnother(any(), anyInt());
     }
 
+    // ── deleting an item hands its code back ─────────────────────────────────────
+
+    @Test
+    void deleteInventoryItem_marksItDeletedAndMovesItOffItsCode() {
+        InventoryItem existing = new InventoryItem();
+        existing.setInventoryItemId(7);
+        existing.setItemCode("STR-100");
+
+        when(inventoryItemRepository.findById(7)).thenReturn(Optional.of(existing));
+
+        service.deleteInventoryItem(7);
+
+        assertThat(existing.getDeletedDate()).isNotNull();
+        assertThat(existing.getItemCode()).matches("STR-100_DEL_\\d{17}");
+        verify(inventoryItemRepository).save(existing);
+    }
+
+    @Test
+    void deleteInventoryItem_leavesAnAlreadyDeletedItemAlone() {
+        InventoryItem existing = new InventoryItem();
+        existing.setInventoryItemId(7);
+        existing.setItemCode("STR-100_DEL_20261011101500000");
+        existing.setDeletedDate(new java.util.Date());
+
+        when(inventoryItemRepository.findById(7)).thenReturn(Optional.of(existing));
+
+        service.deleteInventoryItem(7);
+
+        assertThat(existing.getItemCode()).isEqualTo("STR-100_DEL_20261011101500000");
+        verify(inventoryItemRepository, never()).save(any());
+    }
+
+    @Test
+    void deletedItemCode_trimsALongCodeToFitTheColumn() {
+        String code = InventoryItemServiceImpl.deletedItemCode("X".repeat(255), new java.util.Date());
+
+        assertThat(code).hasSize(255).contains("_DEL_");
+    }
+
     private static FileAttachment fileAttachment(Long id, String fileName) {
         FileAttachment fileAttachment = new FileAttachment();
         fileAttachment.setId(id);

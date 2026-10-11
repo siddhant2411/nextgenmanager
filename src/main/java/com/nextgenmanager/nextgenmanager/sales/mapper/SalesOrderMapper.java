@@ -17,6 +17,8 @@ public interface SalesOrderMapper {
     @Mapping(target = "items", source = "items")
     @Mapping(target = "billTo", ignore = true)
     @Mapping(target = "shipTo", ignore = true)
+    @Mapping(target = "dispatchWarehouseCode", source = "dispatchWarehouse.code")
+    @Mapping(target = "dispatchWarehouseName", source = "dispatchWarehouse.name")
     SalesOrderDto toDTO(SalesOrder entity);
 
     @Mapping(target = "customer", ignore = true)
@@ -38,5 +40,6 @@ public interface SalesOrderMapper {
     @Mapping(target = "parentSoId", ignore = true)
     @Mapping(target = "taxPercentage", ignore = true)
     @Mapping(target = "payments", ignore = true)
+    @Mapping(target = "dispatchWarehouse", ignore = true)
     SalesOrder toEntity(SalesOrderDto dto);
 }

@@ -78,6 +78,9 @@ public class SalesOrderCreateDto {
     @Size(max = 50)
     private String transportMode;
     private LocalDate deliveryDate;
+    /** Code of the warehouse the order is dispatched from. Blank means the default warehouse. */
+    @Size(max = 20)
+    private String dispatchWarehouseCode;
     @Size(max = 200)
     private String packagingInstructions;
     @Size(max = 200)

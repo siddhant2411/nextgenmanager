@@ -1,7 +1,9 @@
 package com.nextgenmanager.nextgenmanager.quality.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.model.GoodsReceiptNote;
+import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.GoodsReceiptNoteRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.packaging.model.PackageBox;
@@ -42,6 +44,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
     private final GoodsReceiptNoteRepository goodsReceiptNoteRepository;
     private final PackageBoxRepository packageBoxRepository;
     private final InspectionLotNumberGenerator numberGenerator;
+    private final InventoryTransactionService inventoryTransactionService;
 
     // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -168,6 +171,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         }
         lot.setStatus(verdict(lot, accepted));
         lot.setUpdatedDate(new Date());
+        setAsideRejectedReceipt(lot, rejected);
 
         InspectionLot saved = inspectionLotRepository.save(lot);
         logger.info("Inspection {} judged {} by {} ({} accepted, {} rejected)",
@@ -215,6 +219,43 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         lot.setUpdatedDate(new Date());
         inspectionLotRepository.save(lot);
         logger.info("Inspection {} cancelled before it was judged", lot.getLotNumber());
+    }
+
+    /**
+     * What an incoming inspection rejected is taken out of good stock.
+     *
+     * <p>The receipt has already put the whole accepted quantity on the shelf, so until now an
+     * incoming lot that rejected part of it was a judgement with no effect: the goods stayed
+     * pickable. Rejecting them here moves them to quarantine as failed stock — the same place,
+     * and the same state, as goods rejected on the receipt itself.
+     */
+    private void setAsideRejectedReceipt(InspectionLot lot, BigDecimal rejected) {
+        if (lot.getSource() != InspectionSource.INCOMING || rejected.signum() <= 0) return;
+        GoodsReceiptNote grn = lot.getGoodsReceiptNote();
+        if (grn == null) return;
+
+        InventoryTransactionDTO dto = new InventoryTransactionDTO();
+        dto.setInventoryItemId(lot.getInventoryItem().getInventoryItemId());
+        dto.setQuantity(rejected.doubleValue());
+        dto.setWarehouse(grn.getWarehouse() != null ? grn.getWarehouse().getCode() : null);
+        dto.setReferenceType("INSPECTION");
+        dto.setReferenceDocNo(lot.getLotNumber());
+        dto.setCreatedBy(currentUser());
+        dto.setOverrideReason(lot.getRemarks() != null && !lot.getRemarks().isBlank()
+                ? lot.getRemarks() : "Rejected at incoming inspection");
+        double setAside = inventoryTransactionService.quarantineStock(dto, grn.getGrnNumber());
+
+        BigDecimal missed = rejected.subtract(BigDecimal.valueOf(setAside));
+        if (missed.signum() > 0) {
+            String note = String.format("Only %s of the %s rejected could be set aside: %s had "
+                            + "already been reserved or used.",
+                    BigDecimal.valueOf(setAside).stripTrailingZeros().toPlainString(),
+                    rejected.stripTrailingZeros().toPlainString(),
+                    missed.stripTrailingZeros().toPlainString());
+            String remarks = lot.getRemarks() == null || lot.getRemarks().isBlank()
+                    ? note : lot.getRemarks() + " " + note;
+            lot.setRemarks(remarks.length() > 500 ? remarks.substring(0, 500) : remarks);
+        }
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

@@ -89,6 +89,9 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     private WorkCenterRepository workCenterRepository;
 
     @Autowired
+    private com.nextgenmanager.nextgenmanager.Inventory.service.WarehouseService warehouseService;
+
+    @Autowired
     private TestTemplateService testTemplateService;
 
     @Autowired
@@ -233,6 +236,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         workOrder.setSalesOrder(salesOrder);
         workOrder.setParentWorkOrder(parentWorkOrder);
         workOrder.setWorkCenter(workCenter);
+        workOrder.setProduceIntoWarehouse(produceIntoFor(dto.getProduceIntoWarehouseCode()));
 
         // Header BOM/routing/quantity are a mirror of the first line, kept only while the
         // DTO layer and UI still read them. The lines are the source of truth.
@@ -715,6 +719,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         split.setParentWorkOrder(source);
         split.setSourceType(WorkOrderSourceType.PARENT_WORK_ORDER);
         split.setWorkCenter(source.getWorkCenter());
+        split.setProduceIntoWarehouse(source.getProduceIntoWarehouse());
         split.setBom(source.getBom());
         split.setRouting(source.getRouting());
         split.setPriority(source.getPriority());
@@ -1023,7 +1028,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             produceDto.setTransactionType("PRODUCE");
             produceDto.setReferenceType("WORK_ORDER");
             produceDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
-            produceDto.setWarehouse(workOrder.stockWarehouseCode());
+            produceDto.setWarehouse(workOrder.produceWarehouseCode());
             try {
                 produceDto.setCreatedBy(
                         org.springframework.security.core.context.SecurityContextHolder
@@ -1045,7 +1050,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     reserveDto.setTransactionType("RESERVE");
                     reserveDto.setReferenceDocNo(workOrder.getSalesOrder().getOrderNumber());
                     // Reserved where it was just produced, not in the default store.
-                    reserveDto.setWarehouse(workOrder.stockWarehouseCode());
+                    reserveDto.setWarehouse(workOrder.produceWarehouseCode());
                     inventoryTransactionService.reserveStock(reserveDto);
                     logger.info("Auto-reserved {} units of {} for SalesOrder {}",
                             lineCompleted, produced.getItemCode(),
@@ -1380,6 +1385,50 @@ public class WorkOrderServiceImpl implements WorkOrderService{
     }
 
 
+    /**
+     * The warehouse a work order's finished goods are wanted in, from the code on a request. Blank
+     * is null, not the default warehouse: an order that names no destination keeps its goods in the
+     * store it works out of, which for a second plant is not the default one.
+     */
+    private com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse produceIntoFor(String code) {
+        if (code == null || code.isBlank()) return null;
+        return warehouseService.resolveByCodeOrDefault(code);
+    }
+
+    @Transactional
+    @Override
+    public WorkOrderDTO changeProduceInto(int workOrderId, String warehouseCode) {
+        WorkOrder workOrder = workOrderRepository.findById(workOrderId)
+                .orElseThrow(() -> new EntityNotFoundException("WorkOrder not found"));
+
+        // Once the goods are booked they are stock in a building, and moving them is a transfer.
+        WorkOrderStatus status = workOrder.getWorkOrderStatus();
+        if (status == WorkOrderStatus.COMPLETED || status == WorkOrderStatus.CLOSED
+                || status == WorkOrderStatus.SHORT_CLOSED || status == WorkOrderStatus.CANCELLED) {
+            throw new IllegalStateException("The destination of work order "
+                    + workOrder.getWorkOrderNumber() + " cannot be changed: it is " + status
+                    + ". Move the finished goods with a stock transfer instead.");
+        }
+
+        String before = workOrder.produceWarehouseCode();
+        workOrder.setProduceIntoWarehouse(produceIntoFor(warehouseCode));
+        WorkOrder saved = workOrderRepository.save(workOrder);
+        String after = saved.produceWarehouseCode();
+
+        if (!Objects.equals(before, after)) {
+            auditService.record(saved, WorkOrderEventType.UPDATED, "produceIntoWarehouse",
+                    before, after,
+                    "Finished goods destination changed from " + describeStore(before)
+                            + " to " + describeStore(after));
+        }
+        return workOrderMapper.toDTO(saved);
+    }
+
+    /** A warehouse code for a sentence; null is the default warehouse, which has no code here. */
+    private static String describeStore(String code) {
+        return code != null ? code : "the default warehouse";
+    }
+
     @Transactional
     @Override
     public WorkOrderDTO  updateWorkOrder(int workOrderId, WorkOrderRequestDTO dto) {
@@ -1430,6 +1479,11 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             WorkCenter workCenter = workCenterRepository.findById(dto.getWorkCenterId())
                     .orElseThrow(() -> new EntityNotFoundException("WorkCenter not found with ID: " + dto.getWorkCenterId()));
             workOrder.setWorkCenter(workCenter);
+        }
+
+        // Null is a client that does not know the field; blank is one that cleared it.
+        if (dto.getProduceIntoWarehouseCode() != null) {
+            workOrder.setProduceIntoWarehouse(produceIntoFor(dto.getProduceIntoWarehouseCode()));
         }
 
         // Update allowed fields
@@ -3016,7 +3070,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             if (material.getDeletedDate() != null) continue;
             BigDecimal consumed = material.getConsumedQuantity() != null ? material.getConsumedQuantity() : BigDecimal.ZERO;
             BigDecimal scrapped = material.getScrappedQuantity() != null ? material.getScrappedQuantity() : BigDecimal.ZERO;
-            BigDecimal toReturn = material.getPlannedRequiredQuantity().subtract(consumed).subtract(scrapped);
+            BigDecimal toReturn = reservedAndUnused(material, consumed, scrapped);
             if (toReturn.compareTo(BigDecimal.ZERO) > 0) {
                 try {
                     InventoryTransactionDTO returnDto = new InventoryTransactionDTO();
@@ -3181,7 +3235,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
             produceDto.setTransactionType("PRODUCE");
             produceDto.setReferenceType("WORK_ORDER");
             produceDto.setReferenceDocNo(workOrder.getWorkOrderNumber());
-            produceDto.setWarehouse(workOrder.stockWarehouseCode());
+            produceDto.setWarehouse(workOrder.produceWarehouseCode());
             try {
                 produceDto.setCreatedBy(
                         org.springframework.security.core.context.SecurityContextHolder
@@ -3197,7 +3251,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     reserveDto.setTransactionType("RESERVE");
                     reserveDto.setReferenceDocNo(workOrder.getSalesOrder().getOrderNumber());
                     // Reserved where it was just produced, not in the default store.
-                    reserveDto.setWarehouse(workOrder.stockWarehouseCode());
+                    reserveDto.setWarehouse(workOrder.produceWarehouseCode());
                     inventoryTransactionService.reserveStock(reserveDto);
                 } catch (Exception e) {
                     logger.error("Auto-reserve for SalesOrder failed on short-close (WO {} line {}): {}",
@@ -3219,9 +3273,9 @@ public class WorkOrderServiceImpl implements WorkOrderService{
 
             BigDecimal consumed = material.getConsumedQuantity() != null ? material.getConsumedQuantity() : BigDecimal.ZERO;
             BigDecimal scrapped = material.getScrappedQuantity() != null ? material.getScrappedQuantity() : BigDecimal.ZERO;
-            // Return everything reserved but not yet consumed: planned - consumed - scrapped
+            // Return everything reserved but not yet consumed.
             // This covers both: issued-to-floor-but-not-consumed AND reserved-but-not-issued
-            BigDecimal toReturn = material.getPlannedRequiredQuantity().subtract(consumed).subtract(scrapped);
+            BigDecimal toReturn = reservedAndUnused(material, consumed, scrapped);
 
             if (toReturn.compareTo(BigDecimal.ZERO) > 0) {
                 try {
@@ -3539,6 +3593,21 @@ public class WorkOrderServiceImpl implements WorkOrderService{
      * Used by auto-backflush to enforce the Stores approval gate even when materials
      * are auto-issued at consumption time.
      */
+    /**
+     * What a cancelled or short-closed order hands back to the store: the quantity Stores actually
+     * approved (which is what was reserved), less what has been used.
+     *
+     * <p>This used to start from the planned quantity. Stock is only reserved when a material
+     * request is approved, so an order cancelled before approval — or approved in part — "returned"
+     * material that had never left free stock, and the item's available quantity went up by stock
+     * that did not exist.
+     */
+    private BigDecimal reservedAndUnused(com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial material,
+                                         BigDecimal consumed, BigDecimal scrapped) {
+        BigDecimal unused = approvedIssueCap(material).subtract(consumed).subtract(scrapped);
+        return unused.signum() > 0 ? unused : BigDecimal.ZERO;
+    }
+
     private BigDecimal approvedIssueCap(com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial material) {
         BigDecimal originalApproved = BigDecimal.ZERO;
         if (material.getInventoryRequestId() != null) {

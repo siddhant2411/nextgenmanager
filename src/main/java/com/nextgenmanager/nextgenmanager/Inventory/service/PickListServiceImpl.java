@@ -75,7 +75,12 @@ public class PickListServiceImpl implements PickListService {
                     "Cannot pick for " + so.getOrderNumber() + ": it is " + so.getStatus());
         }
 
-        Warehouse warehouse = warehouseService.resolveByCodeOrDefault(request.warehouseCode());
+        // With no warehouse named, pick from the one the order is dispatched from: that is where
+        // whatever was made or bought for it was sent.
+        boolean named = request.warehouseCode() != null && !request.warehouseCode().isBlank();
+        Warehouse warehouse = !named && so.getDispatchWarehouse() != null
+                ? so.getDispatchWarehouse()
+                : warehouseService.resolveByCodeOrDefault(request.warehouseCode());
 
         // Build every line before drawing a number: the generator commits separately, so a number
         // requested ahead of validation is spent even when this rolls back.
@@ -310,6 +315,11 @@ public class PickListServiceImpl implements PickListService {
                 throw new IllegalArgumentException(String.format(
                         "Instance %d cannot be picked: its quality status is %s",
                         instanceId, inst.getQualityStatus()));
+            }
+            if (inst.getStockTransferLine() != null) {
+                throw new IllegalArgumentException(String.format(
+                        "Instance %d is in transit on stock transfer %s", instanceId,
+                        inst.getStockTransferLine().getStockTransfer().getTransferNumber()));
             }
             if (inst.getPickListLine() != null && !inst.getPickListLine().getId().equals(line.getId())) {
                 throw new IllegalArgumentException(String.format(

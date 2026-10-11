@@ -886,6 +886,137 @@ public class BomServiceImpl implements BomService {
         }
     }
 
+    /**
+     * Creates a new DRAFT revision of a released BOM from the edited content the user had on
+     * screen, rather than from the saved original — so changes made against an APPROVED/ACTIVE
+     * BOM land in the new revision instead of being discarded. The original BOM is not touched.
+     */
+    @Override
+    @Transactional
+    public BOMRoutingMapper createRevision(int bomId, BOMRoutingRequestMapper request) {
+        Bom originalBom = getBom(bomId);
+        RoutingDto originalRouting = routingService.getByBom(originalBom.getId());
+
+        BomRequestDTO bomRequest = request != null ? request.getBom() : null;
+        if (bomRequest == null) {
+            throw new InvalidDataException("BOM details are required to create a revision");
+        }
+
+        RoutingDto editedRouting = request.getRouting() != null && request.getRouting().getOperations() != null
+                ? request.getRouting()
+                : originalRouting;
+
+        // Operation ids in the request belong to the original routing; the new routing gets fresh
+        // ids, so the sequence number is the bridge between an edited operation and its new copy.
+        Map<Long, Integer> oldOpIdToSeq = new HashMap<>();
+        if (editedRouting != null && editedRouting.getOperations() != null) {
+            int seq = 1;
+            for (var opDto : editedRouting.getOperations()) {
+                if (opDto.getSequenceNumber() == null) {
+                    opDto.setSequenceNumber(seq++);
+                }
+                if (opDto.getId() != null) {
+                    oldOpIdToSeq.put(opDto.getId(), opDto.getSequenceNumber());
+                }
+            }
+            // Dependencies that point at an old operation id cannot resolve in the new routing
+            for (var opDto : editedRouting.getOperations()) {
+                if (opDto.getDependencies() == null) continue;
+                for (var depDto : opDto.getDependencies()) {
+                    Integer upstreamSeq = oldOpIdToSeq.get(depDto.getDependsOnRoutingOperationId());
+                    if (upstreamSeq != null) {
+                        depDto.setDependsOnSequenceNumber(upstreamSeq);
+                    }
+                }
+            }
+        }
+
+        // addBom clears the routing operation on every position (no routing exists yet), so note
+        // each position's operation sequence first. Positions keep the request order.
+        List<Integer> positionSeqs = new ArrayList<>();
+        if (bomRequest.getPositions() != null) {
+            for (BomPositionRequestDTO positionRequest : bomRequest.getPositions()) {
+                positionSeqs.add(positionRequest.getRoutingOperationId() != null
+                        ? oldOpIdToSeq.get(positionRequest.getRoutingOperationId())
+                        : positionRequest.getRoutingOperationSequenceNumber());
+            }
+        }
+
+        bomRequest.setId(null);
+        Bom draft = bomRequest.toEntity();
+        // A revision is always of the same item, and gets its own effectivity on approval
+        draft.setParentInventoryItem(originalBom.getParentInventoryItem());
+        draft.setEffectiveFrom(null);
+        draft.setEffectiveTo(null);
+
+        Bom newBom = addBom(draft);
+
+        RoutingDto routingDto = editedRouting != null
+                ? routingService.createOrUpdateRouting(newBom.getId(), editedRouting, "SYSTEM")
+                : null;
+
+        Map<Integer, Long> seqToNewOpId = new HashMap<>();
+        if (routingDto != null && routingDto.getOperations() != null) {
+            for (var opDto : routingDto.getOperations()) {
+                if (opDto.getSequenceNumber() != null && opDto.getId() != null) {
+                    seqToNewOpId.put(opDto.getSequenceNumber(), opDto.getId());
+                }
+            }
+        }
+
+        // Re-assign routing operations on positions using sequence as the bridge
+        List<BomPosition> newPositions = newBom.getPositions() != null ? newBom.getPositions() : List.of();
+        for (int i = 0; i < newPositions.size() && i < positionSeqs.size(); i++) {
+            Integer seq = positionSeqs.get(i);
+            Long newOpId = seq != null ? seqToNewOpId.get(seq) : null;
+            if (newOpId == null) continue;
+            BomPosition position = newPositions.get(i);
+            routingOperationRepository.findById(newOpId).ifPresent(op -> {
+                position.setRoutingOperation(op);
+                bomPositionRepository.save(position);
+            });
+        }
+
+        // Copy QA parameters from the original operations to the operations derived from them
+        Set<Long> originalOpIds = new HashSet<>();
+        if (originalRouting != null && originalRouting.getOperations() != null) {
+            for (var opDto : originalRouting.getOperations()) {
+                if (opDto.getId() != null) originalOpIds.add(opDto.getId());
+            }
+        }
+        for (Map.Entry<Long, Integer> entry : oldOpIdToSeq.entrySet()) {
+            if (!originalOpIds.contains(entry.getKey())) continue;
+            Long newOpId = seqToNewOpId.get(entry.getValue());
+            if (newOpId == null) continue;
+            List<BomQaParameter> oldParams = bomQaParameterRepository
+                    .findByRoutingOperationIdAndDeletedDateIsNull(entry.getKey());
+            if (oldParams.isEmpty()) continue;
+            routingOperationRepository.findById(newOpId).ifPresent(newOp -> {
+                for (BomQaParameter old : oldParams) {
+                    BomQaParameter copy = BomQaParameter.builder()
+                            .routingOperation(newOp)
+                            .name(old.getName())
+                            .parameterType(old.getParameterType())
+                            .minValue(old.getMinValue())
+                            .maxValue(old.getMaxValue())
+                            .unit(old.getUnit())
+                            .critical(old.getCritical())
+                            .build();
+                    bomQaParameterRepository.save(copy);
+                }
+            });
+        }
+
+        Map<Integer, Integer> activeBomMap = buildActiveBomMap(newBom.getPositions());
+        BomDTO bomDTO = BomMapper.toDto(newBom, activeBomMap);
+
+        BOMRoutingMapper bomRoutingMapper = new BOMRoutingMapper();
+        bomRoutingMapper.setBom(bomDTO);
+        bomRoutingMapper.setRouting(routingDto);
+        logger.info("Created draft revision BOM id={} from BOM id={}", newBom.getId(), bomId);
+        return bomRoutingMapper;
+    }
+
     private Pair<String, String> extractBaseFilePrefixAndExtension(String fileName) {
         Pattern pattern = Pattern.compile("^(.*)_v\\d+\\.(\\w+)$"); // Extracts prefix and extension
         Matcher matcher = pattern.matcher(fileName);

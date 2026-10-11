@@ -98,6 +98,29 @@ class NonConformanceServiceImplTest {
         return ncr;
     }
 
+    // ─── how much stock a decision touches ────────────────────────────────────
+
+    @Test
+    void aDecisionReleasesOnlyTheQuantityItIsAbout() {
+        // Ten rejected on this receipt, forty still failed from last month's. Releasing the ten
+        // "as is" used to release all fifty.
+        rejectedStock.setQuantity(new BigDecimal("50"));
+        NonConformanceReport ncr = openReport();
+        ncr.setQuantity(new BigDecimal("10"));
+        org.mockito.ArgumentCaptor<InventoryInstance> saved =
+                org.mockito.ArgumentCaptor.forClass(InventoryInstance.class);
+
+        service.decide(2L, new NcrDispositionRequest(NcrDisposition.USE_AS_IS, null, "plant.head", "fit for use"));
+
+        org.mockito.Mockito.verify(inventoryInstanceRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+        InventoryInstance stillFailed = saved.getAllValues().get(0);
+        InventoryInstance released = saved.getAllValues().get(1);
+        assertThat(stillFailed.getQuantity()).isEqualByComparingTo("40");
+        assertThat(stillFailed.getQualityStatus()).isEqualTo(QualityStatus.FAILED);
+        assertThat(released.getQuantity()).isEqualByComparingTo("10");
+        assertThat(released.getQualityStatus()).isEqualTo(QualityStatus.WAIVED);
+    }
+
     // ─── raising ──────────────────────────────────────────────────────────────
 
     @Test
@@ -119,6 +142,30 @@ class NonConformanceServiceImplTest {
                 1L, BigDecimal.ONE, "something", null, null)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("raised against an inspection that failed");
+    }
+
+    @Test
+    void aReportCanBeRaisedForWhatAPassedInspectionRejected() {
+        // Seven accepted and three rejected is a pass, and the three are in quarantine. Found
+        // live: they had no report to hang a decision on.
+        failedLot.setStatus(InspectionLotStatus.PASSED);
+        failedLot.setQuantityRejected(new BigDecimal("3"));
+
+        NonConformanceReportDto ncr = service.raise(new NcrCreateRequest(
+                1L, new BigDecimal("3"), "edge burr", "qc.ravi", null));
+
+        assertThat(ncr.status()).isEqualTo(NcrStatus.OPEN);
+    }
+
+    @Test
+    void thatReportCannotCoverMoreThanWasRejected() {
+        failedLot.setStatus(InspectionLotStatus.PASSED);
+        failedLot.setQuantityRejected(new BigDecimal("3"));
+
+        assertThatThrownBy(() -> service.raise(new NcrCreateRequest(
+                1L, new BigDecimal("4"), "edge burr", null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("rejected 3");
     }
 
     @Test

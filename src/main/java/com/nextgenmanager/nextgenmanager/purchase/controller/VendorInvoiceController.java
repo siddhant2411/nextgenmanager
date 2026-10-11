@@ -9,6 +9,7 @@ import io.minio.GetObjectResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import com.nextgenmanager.nextgenmanager.common.security.authorization.*;
 import org.springframework.web.bind.annotation.*;
@@ -21,14 +22,18 @@ import java.util.List;
 @RequiresPurchaseAccess
 public class VendorInvoiceController {
 
+    private static final String INVOICE_ENTRY = "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN',"
+            + "'ROLE_INVENTORY_ADMIN','ROLE_PURCHASE_ADMIN','ROLE_PURCHASE_USER')";
+
     private final VendorInvoiceService service;
 
     public VendorInvoiceController(VendorInvoiceService service) {
         this.service = service;
     }
 
+    // A purchase user enters the vendor's bill as a draft; posting it stays with an admin.
     @PostMapping
-    @RequiresPurchaseInventoryAdminAccess
+    @PreAuthorize(INVOICE_ENTRY)
     public ResponseEntity<VendorInvoiceDto> create(@RequestBody CreateVendorInvoiceRequest request) {
         return ResponseEntity.ok(service.create(request));
     }
@@ -63,7 +68,7 @@ public class VendorInvoiceController {
     }
 
     @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @RequiresPurchaseInventoryAdminAccess
+    @PreAuthorize(INVOICE_ENTRY)
     public ResponseEntity<String> uploadAttachment(@PathVariable Long id,
                                                    @RequestParam("file") MultipartFile file) throws Exception {
         service.uploadAttachment(id, file);

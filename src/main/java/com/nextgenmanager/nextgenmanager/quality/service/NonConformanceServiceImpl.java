@@ -63,12 +63,24 @@ public class NonConformanceServiceImpl implements NonConformanceService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Inspection lot not found: " + request.inspectionLotId()));
 
-        // A report belongs to a failure. Raising one against a lot that passed would be a record
-        // of a problem the inspection says does not exist.
-        if (lot.getStatus() != InspectionLotStatus.FAILED) {
+        // A report belongs to a failure. Raising one against a lot that rejected nothing would
+        // be a record of a problem the inspection says does not exist.
+        //
+        // A lot that passed can still have rejected part of what it was offered — 7 accepted, 3
+        // rejected is a pass. Those 3 are in quarantine as failed stock and need a decision as
+        // much as a wholly failed lot does, so the report is allowed, for no more than was rejected.
+        java.math.BigDecimal rejected = lot.getQuantityRejected() != null
+                ? lot.getQuantityRejected() : java.math.BigDecimal.ZERO;
+        boolean passedWithRejections = lot.getStatus() == InspectionLotStatus.PASSED && rejected.signum() > 0;
+        if (lot.getStatus() != InspectionLotStatus.FAILED && !passedWithRejections) {
             throw new IllegalStateException(String.format(
                     "%s is %s — a non-conformance is raised against an inspection that failed",
                     lot.getLotNumber(), lot.getStatus()));
+        }
+        if (passedWithRejections && request.quantity().compareTo(rejected) > 0) {
+            throw new IllegalArgumentException(String.format(
+                    "%s rejected %s; a report cannot cover more than that", lot.getLotNumber(),
+                    rejected.stripTrailingZeros().toPlainString()));
         }
         if (request.quantity().compareTo(lot.getQuantityOffered()) > 0) {
             throw new IllegalArgumentException(String.format(
@@ -142,8 +154,8 @@ public class NonConformanceServiceImpl implements NonConformanceService {
         InspectionLot lot = ncr.getInspectionLot();
         if (lot.getGoodsReceiptNote() == null) return;
 
-        List<InventoryInstance> received = inventoryInstanceRepository
-                .findFailedStock(lot.getInventoryItem().getInventoryItemId());
+        List<InventoryInstance> received = new java.util.ArrayList<>(inventoryInstanceRepository
+                .findFailedStock(lot.getInventoryItem().getInventoryItemId()));
         if (received.isEmpty()) return;
 
         QualityStatus outcome = switch (ncr.getDisposition()) {
@@ -151,12 +163,48 @@ public class NonConformanceServiceImpl implements NonConformanceService {
             case REWORK -> QualityStatus.PENDING_QC;  // to be looked at again once put right
             case SCRAP, RETURN_TO_VENDOR -> QualityStatus.FAILED; // stays unusable pending its own document
         };
+        if (outcome == QualityStatus.FAILED) return; // already failed: nothing to change
 
+        // Only as much stock as the report is about, and this receipt's own before any other.
+        // The decision used to be applied to every failed unit of the item, so releasing ten
+        // rejected castings "as is" also released the forty rejected on last month's receipt.
+        String grnNumber = lot.getGoodsReceiptNote().getGrnNumber();
+        received.sort(java.util.Comparator
+                .comparing((InventoryInstance i) -> grnNumber == null || i.getBatchNumber() == null
+                        || !grnNumber.equals(i.getBatchNumber().getSourceDocNo()))
+                .thenComparing(i -> i.getEntryDate() != null ? i.getEntryDate() : new Date(0)));
+
+        java.math.BigDecimal remaining = ncr.getQuantity();
+        int moved = 0;
         for (InventoryInstance inst : received) {
-            inst.setQualityStatus(outcome);
-            inventoryInstanceRepository.save(inst);
+            if (remaining.signum() <= 0) break;
+            java.math.BigDecimal qty = inst.getQuantity();
+            if (qty.compareTo(remaining) > 0) {
+                // Part of a lot: split it, so the rest stays failed.
+                inst.setQuantity(qty.subtract(remaining));
+                inventoryInstanceRepository.save(inst);
+
+                InventoryInstance part = new InventoryInstance();
+                part.setInventoryItem(inst.getInventoryItem());
+                part.setWarehouse(inst.getWarehouse());
+                part.setStorageLocation(inst.getStorageLocation());
+                part.setEntryDate(inst.getEntryDate());
+                part.setQuantity(remaining);
+                part.setCostPerUnit(inst.getCostPerUnit());
+                part.setSellPricePerUnit(inst.getSellPricePerUnit());
+                part.setInventoryInstanceStatus(inst.getInventoryInstanceStatus());
+                part.setBatchNumber(inst.getBatchNumber());
+                part.setQualityStatus(outcome);
+                inventoryInstanceRepository.save(part);
+                remaining = java.math.BigDecimal.ZERO;
+            } else {
+                inst.setQualityStatus(outcome);
+                inventoryInstanceRepository.save(inst);
+                remaining = remaining.subtract(qty);
+            }
+            moved++;
         }
-        logger.info("{}: {} instance(s) of {} moved to {}", ncr.getNcrNumber(), received.size(),
+        logger.info("{}: {} unit record(s) of {} moved to {}", ncr.getNcrNumber(), moved,
                 lot.getInventoryItem().getItemCode(), outcome);
     }
 

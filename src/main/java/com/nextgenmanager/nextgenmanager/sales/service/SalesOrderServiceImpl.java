@@ -12,6 +12,7 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ProductInventorySettings;
 import com.nextgenmanager.nextgenmanager.items.model.ReplenishmentStrategy;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.items.service.SalesPriceFloorService;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.repository.EnquiryRepository;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
@@ -64,6 +65,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final SalesOrderTaxCalculator taxCalculator;
     private final SalesPaymentRepository salesPaymentRepository;
     private final DomainEventPublisher domainEventPublisher;
+    private final SalesOrderSupplyCancellation supplyCancellation;
+    private final com.nextgenmanager.nextgenmanager.Inventory.service.WarehouseService warehouseService;
+    private final SalesPriceFloorService priceFloorService;
 
     @Override
     public SalesOrderDto createSalesOrder(SalesOrderCreateDto dto) {
@@ -107,8 +111,26 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         dto.setBillTo(SalesParties.billTo(salesOrder));
         dto.setShipTo(SalesParties.shipTo(salesOrder));
         populateItemTracking(salesOrder, dto);
+        populatePriceFloor(dto);
         populatePaymentTotals(id, dto);
         return dto;
+    }
+
+    /**
+     * Marks each line priced under its item's minimum selling price. An order is not blocked for
+     * it -- every order already goes to a sales admin for approval, and this is what they need to
+     * see before giving it.
+     */
+    private void populatePriceFloor(SalesOrderDto dto) {
+        if (dto.getItems() == null) return;
+        for (SalesOrderItemDto itemDto : dto.getItems()) {
+            BigDecimal floor = priceFloorService.floorFor(itemDto.getInventoryItem());
+            // Line discounts are disabled on sales orders; only the order discount applies.
+            BigDecimal effective = SalesPriceFloorService.effectiveUnitPrice(
+                    itemDto.getPricePerUnit(), null, dto.getDiscountPercentage());
+            itemDto.setMinimumSellingPrice(floor);
+            itemDto.setBelowMinimumPrice(SalesPriceFloorService.isBelow(effective, floor));
+        }
     }
 
     private void populatePaymentTotals(Long orderId, SalesOrderDto dto) {
@@ -307,6 +329,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         so.setDispatchThrough(dto.getDispatchThrough());
         so.setTransportMode(dto.getTransportMode());
         so.setDeliveryDate(dto.getDeliveryDate());
+        // Blank is stored as null, which every reader takes as the default warehouse.
+        so.setDispatchWarehouse(blankToNull(dto.getDispatchWarehouseCode()) == null ? null
+                : warehouseService.resolveByCodeOrDefault(dto.getDispatchWarehouseCode()));
         so.setPackagingInstructions(dto.getPackagingInstructions());
         so.setRemarks(dto.getRemarks());
         so.setReference(dto.getReference());
@@ -360,6 +385,18 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                 // else: nothing on hand; leave unreserved for the reorder engine.
             }
         }
+    }
+
+    /**
+     * The reason the user gave, followed by what cancelling did to the work orders and purchase
+     * requisitions the order had raised. Kept on the order because that is where somebody looks
+     * to find out why a work order they were running has gone, or why one is still open.
+     */
+    private static String withSupplyNote(String reason, SalesOrderSupplyCancellation.Outcome supply) {
+        String note = supply != null ? supply.summary() : null;
+        if (note == null) return reason;
+        String joined = reason == null || reason.isBlank() ? note : reason.trim() + " | " + note;
+        return joined.length() > 500 ? joined.substring(0, 497) + "..." : joined;
     }
 
     /**
@@ -477,9 +514,10 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         }
         requireNoPickInHand(so);
         releaseReservations(so);
+        SalesOrderSupplyCancellation.Outcome supply = supplyCancellation.cancelUnstartedSupply(so);
 
         so.setStatus(SalesOrderStatus.CANCELLED);
-        so.setRejectionReason(dto != null ? dto.getReason() : null);
+        so.setRejectionReason(withSupplyNote(dto != null ? dto.getReason() : null, supply));
         logger.info("SO {} cancelled", id);
         return salesOrderMapper.toDTO(salesOrderRepository.save(so));
     }
@@ -659,6 +697,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         d.setStatus(order.getStatus());
         d.setApprovalStatus(order.getApprovalStatus());
         d.setDispatchThrough(order.getDispatchThrough());
+        d.setDispatchWarehouseCode(order.getDispatchWarehouse() != null ? order.getDispatchWarehouse().getCode() : null);
         d.setDeliveryDate(order.getDeliveryDate());
         d.setUpdatedDate(order.getUpdatedDate());
         d.setCurrency(order.getCurrency());

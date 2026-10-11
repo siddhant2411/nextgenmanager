@@ -413,6 +413,21 @@ public class BomController {
     }
 
 
+    @PostMapping("/{bomId}/revision")
+    public ResponseEntity<?> createRevision(@PathVariable int bomId, @RequestBody BOMRoutingRequestMapper bomRoutingRequestMapper) {
+        try {
+            BOMRoutingMapper bom = bomService.createRevision(bomId, bomRoutingRequestMapper);
+            return ResponseEntity.status(HttpStatus.CREATED).body(bom);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Bom not found"));
+        } catch (Exception e) {
+            logger.error("Failed to create revision of BOM ID {}: {}", bomId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to create BOM revision: " + e.getMessage()));
+        }
+    }
+
+
     @GetMapping("/export/flat")
     public ResponseEntity<byte[]> exportFlatBom(@RequestParam List<Integer> ids) {
         try {

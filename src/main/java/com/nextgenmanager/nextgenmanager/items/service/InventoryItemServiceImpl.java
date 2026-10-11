@@ -69,6 +69,10 @@ public class InventoryItemServiceImpl implements InventoryItemService {
             "drawingNumber", "productSpecification.drawingNumber"
     );
 
+    static final String DELETED_CODE_MARKER = "_DEL_";
+    /** itemcode is varchar(255). */
+    private static final int ITEM_CODE_MAX_LENGTH = 255;
+
     private static final Logger logger = LoggerFactory.getLogger(InventoryItem.class);
 
     private boolean canAccessFinance() {
@@ -292,13 +296,36 @@ public class InventoryItemServiceImpl implements InventoryItemService {
                         logger.warn("No inventory item found with id: {}", itemId);
                         return new IllegalArgumentException("Item does not exist");
                     });
-            inventoryItem.setDeletedDate(new Date());
+            if (inventoryItem.getDeletedDate() != null) {
+                // Already deleted: stamping it again would stack a second suffix on the code.
+                return;
+            }
+            Date deletedAt = new Date();
+            String originalCode = inventoryItem.getItemCode();
+            inventoryItem.setItemCode(deletedItemCode(originalCode, deletedAt));
+            inventoryItem.setDeletedDate(deletedAt);
             inventoryItemRepository.save(inventoryItem);
-            logger.info("Inventory item with id: {} successfully marked as deleted", itemId);
+            logger.info("Inventory item with id: {} successfully marked as deleted, code {} released",
+                    itemId, originalCode);
         } catch (Exception e) {
             logger.error("Error while deleting inventory item with id: {}: {}", itemId, e.getMessage());
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * The code a deleted item is left holding: its own code with the time of deletion on the end.
+     *
+     * <p>The row has to stay, because old documents still point at it, but the column is
+     * {@code NOT NULL UNIQUE} — so the only way to hand the code back for a new item is to move
+     * the deleted one off it. The original stays readable at the front, which is what an old
+     * invoice or BOM line will show.
+     */
+    static String deletedItemCode(String itemCode, Date deletedAt) {
+        String suffix = DELETED_CODE_MARKER + new java.text.SimpleDateFormat("yyyyMMddHHmmssSSS").format(deletedAt);
+        int room = ITEM_CODE_MAX_LENGTH - suffix.length();
+        String base = itemCode.length() > room ? itemCode.substring(0, room) : itemCode;
+        return base + suffix;
     }
 
     @Override
@@ -346,7 +373,8 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         }
         // Case-insensitive, because the lookup helpers are: allowing STR-100 beside str-100 would
         // give two items one identity to every search in the application. Soft-deleted items count
-        // too — they still hold their code under the database's unpredicated UNIQUE(itemcode).
+        // too: deleting now moves an item off its code, but one deleted before that still holds
+        // it under the database's unpredicated UNIQUE(itemcode).
         if (inventoryItemRepository.itemCodeTakenByAnother(wanted, existing.getInventoryItemId())) {
             String owner = inventoryItemRepository
                     .findByItemCodeIgnoreCaseAndDeletedDateIsNull(wanted)

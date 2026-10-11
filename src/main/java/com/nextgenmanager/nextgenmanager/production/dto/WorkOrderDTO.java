@@ -60,6 +60,14 @@ public class WorkOrderDTO {
 
     private String workCenter;
 
+    /** The destination named on the order; null when the goods stay in the store it works out of. */
+    private String produceIntoWarehouseCode;
+
+    private String produceIntoWarehouseName;
+
+    /** Where the material is drawn from: the work centre's store, null for the default warehouse. */
+    private String materialWarehouseCode;
+
     private Date dueDate;
 
     private Date plannedStartDate;

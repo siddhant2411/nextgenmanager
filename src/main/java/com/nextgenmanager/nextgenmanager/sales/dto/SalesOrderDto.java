@@ -83,6 +83,9 @@ public class SalesOrderDto {
     private String transportMode;
     private String ewayBillNumber;
     private LocalDate deliveryDate;
+    /** The warehouse the order is dispatched from; null where it is left to the default. */
+    private String dispatchWarehouseCode;
+    private String dispatchWarehouseName;
     private String packagingInstructions;
     private String shippingMethod;
 

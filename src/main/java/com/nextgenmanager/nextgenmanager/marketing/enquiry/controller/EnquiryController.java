@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.controller;
 
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.AssignableUserDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.BulkImportResultDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryConversationDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.CrmPeriod;
@@ -325,6 +326,11 @@ public class EnquiryController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(java.util.Map.of("error", "Bulk assign failed: " + e.getMessage()));
         }
+    }
+
+    @GetMapping("/assignable-users")
+    public ResponseEntity<List<AssignableUserDTO>> getAssignableUsers() {
+        return ResponseEntity.ok(enquiryService.getAssignableUsers());
     }
 
     @PostMapping(value = "/bulk-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

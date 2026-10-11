@@ -124,6 +124,15 @@ public class InventoryInstance {
     @JoinColumn(name = "storagelocation_id")
     private StorageLocation storageLocation;
 
+    /**
+     * The stock transfer line moving this unit between warehouses, if any. Set when the transfer
+     * is dispatched and cleared when the unit arrives, at which point its warehouse changes. A
+     * unit in transit is on a vehicle, so it cannot be picked.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "stocktransferline_id")
+    private StockTransferLine stockTransferLine;
+
     /** The box this unit was packed into, if any. Cleared when the box's slip is cancelled. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "packageline_id")

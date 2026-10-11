@@ -96,6 +96,10 @@ class WorkOrderServiceImplTest {
     private InventoryTransactionService inventoryTransactionService;
     @Mock
     private WorkOrderLineRepository workOrderLineRepository;
+    @Mock
+    private com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryRequestRepository inventoryRequestRepository;
+    @Mock
+    private com.nextgenmanager.nextgenmanager.Inventory.service.WarehouseService warehouseService;
 
     @InjectMocks
     private WorkOrderServiceImpl service;
@@ -106,6 +110,48 @@ class WorkOrderServiceImplTest {
         // explosion can keep using it. lenient() because the read-only tests never create lines.
         lenient().when(workOrderLineRepository.save(any(WorkOrderLine.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    @Test
+    void cancellingBeforeStoresApprovedAnythingReturnsNothing() {
+        // Stock is reserved when a material request is approved, not when the order is planned.
+        // Cancelling used to "return" the planned quantity regardless, which added stock that
+        // had never left the shelf to the available quantity.
+        WorkOrder workOrder = buildWorkOrder(1, "WO-1", new BigDecimal("10"), WorkOrderStatus.MATERIAL_PENDING);
+        WorkOrderMaterial material = buildMaterial(workOrder, 101L, new BigDecimal("20"));
+
+        when(workOrderRepository.findById(1)).thenReturn(Optional.of(workOrder));
+        when(workOrderMaterialRepository.findByWorkOrderId(1)).thenReturn(List.of(material));
+        when(workOrderOperationRepository.findByWorkOrder(workOrder)).thenReturn(List.of());
+
+        service.cancelWorkOrder(1);
+
+        verify(inventoryTransactionService, never()).returnStock(any());
+        assertThat(workOrder.getWorkOrderStatus()).isEqualTo(WorkOrderStatus.CANCELLED);
+    }
+
+    @Test
+    void cancellingReturnsWhatStoresApprovedAndNoMore() {
+        WorkOrder workOrder = buildWorkOrder(1, "WO-1", new BigDecimal("10"), WorkOrderStatus.PARTIALLY_READY);
+        WorkOrderMaterial material = buildMaterial(workOrder, 101L, new BigDecimal("20"));
+        material.setInventoryRequestId(700L);
+
+        com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest request =
+                new com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest();
+        request.setApprovalStatus(com.nextgenmanager.nextgenmanager.Inventory.model.InventoryApprovalStatus.PARTIAL);
+        request.setApprovedQuantity(new BigDecimal("12"));
+
+        when(workOrderRepository.findById(1)).thenReturn(Optional.of(workOrder));
+        when(workOrderMaterialRepository.findByWorkOrderId(1)).thenReturn(List.of(material));
+        when(workOrderOperationRepository.findByWorkOrder(workOrder)).thenReturn(List.of());
+        when(inventoryRequestRepository.findById(700L)).thenReturn(Optional.of(request));
+
+        service.cancelWorkOrder(1);
+
+        org.mockito.ArgumentCaptor<com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO> returned =
+                org.mockito.ArgumentCaptor.forClass(com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO.class);
+        verify(inventoryTransactionService).returnStock(returned.capture());
+        assertThat(returned.getValue().getQuantity()).isEqualTo(12.0); // not the 20 planned
     }
 
     @Test
@@ -646,6 +692,73 @@ class WorkOrderServiceImplTest {
                 ArgumentCaptor.forClass(InventoryTransactionDTO.class);
         verify(inventoryTransactionService).produceStock(produced.capture());
         assertThat(produced.getValue().getWarehouse()).isNull();
+    }
+
+    @Test
+    void production_putsFinishedGoodsWhereTheOrderSaysTheyAreWanted_notWhereItWasMade() {
+        // Made on Plant 2's machines for an order dispatched from the main store. The goods are
+        // wanted at the main store, so that is where they are booked and reserved for the order;
+        // the material still belongs to Plant 2, which is where the machines are.
+        Warehouse plantTwo = new Warehouse();
+        plantTwo.setCode("PLANT-2");
+        WorkCenter plantTwoCnc = new WorkCenter();
+        plantTwoCnc.setWarehouse(plantTwo);
+        Warehouse dispatch = new Warehouse();
+        dispatch.setCode("DISPATCH");
+        SalesOrder order = new SalesOrder();
+        order.setOrderNumber("SO/2026-27/0007");
+
+        WorkOrder wo = buildWorkOrder(1, "WO/2026-27/0104", new BigDecimal("10"), WorkOrderStatus.IN_PROGRESS);
+        wo.setWorkCenter(plantTwoCnc);
+        wo.setProduceIntoWarehouse(dispatch);
+        wo.setSalesOrder(order);
+
+        InventoryItem pump = inventoryItem(901, "FIN-PUMP", "Pump 100");
+        WorkOrderLine line = buildLine(wo, 1, pump, new BigDecimal("10"));
+        wo.setLines(List.of(line));
+        WorkOrderMaterial material = buildLineMaterial(wo, line, 1L, "5000", "10");
+        WorkOrderOperation operation = buildLineOperation(wo, line, 1, "10");
+
+        ReflectionTestUtils.invokeMethod(service, "produceFinishedGoodsPerLine", wo,
+                List.of(material), List.of(operation));
+
+        ArgumentCaptor<InventoryTransactionDTO> produced =
+                ArgumentCaptor.forClass(InventoryTransactionDTO.class);
+        ArgumentCaptor<InventoryTransactionDTO> reserved =
+                ArgumentCaptor.forClass(InventoryTransactionDTO.class);
+        verify(inventoryTransactionService).produceStock(produced.capture());
+        verify(inventoryTransactionService).reserveStock(reserved.capture());
+        assertThat(produced.getValue().getWarehouse()).isEqualTo("DISPATCH");
+        assertThat(reserved.getValue().getWarehouse()).isEqualTo("DISPATCH");
+        assertThat(wo.stockWarehouseCode()).isEqualTo("PLANT-2");
+    }
+
+    @Test
+    void theDestination_canStillBeChangedWhileTheOrderIsBeingMade() {
+        Warehouse dispatch = new Warehouse();
+        dispatch.setCode("DISPATCH");
+        when(warehouseService.resolveByCodeOrDefault("DISPATCH")).thenReturn(dispatch);
+
+        WorkOrder wo = buildWorkOrder(1, "WO/2026-27/0105", new BigDecimal("10"), WorkOrderStatus.IN_PROGRESS);
+        when(workOrderRepository.findById(1)).thenReturn(Optional.of(wo));
+        when(workOrderRepository.save(any(WorkOrder.class))).thenAnswer(call -> call.getArgument(0));
+
+        service.changeProduceInto(1, "DISPATCH");
+
+        assertThat(wo.getProduceIntoWarehouse()).isSameAs(dispatch);
+        assertThat(wo.produceWarehouseCode()).isEqualTo("DISPATCH");
+    }
+
+    @Test
+    void theDestination_cannotBeChangedOnceTheGoodsAreBooked() {
+        // They are stock in a building by then; sending them elsewhere is a transfer.
+        WorkOrder wo = buildWorkOrder(1, "WO/2026-27/0106", new BigDecimal("10"), WorkOrderStatus.COMPLETED);
+        when(workOrderRepository.findById(1)).thenReturn(Optional.of(wo));
+
+        assertThatThrownBy(() -> service.changeProduceInto(1, "DISPATCH"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("stock transfer");
+        assertThat(wo.getProduceIntoWarehouse()).isNull();
     }
 
     @Test

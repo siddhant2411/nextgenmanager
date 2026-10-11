@@ -35,6 +35,12 @@ public class WorkOrderRequestDTO {
 
     private Integer workCenterId;
 
+    /**
+     * Code of the warehouse the finished goods are wanted in. Null leaves the order as it is;
+     * blank clears it, so the goods stay in the store the order draws its material from.
+     */
+    private String produceIntoWarehouseCode;
+
     private WorkOrderPriority priority;
 
     private BigDecimal plannedQuantity;

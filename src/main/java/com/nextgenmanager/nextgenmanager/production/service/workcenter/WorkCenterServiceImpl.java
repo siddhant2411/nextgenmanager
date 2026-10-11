@@ -4,6 +4,9 @@ import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.WarehouseRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.production.dto.WorkCenterResponseDTO;
+import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkCenterResponseMapper;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import com.nextgenmanager.nextgenmanager.production.repository.workcenter.WorkCenterRepository;
@@ -32,6 +35,17 @@ public class WorkCenterServiceImpl implements WorkCenterService {
 
     @Autowired
     private WarehouseRepository warehouseRepository;
+
+    @Autowired
+    private WorkOrderRepository workOrderRepository;
+
+    /** Statuses in which a work order can have material reserved, issued or part-consumed. */
+    private static final List<WorkOrderStatus> HOLDING_STOCK = List.of(
+            WorkOrderStatus.SCHEDULED, WorkOrderStatus.MATERIAL_PENDING,
+            WorkOrderStatus.READY_FOR_PRODUCTION, WorkOrderStatus.PARTIALLY_READY,
+            WorkOrderStatus.RELEASED, WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.MATERIAL_REORDER,
+            WorkOrderStatus.READY_FOR_INSPECTION, WorkOrderStatus.TESTING,
+            WorkOrderStatus.INSPECTION_FAILED, WorkOrderStatus.HOLD);
 
     @Override
     public WorkCenterResponseDTO createWorkCenter(WorkCenter workCenter) {
@@ -72,7 +86,9 @@ public class WorkCenterServiceImpl implements WorkCenterService {
         existingCenter.setWorkCenterStatus(updatedCenter.getWorkCenterStatus());
         existingCenter.setDepartment(updatedCenter.getDepartment());
         existingCenter.setLocation(updatedCenter.getLocation());
-        existingCenter.setWarehouse(resolveWarehouse(updatedCenter));
+        Warehouse newStore = resolveWarehouse(updatedCenter);
+        requireNoOpenWorkOrdersIfStoreChanges(existingCenter, newStore);
+        existingCenter.setWarehouse(newStore);
         existingCenter.setMaxLoadPercentage(updatedCenter.getMaxLoadPercentage());
         existingCenter.setSupervisor(updatedCenter.getSupervisor());
         existingCenter.setAvailableShifts(updatedCenter.getAvailableShifts());
@@ -83,6 +99,29 @@ public class WorkCenterServiceImpl implements WorkCenterService {
         }
 
         return workCenterResponseMapper.toDTO(workCenterRepository.save(existingCenter));
+    }
+
+    /**
+     * A work order reserves its material in its work centre's store and consumes it from the same
+     * place, by asking the work centre each time. Pointing the centre at another store while an
+     * order is open would have it consume from a store that never reserved anything for it, and
+     * leave the reservation stranded in the old one.
+     */
+    private void requireNoOpenWorkOrdersIfStoreChanges(WorkCenter center, Warehouse newStore) {
+        Long oldId = center.getWarehouse() != null ? center.getWarehouse().getId() : null;
+        Long newId = newStore != null ? newStore.getId() : null;
+        if (Objects.equals(oldId, newId)) return;
+
+        List<WorkOrder> open = workOrderRepository.findUsingWorkCenter(center.getId(), HOLDING_STOCK);
+        if (open.isEmpty()) return;
+
+        String numbers = open.stream().limit(5).map(WorkOrder::getWorkOrderNumber)
+                .collect(Collectors.joining(", "));
+        throw new IllegalStateException(String.format(
+                "The store of %s cannot be changed while %d work order%s open on it (%s%s). "
+                        + "Complete or cancel %s first.",
+                center.getCenterCode(), open.size(), open.size() == 1 ? " is" : "s are",
+                numbers, open.size() > 5 ? ", ..." : "", open.size() == 1 ? "it" : "them"));
     }
 
     private WorkCenter getActiveWorkCenterById(int id) {

@@ -194,9 +194,13 @@ public class PackingSlipServiceImpl implements PackingSlipService {
         if (slip.getStatus() == PackingSlipStatus.CANCELLED) {
             throw new IllegalStateException(slip.getSlipNumber() + " is already cancelled");
         }
-        if (slip.getStatus() == PackingSlipStatus.CLOSED) {
-            throw new IllegalStateException(
-                    slip.getSlipNumber() + " is closed — it shipped, or is ready to. Nothing to cancel.");
+        // A closed slip that has not shipped is still only a description of boxes on a bench. It
+        // can be cancelled so the pick can be boxed again; once a delivery note has taken it, the
+        // slip is the record of what went, and stays.
+        if (slip.getDeliveryNote() != null) {
+            throw new IllegalStateException(String.format(
+                    "%s shipped on %s and cannot be cancelled.", slip.getSlipNumber(),
+                    slip.getDeliveryNote().getDeliveryNoteNo()));
         }
 
         for (PackageBox box : slip.getBoxes()) {
@@ -224,7 +228,7 @@ public class PackingSlipServiceImpl implements PackingSlipService {
     /**
      * A packed slip accounts for every unit the pick took off the shelf. The delivery note ships
      * the pick, so a slip that boxed less would close on a record of the consignment that the
-     * delivery note then contradicts — and once closed it can be neither added to nor cancelled.
+     * delivery note then contradicts — and once shipped it can be neither added to nor cancelled.
      * Goods that are not to go belong on a short pick, not left out of a box.
      */
     private void requireEverythingPickedIsBoxed(PackingSlip slip) {

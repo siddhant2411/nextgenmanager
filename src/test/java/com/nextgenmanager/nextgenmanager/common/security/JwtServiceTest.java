@@ -32,6 +32,32 @@ class JwtServiceTest {
     }
 
     @Test
+    void refreshTokensIssuedInTheSameSecondAreDistinct() {
+        JwtService jwtService = new JwtService(
+                "ThisIsASufficientlyLongJwtSecretKeyForTests1234567890_ABCDEFGHIJKLMN",
+                60000,
+                600000,
+                "https://auth.erp.nextgenmanager.com",
+                "erp-backend",
+                "HS512",
+                "test"
+        );
+        UserDetails userDetails = User.withUsername("admin")
+                .password("encoded")
+                .authorities("ROLE_ADMIN")
+                .build();
+
+        // refreshtoken.token is unique; a rotation in the second the token was issued used to
+        // produce the same string, fail the insert and sign the user out.
+        String first = jwtService.generateRefreshToken(userDetails);
+        String second = jwtService.generateRefreshToken(userDetails);
+
+        assertThat(second).isNotEqualTo(first);
+        assertThat(jwtService.isRefreshTokenValid(first, userDetails)).isTrue();
+        assertThat(jwtService.isRefreshTokenValid(second, userDetails)).isTrue();
+    }
+
+    @Test
     void constructorRejectsShortSecret() {
         JwtService jwtService = new JwtService(
                 "short-secret",

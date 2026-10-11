@@ -19,6 +19,8 @@ public record PurchaseRequisitionDto(
         Integer workCenterId,
         String workCenterCode,
         String workCenterName,
+        String deliverToWarehouseCode,
+        String deliverToWarehouseName,
         PurchaseRequisitionPriority priority,
         PurchaseRequisitionStatus status,
         PurchaseRequisitionApprovalStatus approvalStatus,

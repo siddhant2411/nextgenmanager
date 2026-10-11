@@ -25,4 +25,7 @@ public class AddInventoryRequest {
 
     /** Lot / batch reference typed on the entry; used for batch-tracked items. */
     private String batchNo;
+
+    /** Code of the warehouse the stock is received into; blank means the default warehouse. */
+    private String warehouse;
 }

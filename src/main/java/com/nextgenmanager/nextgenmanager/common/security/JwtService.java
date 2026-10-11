@@ -14,6 +14,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 
 @Service
@@ -90,7 +91,10 @@ public class JwtService {
         Date expiration = new Date(issuedAt.getTime() + refreshTokenExpirationMillis);
         logger.debug("Generating refresh token for user: {}", userDetails.getUsername());
 
+        // The jti keeps two tokens for one user in the same second from being the same string:
+        // iat/exp are whole seconds, and refreshtoken.token is unique.
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .claim(TOKEN_TYPE_CLAIM, REFRESH_TOKEN_TYPE)
                 .subject(userDetails.getUsername())
                 .issuer(issuer)

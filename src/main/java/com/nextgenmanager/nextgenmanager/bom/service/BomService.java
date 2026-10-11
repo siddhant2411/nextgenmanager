@@ -64,6 +64,8 @@ public interface BomService {
 
     BOMRoutingMapper duplicateBom(int bomId);
 
+    BOMRoutingMapper createRevision(int bomId, BOMRoutingRequestMapper request);
+
     public Map<Integer, RollupRow> getRolledUpQuantity(int bomId);
 
     public BomDTO getActiveBomByParentInventoryItem(int id);

@@ -40,21 +40,27 @@ public class QualityGateServiceImpl implements QualityGateService {
     public List<String> reasonsProductionIsBlocked(WorkOrder workOrder) {
         List<String> reasons = new ArrayList<>();
 
-        List<InspectionLot> finalLots = inspectionLotRepository
-                .findLiveByWorkOrder(workOrder.getId()).stream()
+        List<InspectionLot> lots = inspectionLotRepository.findLiveByWorkOrder(workOrder.getId());
+        List<InspectionLot> finalLots = lots.stream()
                 .filter(l -> l.getSource() == InspectionSource.FINAL)
                 .toList();
 
-        // 1. A final inspection that failed, or that nobody has judged yet. Silence is not
-        //    consent: somebody raised this lot because these goods were to be looked at.
-        for (InspectionLot lot : finalLots) {
+        // 1. An inspection that failed, or that nobody has judged yet. Silence is not consent:
+        //    somebody raised this lot because these goods were to be looked at. An in-process lot
+        //    counts the same as a final one — a check raised halfway through the routing and
+        //    failed is no more a reason to book the goods in than one raised at the end.
+        for (InspectionLot lot : lots) {
+            String kind = lot.getSource() == InspectionSource.FINAL ? "final inspection"
+                    : lot.getSource() == InspectionSource.IN_PROCESS ? "in-process inspection"
+                    : null;
+            if (kind == null) continue;
             if (lot.getStatus() == InspectionLotStatus.FAILED) {
-                reasons.add(String.format("final inspection %s failed%s",
+                reasons.add(String.format("%s %s failed%s", kind,
                         lot.getLotNumber(),
                         lot.getRemarks() != null && !lot.getRemarks().isBlank()
                                 ? " (" + lot.getRemarks() + ")" : ""));
             } else if (lot.getStatus() == InspectionLotStatus.PENDING) {
-                reasons.add(String.format("final inspection %s has not been judged yet",
+                reasons.add(String.format("%s %s has not been judged yet", kind,
                         lot.getLotNumber()));
             }
         }

@@ -44,4 +44,9 @@ public class SalesOrderItemDto {
     private BigDecimal totalAmountOfProduct;
     private BigDecimal dispatchedQty;
     private BigDecimal remainingQty;
+
+    /** The item's minimum selling price, when one is configured. Read-only. */
+    private BigDecimal minimumSellingPrice;
+    /** The unit price after the order discount is under the minimum -- for the approver's attention. */
+    private boolean belowMinimumPrice;
 }

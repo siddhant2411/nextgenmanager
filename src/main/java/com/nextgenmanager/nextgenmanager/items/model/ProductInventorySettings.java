@@ -75,6 +75,13 @@ public class ProductInventorySettings {
      */
     private boolean finalInspectionRequired = false;
 
+    /**
+     * Whether a box holding this item may leave without a passed package inspection. Off by
+     * default for the same reason as {@link #finalInspectionRequired}: a box whose inspection was
+     * raised and failed stops the slip whatever this says.
+     */
+    private boolean packageInspectionRequired = false;
+
     @PrePersist
     @PreUpdate
     private void validateTrackingConfig() {

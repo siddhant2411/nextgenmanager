@@ -17,6 +17,10 @@ public interface ApprovalStepRepository extends JpaRepository<ApprovalStep, Long
            "ORDER BY r.requestedAt ASC")
     List<ApprovalStep> findPendingByRole(@Param("role") String role);
 
+    /** Every role that currently has a step waiting on it. */
+    @Query("SELECT DISTINCT s.approverRole FROM ApprovalStep s WHERE s.status = 'PENDING'")
+    List<String> findPendingRoles();
+
     Optional<ApprovalStep> findByRequestIdAndLevel(Long requestId, int level);
 
     List<ApprovalStep> findByRequestIdOrderByLevelAsc(Long requestId);
