@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.marketing.quotation.controller;
 
+import com.nextgenmanager.nextgenmanager.bom.service.BusinessException;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.dto.QuotationDisplayDTO;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
@@ -81,6 +82,9 @@ public class QuotationController {
         try {
             Quotation createdQuotation = quotationService.createQuotation(quotation);
             return ResponseEntity.status(HttpStatus.CREATED).body(createdQuotation);
+        } catch (BusinessException e) {
+            // Carries the reason the user must read (e.g. a price below the minimum).
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         } catch (Exception e) {
@@ -93,6 +97,8 @@ public class QuotationController {
         try {
             Quotation updated = quotationService.updateQuotation(updatedQuotation, id);
             return ResponseEntity.ok(updated);
+        } catch (BusinessException e) {
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         } catch (Exception e) {

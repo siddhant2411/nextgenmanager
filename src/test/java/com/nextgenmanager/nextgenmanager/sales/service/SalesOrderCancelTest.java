@@ -58,6 +58,7 @@ class SalesOrderCancelTest {
     @Mock private SalesOrderTaxCalculator taxCalculator;
     @Mock private SalesPaymentRepository salesPaymentRepository;
     @Mock private DomainEventPublisher domainEventPublisher;
+    @Mock private SalesOrderSupplyCancellation supplyCancellation;
 
     @InjectMocks private SalesOrderServiceImpl service;
 
@@ -109,6 +110,20 @@ class SalesOrderCancelTest {
         assertThat(order.getStatus()).isEqualTo(SalesOrderStatus.CANCELLED);
         // Cleared, so nothing later mistakes the line for one that still holds stock.
         assertThat(reservedLine.getItemRequestId()).isNull();
+    }
+
+    @Test
+    void whatHappenedToTheSupplyIsWrittenOnTheOrder() {
+        when(supplyCancellation.cancelUnstartedSupply(order)).thenReturn(
+                new SalesOrderSupplyCancellation.Outcome(List.of("WO-11"), List.of("WO-13 (IN_PROGRESS)")));
+        com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderApprovalActionDto dto =
+                new com.nextgenmanager.nextgenmanager.sales.dto.SalesOrderApprovalActionDto();
+        dto.setReason("Customer withdrew");
+
+        service.cancel(SO_ID, dto);
+
+        assertThat(order.getRejectionReason()).isEqualTo("Customer withdrew | Cancelled with the "
+                + "order: WO-11. Still open, review: WO-13 (IN_PROGRESS).");
     }
 
     @Test

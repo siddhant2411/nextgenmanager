@@ -116,5 +116,9 @@ public interface InventoryInstanceService {
      * (manufactured → draft WO; purchased → draft PR; ambiguous → Planning Desk queue).
      * Returns a map with procurementOrderId, decision, and orderId (if auto-routed).
      */
-    Map<String, Object> sendToPlanning(int itemId, java.math.BigDecimal qty, String requestedBy);
+    /**
+     * Raises a stock need from the stores and routes it. {@code warehouseCode} is the warehouse the
+     * stock is wanted in; blank means the default warehouse.
+     */
+    Map<String, Object> sendToPlanning(int itemId, java.math.BigDecimal qty, String requestedBy, String warehouseCode);
 }

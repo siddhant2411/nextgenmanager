@@ -14,5 +14,7 @@ public record PurchaseRequisitionUpdateDto(
         Integer workCenterId,
         PurchaseRequisitionPriority priority,
         List<PurchaseRequisitionItemCreateDto> items,
-        String notes
+        String notes,
+        /** Null leaves the destination as it is; blank sets it back to the default warehouse. */
+        String deliverToWarehouseCode
 ) {}

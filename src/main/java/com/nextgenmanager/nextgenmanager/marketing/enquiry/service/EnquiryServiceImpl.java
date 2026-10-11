@@ -6,6 +6,7 @@ import com.nextgenmanager.nextgenmanager.common.model.AppUser;
 import com.nextgenmanager.nextgenmanager.common.repository.AppUserRepository;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.AssignableUserDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryConversationDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryFilter;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
@@ -665,7 +666,7 @@ public class EnquiryServiceImpl implements EnquiryService {
                 qp.setProductNameRequired(ep.getProductNameRequired());
                 qp.setQty(ep.getQty());
                 qp.setSpecialInstruction(ep.getSpecialInstruction());
-                qp.setPricePerUnit(ep.getPricePerUnit() != null ? ep.getPricePerUnit() : BigDecimal.ZERO);
+                qp.setPricePerUnit(quotePriceFor(ep));
                 qp.setDiscountPercentage(BigDecimal.ZERO);
                 qp.setQuotation(quotation);
                 qProducts.add(qp);
@@ -688,6 +689,23 @@ public class EnquiryServiceImpl implements EnquiryService {
         
         logger.info("Enquiry converted successfully. New Quotation ID: {}", saved.getId());
         return saved.getId();
+    }
+
+    /**
+     * Opening price for a quotation line. The enquiry form captures no price, so a line that
+     * names an item from the master starts at that item's selling price; a price already on the
+     * enquiry line wins.
+     */
+    private BigDecimal quotePriceFor(EnquiredProducts ep) {
+        if (ep.getPricePerUnit() != null && ep.getPricePerUnit().signum() > 0) {
+            return ep.getPricePerUnit();
+        }
+        InventoryItem item = ep.getInventoryItem();
+        if (item != null && item.getProductFinanceSettings() != null
+                && item.getProductFinanceSettings().getSellingPrice() != null) {
+            return BigDecimal.valueOf(item.getProductFinanceSettings().getSellingPrice());
+        }
+        return BigDecimal.ZERO;
     }
 
     @Override
@@ -734,5 +752,14 @@ public class EnquiryServiceImpl implements EnquiryService {
             }
         }
         enquiryRepository.saveAll(enquiries);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AssignableUserDTO> getAssignableUsers() {
+        return appUserRepository.findAllByDeletedDateIsNullOrderByUsernameAsc().stream()
+                .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+                .map(u -> new AssignableUserDTO(u.getId(), u.getUsername()))
+                .collect(Collectors.toList());
     }
 }

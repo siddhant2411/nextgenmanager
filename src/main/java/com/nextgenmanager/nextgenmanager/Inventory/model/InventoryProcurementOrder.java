@@ -49,6 +49,16 @@ public class InventoryProcurementOrder {
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private InventoryItem inventoryItem;
 
+    /**
+     * The warehouse this shortfall is wanted in. Decided when the need is raised -- from the sales
+     * order it is for, or by whoever raised it from the stores -- and copied onto the work order or
+     * requisition the need becomes. Null only on rows older than V184, which read as the default
+     * warehouse.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "deliverToWarehouseId")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Warehouse deliverToWarehouse;
 
     @CreationTimestamp
     @Temporal(TemporalType.TIMESTAMP)

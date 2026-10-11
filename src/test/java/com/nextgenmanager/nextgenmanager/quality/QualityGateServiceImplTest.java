@@ -157,6 +157,40 @@ class QualityGateServiceImplTest {
     }
 
     @Test
+    void aFailedInProcessInspectionStopsProductionToo() {
+        // It used to be a record and nothing else: a check raised halfway through the routing
+        // could fail and the order still completed.
+        InspectionLot inProcess = lot(InspectionLotStatus.FAILED);
+        inProcess.setSource(InspectionSource.IN_PROCESS);
+        inProcess.setLotNumber("QC/0002");
+        when(inspectionLotRepository.findLiveByWorkOrder(WO_ID)).thenReturn(List.of(inProcess));
+
+        assertThat(gate.reasonsProductionIsBlocked(workOrder))
+                .singleElement().asString().contains("in-process inspection QC/0002 failed");
+    }
+
+    @Test
+    void anUnjudgedInProcessInspectionStopsProductionToo() {
+        InspectionLot inProcess = lot(InspectionLotStatus.PENDING);
+        inProcess.setSource(InspectionSource.IN_PROCESS);
+        when(inspectionLotRepository.findLiveByWorkOrder(WO_ID)).thenReturn(List.of(inProcess));
+
+        assertThat(gate.reasonsProductionIsBlocked(workOrder))
+                .singleElement().asString().contains("in-process inspection QC/0001 has not been judged yet");
+    }
+
+    @Test
+    void aPassedInProcessInspectionDoesNotStandInForARequiredFinalOne() {
+        valve.getProductInventorySettings().setFinalInspectionRequired(true);
+        InspectionLot inProcess = lot(InspectionLotStatus.PASSED);
+        inProcess.setSource(InspectionSource.IN_PROCESS);
+        when(inspectionLotRepository.findLiveByWorkOrder(WO_ID)).thenReturn(List.of(inProcess));
+
+        assertThat(gate.reasonsProductionIsBlocked(workOrder))
+                .singleElement().asString().contains("requires a final inspection and none has passed");
+    }
+
+    @Test
     void anItemRequiringInspectionCannotProduceWithoutOne() {
         valve.getProductInventorySettings().setFinalInspectionRequired(true);
 

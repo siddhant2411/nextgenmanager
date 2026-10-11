@@ -17,5 +17,7 @@ public record PurchaseRequisitionCreateDto(
         Long sourceRefId,
         String sourceRefNumber,
         List<PurchaseRequisitionItemCreateDto> items,
-        String notes
+        String notes,
+        /** Code of the warehouse the goods are to be received into. Blank means the default warehouse. */
+        String deliverToWarehouseCode
 ) {}

@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.Date;
-import java.util.List;
 
 @Service
 public class PurchaseRequisitionApprovalService {
@@ -47,22 +46,27 @@ public class PurchaseRequisitionApprovalService {
     }
 
     private void assertCurrentUserHasRequiredRole(BigDecimal amount) {
-        List<PurchaseRequisitionApprovalRule> rules = ruleRepo.findByActiveTrue();
-        String requiredRole = rules.stream()
-                .filter(r -> isAmountInRange(amount, r))
-                .map(PurchaseRequisitionApprovalRule::getRequiredRole)
-                .findFirst()
-                .orElse("ROLE_SUPER_ADMIN");
+        String requiredRole = requiredRoleFor(amount);
 
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         boolean hasRole = auth.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals(requiredRole)
-                        || a.getAuthority().equals("ROLE_SUPER_ADMIN"));
+                        || a.getAuthority().equals("ROLE_SUPER_ADMIN")
+                        || a.getAuthority().equals("ROLE_ADMIN"));
 
         if (!hasRole) {
             throw new InvalidPurchaseRequisitionStateException(
                     "Insufficient authority. Required: " + requiredRole);
         }
+    }
+
+    /** The role whose amount band covers this PR; no matching band means only an admin may approve. */
+    public String requiredRoleFor(BigDecimal amount) {
+        return ruleRepo.findByActiveTrue().stream()
+                .filter(r -> isAmountInRange(amount, r))
+                .map(PurchaseRequisitionApprovalRule::getRequiredRole)
+                .findFirst()
+                .orElse("ROLE_SUPER_ADMIN");
     }
 
     private boolean isAmountInRange(BigDecimal amount, PurchaseRequisitionApprovalRule rule) {

@@ -5,6 +5,7 @@ import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryInstance;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryProcurementOrder;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryProcurementStatus;
 import com.nextgenmanager.nextgenmanager.Inventory.model.ProcurementDecision;
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryProcurementOrderRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.routing.MakeBuyAnalysisService;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -69,6 +70,7 @@ public class ProcurementPlanningService {
             }
 
             SalesOrder so = resolveSalesOrder(order);
+            Warehouse wantedIn = procurementRoutingService.deliverTo(order);
 
             rows.add(new PlanningDeskRowDto(
                     order.getId(),
@@ -85,17 +87,19 @@ public class ProcurementPlanningService {
                     analysis != null ? analysis.getRecommendationReason() : null,
                     analysis != null && analysis.getMakeAnalysis() != null ? analysis.getMakeAnalysis().getUnitTotalCost() : null,
                     analysis != null && analysis.getBuyAnalysis() != null ? analysis.getBuyAnalysis().getUnitCost() : null,
-                    order.getCreationDate()));
+                    order.getCreationDate(),
+                    wantedIn.getCode(),
+                    wantedIn.getName()));
         }
         return rows;
     }
 
-    public Long decideMake(Long procurementOrderId) {
-        return procurementRoutingService.decideWorkOrder(procurementOrderId);
+    public Long decideMake(Long procurementOrderId, String deliverToWarehouseCode) {
+        return procurementRoutingService.decideWorkOrder(procurementOrderId, deliverToWarehouseCode);
     }
 
-    public Long decideBuy(Long procurementOrderId) {
-        return procurementRoutingService.decidePurchase(procurementOrderId);
+    public Long decideBuy(Long procurementOrderId, String deliverToWarehouseCode) {
+        return procurementRoutingService.decidePurchase(procurementOrderId, deliverToWarehouseCode);
     }
 
     public void defer(Long procurementOrderId) {

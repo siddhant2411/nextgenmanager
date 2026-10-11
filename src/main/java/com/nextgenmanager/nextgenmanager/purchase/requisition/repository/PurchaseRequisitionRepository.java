@@ -22,4 +22,9 @@ public interface PurchaseRequisitionRepository extends JpaRepository<PurchaseReq
     Optional<PurchaseRequisition> findByIdAndDeletedDateIsNull(Long id);
 
     boolean existsByPrNumber(String prNumber);
+
+    /** Requisitions raised on behalf of another document, e.g. a sales order's shortfall. */
+    java.util.List<PurchaseRequisition> findBySourceAndSourceRefIdAndDeletedDateIsNull(
+            com.nextgenmanager.nextgenmanager.purchase.requisition.model.PurchaseRequisitionSource source,
+            Long sourceRefId);
 }

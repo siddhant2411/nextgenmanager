@@ -23,6 +23,14 @@ public interface WorkOrderService {
 
     public WorkOrderDTO updateWorkOrder(int workOrderId, WorkOrderRequestDTO dto);
 
+    /**
+     * Changes the warehouse the finished goods are wanted in. Unlike the rest of the header this
+     * stays open after the order is issued, right up until the goods are booked: where they are
+     * wanted can change while they are still being made. Blank sends them back to the store the
+     * order draws its material from.
+     */
+    public WorkOrderDTO changeProduceInto(int workOrderId, String warehouseCode);
+
     public WorkOrderDTO releaseWorkOrder(int workOrderId, boolean forceRelease);
 
     /**

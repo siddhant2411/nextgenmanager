@@ -28,6 +28,24 @@ public class NegativeStockConfirmationException extends RuntimeException {
         this.resultingBalance = available - requested;
     }
 
+    /**
+     * The shortfall is in one store rather than in the company as a whole: the stock exists, in
+     * another warehouse. Says so, because "available 0" beside a stock register showing 500 sends
+     * the approver looking for a bug instead of raising a transfer.
+     */
+    public NegativeStockConfirmationException(String itemCode, double available, double requested,
+                                              String warehouseCode) {
+        super(String.format(
+                "Only %s of %s is in %s and this approves %s. Transfer the rest in first, or "
+                        + "confirm to proceed and let %s go to %s.",
+                fmt(available), itemCode, warehouseCode, fmt(requested),
+                warehouseCode, fmt(available - requested)));
+        this.itemCode = itemCode;
+        this.available = available;
+        this.requested = requested;
+        this.resultingBalance = available - requested;
+    }
+
     public String getItemCode()        { return itemCode; }
     public double getAvailable()        { return available; }
     public double getRequested()        { return requested; }

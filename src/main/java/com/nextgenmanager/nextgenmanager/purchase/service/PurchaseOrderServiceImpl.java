@@ -240,6 +240,14 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             throw new InvalidPurchaseOrderStateException(
                     "Cannot cancel a COMPLETED or already CANCELLED PO.");
         }
+        // Whoever is drafting a PO may withdraw it. Once it has gone for approval it is a
+        // commitment in the making, and dropping it is the purchase admin's call.
+        boolean stillWithDrafter = po.getApprovalStatus() == PurchaseOrderApprovalStatus.DRAFT
+                || po.getApprovalStatus() == PurchaseOrderApprovalStatus.REJECTED;
+        if (!stillWithDrafter && !isPurchaseAdmin()) {
+            throw new InvalidPurchaseOrderStateException(
+                    "PO " + po.getPurchaseOrderNumber() + " has been submitted for approval; only a purchase admin can cancel it.");
+        }
         po.setStatus(PurchaseOrderStatus.CANCELLED);
         po.setInternalNotes(StringUtils.hasText(dto.reason())
                 ? "Cancelled: " + dto.reason() : po.getInternalNotes());
@@ -286,6 +294,15 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     private PurchaseOrder findActive(Long id) {
         return poRepo.findByIdAndDeletedDateIsNull(id)
                 .orElseThrow(() -> new PurchaseOrderNotFoundException(id));
+    }
+
+    private boolean isPurchaseAdmin() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN")
+                        || a.getAuthority().equals("ROLE_ADMIN")
+                        || a.getAuthority().equals("ROLE_PURCHASE_ADMIN"));
     }
 
     private void assertDraft(PurchaseOrder po) {

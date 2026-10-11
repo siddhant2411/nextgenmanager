@@ -40,7 +40,17 @@ public class ApprovalController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ApprovalRequestDto>> inbox(
             @RequestParam String role,
-            Principal principal) {
+            Principal principal,
+            Authentication authentication) {
+        // The role is a request parameter, so it has to be checked against what the caller holds;
+        // otherwise any signed-in user could read another role's inbox.
+        boolean authorized = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(a -> a.equals(role)
+                        || a.equals("ROLE_SUPER_ADMIN") || a.equals("ROLE_ADMIN"));
+        if (!authorized) {
+            throw new AccessDeniedException("You do not hold the role this inbox belongs to: " + role);
+        }
         return ResponseEntity.ok(
                 stepRepo.findPendingByRole(role).stream()
                         .map(s -> approvalEngine.getRequest(

@@ -28,17 +28,23 @@ public class ProcurementPlanningController {
         return ResponseEntity.ok(planningService.getQueue());
     }
 
-    /** Planner routes the need to a (draft) Work Order. Returns the new work order id. */
+    /**
+     * Planner routes the need to a (draft) Work Order. Returns the new work order id.
+     * {@code deliverToWarehouse} is the code of the warehouse the goods are wanted in, when the
+     * planner changes it; left out, the need keeps the one it was raised with.
+     */
     @PostMapping("/{procurementOrderId}/make")
-    public ResponseEntity<Map<String, Object>> make(@PathVariable Long procurementOrderId) {
-        Long workOrderId = planningService.decideMake(procurementOrderId);
+    public ResponseEntity<Map<String, Object>> make(@PathVariable Long procurementOrderId,
+                                                    @RequestParam(required = false) String deliverToWarehouse) {
+        Long workOrderId = planningService.decideMake(procurementOrderId, deliverToWarehouse);
         return ResponseEntity.ok(Map.of("decision", "WORK_ORDER", "workOrderId", workOrderId));
     }
 
     /** Planner routes the need to a (draft) Purchase Requisition. Returns the new requisition id. */
     @PostMapping("/{procurementOrderId}/buy")
-    public ResponseEntity<Map<String, Object>> buy(@PathVariable Long procurementOrderId) {
-        Long requisitionId = planningService.decideBuy(procurementOrderId);
+    public ResponseEntity<Map<String, Object>> buy(@PathVariable Long procurementOrderId,
+                                                   @RequestParam(required = false) String deliverToWarehouse) {
+        Long requisitionId = planningService.decideBuy(procurementOrderId, deliverToWarehouse);
         return ResponseEntity.ok(Map.of("decision", "PURCHASE_ORDER", "purchaseRequisitionId", requisitionId));
     }
 

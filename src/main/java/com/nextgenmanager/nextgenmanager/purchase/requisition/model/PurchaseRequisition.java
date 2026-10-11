@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.purchase.requisition.model;
 
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import jakarta.persistence.*;
 import lombok.*;
@@ -38,6 +39,15 @@ public class PurchaseRequisition {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "workCenterId")
     private WorkCenter workCenter;
+
+    /**
+     * The warehouse the goods are to be received into. A requisition raised from a procurement
+     * need inherits the need's; one keyed by hand names its own. It becomes the ship-to plant of
+     * the purchase order. Null means the default warehouse.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "deliverToWarehouseId")
+    private Warehouse deliverToWarehouse;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

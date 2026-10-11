@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
+import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.AssignableUserDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryConversationDTO;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryFilter;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.DTO.EnquiryTableDTO;
@@ -59,4 +60,10 @@ public interface EnquiryService {
     void bulkDelete(BulkDeleteRequest request);
 
     void bulkAssign(BulkAssignRequest request);
+
+    /**
+     * Users an enquiry can be assigned to. Sales users cannot call the admin user list, so the
+     * rep picker reads this instead -- id and username only.
+     */
+    List<AssignableUserDTO> getAssignableUsers();
 }

@@ -26,5 +26,8 @@ public record PlanningDeskRowDto(
         String recommendationReason,
         BigDecimal makeUnitCost,
         BigDecimal buyUnitCost,
-        Date raisedOn
+        Date raisedOn,
+        // Where the shortfall is wanted. Always named: the planner can change it when deciding.
+        String deliverToWarehouseCode,
+        String deliverToWarehouseName
 ) {}

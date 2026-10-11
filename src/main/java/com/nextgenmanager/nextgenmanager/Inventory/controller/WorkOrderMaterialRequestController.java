@@ -1,8 +1,11 @@
 package com.nextgenmanager.nextgenmanager.Inventory.controller;
 
+import com.nextgenmanager.nextgenmanager.Inventory.dto.MaterialRequestSummaryDto;
 import com.nextgenmanager.nextgenmanager.Inventory.model.InventoryRequest;
+import com.nextgenmanager.nextgenmanager.Inventory.service.MaterialRequestRegisterService;
 import com.nextgenmanager.nextgenmanager.Inventory.service.WorkOrderMaterialRequestService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -12,6 +15,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +26,9 @@ public class WorkOrderMaterialRequestController {
 
     @Autowired
     private WorkOrderMaterialRequestService mrService;
+
+    @Autowired
+    private MaterialRequestRegisterService registerService;
 
     /** All MRs for a specific Work Order (production view). */
     @GetMapping("/work-order/{workOrderId}")
@@ -34,6 +41,43 @@ public class WorkOrderMaterialRequestController {
     public ResponseEntity<Void> forceSyncWOStatus(@PathVariable Long workOrderId) {
         mrService.syncWorkOrderStatus(workOrderId);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * The stores' register: every material request in any state, newest first for history and
+     * oldest first for what is still waiting.
+     *
+     * @param status OPEN (default: pending and partly issued), PENDING, PARTIAL, APPROVED, REJECTED or ALL
+     * @param source STORES (default: everything the stores act on), WORK_ORDER, MANUAL, REORDER, or
+     *               SALES_ORDER for the orders' own reservations, which are listed but not actionable
+     * @param q      part of an item code, item name or request reference
+     * @param from   raised on or after this date
+     * @param to     raised on or before this date
+     */
+    @GetMapping("/register")
+    public ResponseEntity<?> register(
+            @RequestParam(defaultValue = "OPEN") String status,
+            @RequestParam(defaultValue = "STORES") String source,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        try {
+            return ResponseEntity.ok(registerService.search(
+                    MaterialRequestRegisterService.StatusFilter.valueOf(status.trim().toUpperCase()),
+                    MaterialRequestRegisterService.SourceFilter.valueOf(source.trim().toUpperCase()),
+                    q, from, to, page, size));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "Unknown status or source filter: status=" + status + ", source=" + source));
+        }
+    }
+
+    /** The counts shown above the register. */
+    @GetMapping("/summary")
+    public ResponseEntity<MaterialRequestSummaryDto> summary() {
+        return ResponseEntity.ok(registerService.summary());
     }
 
     /** Paginated list of pending/partial MRs (Stores dashboard). */

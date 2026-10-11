@@ -125,6 +125,7 @@ public class PurchaseOrderController {
     }
 
     @PostMapping("/{id}/complete")
+    @RequiresPurchaseAdminAccess
     public ResponseEntity<PurchaseOrderDto> complete(@PathVariable Long id) {
         return ResponseEntity.ok(service.complete(id));
     }

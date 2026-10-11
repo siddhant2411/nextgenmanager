@@ -68,6 +68,7 @@ public class SalesOrderController {
     }
 
     @DeleteMapping("/{id}")
+    @RequiresSalesAdminAccess
     public ResponseEntity<Void> deleteSalesOrder(@PathVariable Long id) {
         salesOrderService.deleteSalesOrder(id);
         return ResponseEntity.noContent().build();

@@ -24,6 +24,8 @@ public class SalesOrderDisplayDto {
     private SalesOrderStatus status;
     private SalesOrderApprovalStatus approvalStatus;
     private String dispatchThrough;
+    /** The warehouse the order is dispatched from; null where it is left to the default. */
+    private String dispatchWarehouseCode;
     private LocalDate deliveryDate;
     private Date updatedDate;
     private String currency;

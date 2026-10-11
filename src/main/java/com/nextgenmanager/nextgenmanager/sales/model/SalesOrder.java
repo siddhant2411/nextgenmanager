@@ -3,6 +3,7 @@ package com.nextgenmanager.nextgenmanager.sales.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
@@ -113,6 +114,16 @@ public class SalesOrder {
     @Column(length = 50)  private String transportMode;                  // e.g. “Truck”
     @Column(length = 50)  private String ewayBillNumber;
     private LocalDate deliveryDate;
+
+    /**
+     * The warehouse this order is dispatched from. Anything the order turns out to be short of is
+     * wanted there, so the work order or requisition raised for it is addressed to this warehouse,
+     * and the pick list is drawn from it. Null means the default warehouse.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dispatchWarehouseId")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Warehouse dispatchWarehouse;
 
     @Column(length = 200) private String packagingInstructions;
     @Column(length = 100) private String shippingMethod;

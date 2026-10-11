@@ -64,6 +64,7 @@ public class ProcurementRoutingService {
     private final PurchaseRequisitionService purchaseRequisitionService;
     private final BomRepository bomRepository;
     private final RoutingRepository routingRepository;
+    private final WarehouseService warehouseService;
 
     /**
      * When true, a sales order's manufactured shortfalls become ONE work order with a line per
@@ -130,6 +131,9 @@ public class ProcurementRoutingService {
 
         List<InventoryProcurementOrder> eligible = new ArrayList<>();
         List<WorkOrderLineRequestDTO> lines = new ArrayList<>();
+        // A work order produces into one warehouse, so only needs wanted in the same place can
+        // share one. Needs of one sales order normally all are; any that is not is routed alone.
+        Warehouse batchInto = null;
 
         for (InventoryProcurementOrder order : pending) {
             InventoryItem item = order.getInventoryItem();
@@ -146,6 +150,10 @@ public class ProcurementRoutingService {
             Bom bom = bomRepository.findActiveBomWithPositionsByParentItemId(item.getInventoryItemId()).orElse(null);
             Routing routing = bom != null ? routingRepository.findByBomId(bom.getId()).orElse(null) : null;
             if (bom == null || routing == null) continue;
+
+            Warehouse wantedIn = deliverTo(order);
+            if (batchInto == null) batchInto = wantedIn;
+            if (!batchInto.getId().equals(wantedIn.getId())) continue;
 
             WorkOrderLineRequestDTO line = new WorkOrderLineRequestDTO();
             line.setBomId(bom.getId());
@@ -167,6 +175,7 @@ public class ProcurementRoutingService {
             dto.setSourceType(WorkOrderSourceType.SALES_ORDER);
             dto.setPriority(WorkOrderPriority.NORMAL);
             dto.setDueDate(toDate(so.getDeliveryDate()));
+            dto.setProduceIntoWarehouseCode(batchInto.getCode());
             dto.setRemarks("Auto-created from SO " + so.getOrderNumber()
                     + " (make-to-order, " + lines.size() + " items)");
 
@@ -214,7 +223,7 @@ public class ProcurementRoutingService {
                 Bom bom = bomRepository.findActiveBomWithPositionsByParentItemId(item.getInventoryItemId()).orElse(null);
                 Routing routing = bom != null ? routingRepository.findByBomId(bom.getId()).orElse(null) : null;
                 if (bom != null && routing != null) {
-                    int woId = createWorkOrderForReorder(item, bom, routing, qty);
+                    int woId = createWorkOrderForReorder(item, bom, routing, qty, deliverTo(order));
                     order.setProcurementDecision(ProcurementDecision.WORK_ORDER);
                     order.setOrderId((long) woId);
                     procurementOrderRepository.save(order);
@@ -223,7 +232,7 @@ public class ProcurementRoutingService {
                     log.info("Reorder: item {} manufactured but no active BOM+routing — left UNDECIDED for the desk", item.getItemCode());
                 }
             } else if (purchased && !manufactured) {
-                Long prId = createPurchaseRequisitionForReorder(item, qty, order.getCreatedBy());
+                Long prId = createPurchaseRequisitionForReorder(item, qty, order.getCreatedBy(), deliverTo(order));
                 order.setProcurementDecision(ProcurementDecision.PURCHASE_ORDER);
                 order.setOrderId(prId);
                 procurementOrderRepository.save(order);
@@ -237,11 +246,13 @@ public class ProcurementRoutingService {
         }
     }
 
-    private int createWorkOrderForReorder(InventoryItem item, Bom bom, Routing routing, BigDecimal qty) {
+    private int createWorkOrderForReorder(InventoryItem item, Bom bom, Routing routing, BigDecimal qty,
+                                          Warehouse wantedIn) {
         WorkOrderRequestDTO dto = new WorkOrderRequestDTO();
         dto.setBomId(bom.getId());
         dto.setRoutingId(routing.getId());
         dto.setPlannedQuantity(qty);
+        dto.setProduceIntoWarehouseCode(wantedIn.getCode());
         dto.setSourceType(WorkOrderSourceType.MANUAL);
         dto.setPriority(WorkOrderPriority.NORMAL);
         dto.setRemarks("Auto-created from stock reorder trigger for item " + item.getItemCode());
@@ -249,7 +260,8 @@ public class ProcurementRoutingService {
         return wo.getId();
     }
 
-    private Long createPurchaseRequisitionForReorder(InventoryItem item, BigDecimal qty, String requestedBy) {
+    private Long createPurchaseRequisitionForReorder(InventoryItem item, BigDecimal qty, String requestedBy,
+                                                     Warehouse wantedIn) {
         PurchaseRequisitionItemCreateDto line = new PurchaseRequisitionItemCreateDto(
                 (long) item.getInventoryItemId(),
                 1,
@@ -266,7 +278,8 @@ public class ProcurementRoutingService {
                 PurchaseRequisitionSource.REORDER,
                 null, null,
                 List.of(line),
-                "Auto-created from stock reorder trigger for item " + item.getItemCode());
+                "Auto-created from stock reorder trigger for item " + item.getItemCode(),
+                wantedIn.getCode());
 
         PurchaseRequisitionDto pr = purchaseRequisitionService.create(dto);
         return pr.id();
@@ -274,10 +287,15 @@ public class ProcurementRoutingService {
 
     // ──────────────────────── manual decisions (Planning Desk) ────────────────────────
 
-    /** Planner explicitly routes an UNDECIDED need to a Work Order. */
+    /**
+     * Planner explicitly routes an UNDECIDED need to a Work Order. {@code deliverToWarehouseCode}
+     * changes where the goods are wanted before the work order is raised; blank keeps what the
+     * need already says.
+     */
     @Transactional
-    public Long decideWorkOrder(Long procurementOrderId) {
+    public Long decideWorkOrder(Long procurementOrderId, String deliverToWarehouseCode) {
         InventoryProcurementOrder order = loadDecidable(procurementOrderId);
+        redirect(order, deliverToWarehouseCode);
         SalesOrder so = resolveSalesOrder(order); // null for stock-maintained (reorder/manual) needs
         InventoryItem item = order.getInventoryItem();
         Bom bom = bomRepository.findActiveBomWithPositionsByParentItemId(item.getInventoryItemId())
@@ -287,23 +305,27 @@ public class ProcurementRoutingService {
                 .orElseThrow(() -> new IllegalStateException(
                         "BOM of item " + item.getItemCode() + " has no routing — cannot create a Work Order."));
         BigDecimal qty = shortfallQty(order);
-        int woId = so != null ? createWorkOrder(so, bom, routing, qty)
-                              : createWorkOrderForReorder(item, bom, routing, qty);
+        int woId = so != null ? createWorkOrder(so, bom, routing, qty, deliverTo(order))
+                              : createWorkOrderForReorder(item, bom, routing, qty, deliverTo(order));
         order.setProcurementDecision(ProcurementDecision.WORK_ORDER);
         order.setOrderId((long) woId);
         procurementOrderRepository.save(order);
         return (long) woId;
     }
 
-    /** Planner explicitly routes an UNDECIDED need to a Purchase Requisition. */
+    /**
+     * Planner explicitly routes an UNDECIDED need to a Purchase Requisition. As with
+     * {@link #decideWorkOrder}, a warehouse code given here redirects the need first.
+     */
     @Transactional
-    public Long decidePurchase(Long procurementOrderId) {
+    public Long decidePurchase(Long procurementOrderId, String deliverToWarehouseCode) {
         InventoryProcurementOrder order = loadDecidable(procurementOrderId);
+        redirect(order, deliverToWarehouseCode);
         SalesOrder so = resolveSalesOrder(order); // null for stock-maintained (reorder/manual) needs
         InventoryItem item = order.getInventoryItem();
         BigDecimal qty = shortfallQty(order);
-        Long prId = so != null ? createPurchaseRequisition(so, item, qty, order.getCreatedBy())
-                               : createPurchaseRequisitionForReorder(item, qty, order.getCreatedBy());
+        Long prId = so != null ? createPurchaseRequisition(so, item, qty, order.getCreatedBy(), deliverTo(order))
+                               : createPurchaseRequisitionForReorder(item, qty, order.getCreatedBy(), deliverTo(order));
         order.setProcurementDecision(ProcurementDecision.PURCHASE_ORDER);
         order.setOrderId(prId);
         procurementOrderRepository.save(order);
@@ -316,6 +338,22 @@ public class ProcurementRoutingService {
         InventoryProcurementOrder order = loadDecidable(procurementOrderId);
         order.setInventoryProcurementStatus(InventoryProcurementStatus.CANCELED);
         procurementOrderRepository.save(order);
+    }
+
+    /**
+     * Where this need is wanted. Every need raised since V184 names its warehouse; an older one
+     * that does not is for the default warehouse, which is where it would have gone anyway.
+     */
+    public Warehouse deliverTo(InventoryProcurementOrder order) {
+        return order.getDeliverToWarehouse() != null
+                ? order.getDeliverToWarehouse()
+                : warehouseService.resolveDefaultWarehouse();
+    }
+
+    /** Points an undecided need at another warehouse. Blank leaves it where it is. */
+    private void redirect(InventoryProcurementOrder order, String deliverToWarehouseCode) {
+        if (deliverToWarehouseCode == null || deliverToWarehouseCode.isBlank()) return;
+        order.setDeliverToWarehouse(warehouseService.resolveByCodeOrDefault(deliverToWarehouseCode));
     }
 
     private InventoryProcurementOrder loadDecidable(Long procurementOrderId) {
@@ -362,7 +400,7 @@ public class ProcurementRoutingService {
                         item.getItemCode());
                 return; // desk decides
             }
-            int woId = createWorkOrder(so, bom, routing, shortfall);
+            int woId = createWorkOrder(so, bom, routing, shortfall, deliverTo(order));
             order.setProcurementDecision(ProcurementDecision.WORK_ORDER);
             order.setOrderId((long) woId);
             procurementOrderRepository.save(order);
@@ -370,7 +408,7 @@ public class ProcurementRoutingService {
                     item.getItemCode(), shortfall, woId, so.getOrderNumber());
 
         } else if (purchased && !manufactured) {
-            Long prId = createPurchaseRequisition(so, item, shortfall, order.getCreatedBy());
+            Long prId = createPurchaseRequisition(so, item, shortfall, order.getCreatedBy(), deliverTo(order));
             order.setProcurementDecision(ProcurementDecision.PURCHASE_ORDER);
             order.setOrderId(prId);
             procurementOrderRepository.save(order);
@@ -384,11 +422,12 @@ public class ProcurementRoutingService {
         }
     }
 
-    private int createWorkOrder(SalesOrder so, Bom bom, Routing routing, BigDecimal qty) {
+    private int createWorkOrder(SalesOrder so, Bom bom, Routing routing, BigDecimal qty, Warehouse wantedIn) {
         WorkOrderRequestDTO dto = new WorkOrderRequestDTO();
         dto.setBomId(bom.getId());
         dto.setRoutingId(routing.getId());
         dto.setPlannedQuantity(qty);
+        dto.setProduceIntoWarehouseCode(wantedIn.getCode());
         dto.setSalesOrderId(so.getId().intValue());
         dto.setSourceType(WorkOrderSourceType.SALES_ORDER);
         dto.setPriority(WorkOrderPriority.NORMAL);
@@ -398,7 +437,8 @@ public class ProcurementRoutingService {
         return wo.getId();
     }
 
-    private Long createPurchaseRequisition(SalesOrder so, InventoryItem item, BigDecimal qty, String requestedBy) {
+    private Long createPurchaseRequisition(SalesOrder so, InventoryItem item, BigDecimal qty, String requestedBy,
+                                           Warehouse wantedIn) {
         PurchaseRequisitionItemCreateDto line = new PurchaseRequisitionItemCreateDto(
                 (long) item.getInventoryItemId(),
                 1,
@@ -421,7 +461,8 @@ public class ProcurementRoutingService {
                 so.getId(),
                 so.getOrderNumber(),
                 List.of(line),
-                "Auto-created from SO " + so.getOrderNumber() + " (make-to-order)");
+                "Auto-created from SO " + so.getOrderNumber() + " (make-to-order)",
+                wantedIn.getCode());
 
         PurchaseRequisitionDto pr = purchaseRequisitionService.create(dto);
         return pr.id();

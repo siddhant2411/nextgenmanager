@@ -310,6 +310,97 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         logger.info("ADJUSTMENT {} of {} | available={}", delta, item.getItemCode(), settings.getAvailableQuantity());
     }
 
+    // ─── QUARANTINE ───────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public double quarantineStock(InventoryTransactionDTO req, String sourceDocNo) {
+        InventoryItem item = loadItem(req.getInventoryItemId());
+        ProductInventorySettings settings = item.getProductInventorySettings();
+        double qty = req.getQuantity();
+        if (qty <= 0) return 0;
+
+        Warehouse from = warehouseService.resolveByCodeOrDefault(req.getWarehouse());
+        Warehouse quarantine = warehouseService.resolveQuarantineWarehouse();
+        // With no quarantine warehouse the goods stay where they are, still marked FAILED —
+        // which is the part that actually keeps them off a pick.
+        Warehouse to = quarantine != null ? quarantine : from;
+
+        double onHand = itemWarehouseStockRepository.find(item.getInventoryItemId(), from.getId())
+                .map(row -> row.getOnHand().doubleValue()).orElse(0.0);
+        if (qty > onHand + STOCK_EPSILON) {
+            // Some of it has already been reserved or used. The inspection result is still a
+            // fact and must be recordable, so what is free is set aside and the caller is told
+            // how much that was; the rest has to be recovered from wherever it went.
+            logger.warn("QUARANTINE of {} {} asked for, only {} free in {}",
+                    qty, item.getItemCode(), onHand, from.getCode());
+            qty = Math.max(onHand, 0);
+            if (qty <= 0) return 0;
+        }
+
+        BigDecimal remaining = BigDecimal.valueOf(qty);
+        if (settings.isBatchTracked() || settings.isSerialTracked()) {
+            List<InventoryInstance> units = new ArrayList<>(inventoryInstanceRepository
+                    .findTransferableUnits(item.getInventoryItemId(), from.getId()));
+            // The receipt's own batches first: rejecting an inspection must not mark as failed
+            // the older, already-accepted stock that happens to share the shelf.
+            if (sourceDocNo != null) {
+                units.sort(Comparator.comparing(u -> u.getBatchNumber() == null
+                        || !sourceDocNo.equals(u.getBatchNumber().getSourceDocNo())));
+            }
+            for (InventoryInstance unit : units) {
+                if (remaining.signum() <= 0) break;
+                BigDecimal unitQty = unit.getQuantity();
+                InventoryInstance rejected = unit;
+                if (unitQty.compareTo(remaining) > 0) {
+                    unit.setQuantity(unitQty.subtract(remaining));
+                    inventoryInstanceRepository.save(unit);
+                    rejected = new InventoryInstance();
+                    rejected.setInventoryItem(item);
+                    rejected.setEntryDate(unit.getEntryDate());
+                    rejected.setQuantity(remaining);
+                    rejected.setCostPerUnit(unit.getCostPerUnit());
+                    rejected.setSellPricePerUnit(unit.getSellPricePerUnit());
+                    rejected.setInventoryInstanceStatus(unit.getInventoryInstanceStatus());
+                    rejected.setBatchNumber(unit.getBatchNumber());
+                }
+                rejected.setWarehouse(to);
+                rejected.setStorageLocation(null);
+                rejected.setQualityStatus(QualityStatus.FAILED);
+                if (rejected.getSerialNumber() != null) rejected.getSerialNumber().setWarehouse(to);
+                inventoryInstanceRepository.save(rejected);
+                remaining = remaining.subtract(rejected.getQuantity());
+            }
+        }
+        if (remaining.signum() > 0) {
+            // Untracked stock, or tracked stock with no unit record behind it: FAILED has nowhere
+            // to live except a unit, so one is made to carry it.
+            InventoryInstance rejected = new InventoryInstance();
+            rejected.setInventoryItem(item);
+            rejected.setWarehouse(to);
+            rejected.setEntryDate(new Date());
+            rejected.setQuantity(remaining);
+            BigDecimal cost = BigDecimal.valueOf(effectiveRate(req, item));
+            rejected.setCostPerUnit(cost);
+            rejected.setSellPricePerUnit(cost);
+            rejected.setInventoryInstanceStatus(InventoryInstanceStatus.AVAILABLE);
+            rejected.setQualityStatus(QualityStatus.FAILED);
+            inventoryInstanceRepository.save(rejected);
+        }
+
+        if (!from.getId().equals(to.getId())) {
+            applyWarehouseDelta(item, from, -qty, 0);
+            applyWarehouseDelta(item, to, qty, 0);
+        }
+        // A zero-quantity row: nothing entered or left the company, but the register should
+        // show that the stock was set aside, when, and on which inspection.
+        req.setTransactionType("QUARANTINE");
+        req.setWarehouse(to.getCode());
+        writeLedger(req, item, 0, settings.getAvailableQuantity());
+        logger.info("QUARANTINE {} of {} | {} -> {}", qty, item.getItemCode(), from.getCode(), to.getCode());
+        return qty;
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /** Tolerance for comparing double stock quantities. */

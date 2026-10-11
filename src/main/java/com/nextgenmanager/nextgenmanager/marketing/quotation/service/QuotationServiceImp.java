@@ -3,7 +3,10 @@ package com.nextgenmanager.nextgenmanager.marketing.quotation.service;
 import com.itextpdf.html2pdf.HtmlConverter;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
+import com.nextgenmanager.nextgenmanager.bom.service.BusinessException;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
+import com.nextgenmanager.nextgenmanager.items.service.SalesPriceFloorService;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactPersonDetail;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
@@ -40,6 +43,7 @@ public class QuotationServiceImp implements QuotationService {
     @Autowired private InventoryInstanceRepository inventoryInstanceRepository;
     @Autowired private EnquiryRepository enquiryRepository;
     @Autowired private com.nextgenmanager.nextgenmanager.company.service.CompanyDetailsService companyService;
+    @Autowired private SalesPriceFloorService priceFloorService;
 
     Logger logger = LoggerFactory.getLogger(QuotationServiceImp.class);
 
@@ -198,6 +202,7 @@ public class QuotationServiceImp implements QuotationService {
     @Transactional
     @Override
     public Quotation createQuotation(Quotation quotation) throws Exception {
+        enforcePriceFloor(quotation, null);
         try {
 
             List<QuotationProducts> quotationProductsList = quotation.getQuotationProducts();
@@ -246,6 +251,7 @@ public class QuotationServiceImp implements QuotationService {
         Quotation existing = quotationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Quotation not found with ID: " + id));
         quotation.setId(existing.getId());
+        enforcePriceFloor(quotation, existing);
 
         try {
             // 2) Wire up each child
@@ -309,6 +315,46 @@ public class QuotationServiceImp implements QuotationService {
                 org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getAddresses());
                 org.hibernate.Hibernate.initialize(quotation.getEnquiry().getContact().getPersonDetails());
             }
+        }
+    }
+
+    /**
+     * A sales user may not price a line below the item's minimum selling price; a sales admin may.
+     * A line already stored below the minimum is left alone unless this save lowers it further, so
+     * a price a sales admin agreed does not block every later edit of the quotation.
+     */
+    private void enforcePriceFloor(Quotation incoming, Quotation existing) {
+        if (incoming.getQuotationProducts() == null || priceFloorService.callerMayGoBelowFloor()) {
+            return;
+        }
+        Map<Long, QuotationProducts> stored = new HashMap<>();
+        if (existing != null && existing.getQuotationProducts() != null) {
+            existing.getQuotationProducts().forEach(p -> stored.put(p.getId(), p));
+        }
+
+        List<String> belowFloor = new ArrayList<>();
+        for (QuotationProducts line : incoming.getQuotationProducts()) {
+            InventoryItem item = line.getInventoryItem();
+            BigDecimal floor = priceFloorService.floorFor(item);
+            BigDecimal offered = SalesPriceFloorService.effectiveUnitPrice(
+                    line.getPricePerUnit(), line.getDiscountPercentage(), incoming.getDiscountPercentage());
+            if (!SalesPriceFloorService.isBelow(offered, floor)) continue;
+
+            QuotationProducts before = line.getId() != null ? stored.get(line.getId()) : null;
+            if (before != null && before.getInventoryItem() != null
+                    && before.getInventoryItem().getInventoryItemId() == item.getInventoryItemId()) {
+                BigDecimal agreed = SalesPriceFloorService.effectiveUnitPrice(
+                        before.getPricePerUnit(), before.getDiscountPercentage(), existing.getDiscountPercentage());
+                if (offered.compareTo(agreed) >= 0) continue;
+            }
+
+            String name = line.getProductNameRequired() != null && !line.getProductNameRequired().isBlank()
+                    ? line.getProductNameRequired() : "Item " + item.getInventoryItemId();
+            belowFloor.add(name + " at " + offered.toPlainString() + " (minimum " + floor.toPlainString() + ")");
+        }
+        if (!belowFloor.isEmpty()) {
+            throw new BusinessException("Price is below the minimum selling price after discounts: "
+                    + String.join("; ", belowFloor) + ". Only a sales admin can quote below the minimum.");
         }
     }
 

@@ -17,6 +17,8 @@ import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemType;
 import com.nextgenmanager.nextgenmanager.items.model.UOM;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
+import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
+import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
@@ -86,6 +88,28 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
      */
     private Warehouse stockWarehouse() {
         return warehouseService.resolveDefaultWarehouse();
+    }
+
+    @Autowired
+    private SalesOrderRepository salesOrderRepository;
+
+    /**
+     * Where a shortfall on a request is wanted. Stock short for a sales order is wanted in the
+     * warehouse that order is dispatched from; a request from anywhere else has no destination of
+     * its own and is for the default warehouse.
+     *
+     * <p>Resolved here, from the source the request already names, so that every caller raising a
+     * need for a sales order -- approval, the delivery challan, the store -- agrees on the answer
+     * without each having to pass it.
+     */
+    private Warehouse deliverToFor(InventoryRequestSource source, Long sourceId) {
+        if (source == InventoryRequestSource.SALES_ORDER && sourceId != null) {
+            Warehouse dispatchedFrom = salesOrderRepository.findById(sourceId)
+                    .map(SalesOrder::getDispatchWarehouse)
+                    .orElse(null);
+            if (dispatchedFrom != null) return dispatchedFrom;
+        }
+        return stockWarehouse();
     }
 
     @Autowired
@@ -587,6 +611,8 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
             Date now = new Date();
             List<InventoryInstance> resultInstances = new ArrayList<>();
+            // Decided now, with the need, and carried by whatever document the need becomes.
+            Warehouse wantedIn = deliverToFor(source, sourceId);
 
             InventoryRequest request = new InventoryRequest();
             request.setRequestSource(source);
@@ -624,7 +650,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 for (int i = 0; i < remaining; i++) {
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
-                    inst.setWarehouse(stockWarehouse());
+                    inst.setWarehouse(wantedIn);
                     inst.setEntryDate(now);
                     inst.setQuantity(BigDecimal.ONE);
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
@@ -666,7 +692,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     }
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
-                    inst.setWarehouse(stockWarehouse());
+                    inst.setWarehouse(wantedIn);
                     inst.setEntryDate(now);
                     inst.setQuantity(qtyToRequest);
                     inst.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
@@ -689,6 +715,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 procurementOrder.setPendingInventoryList(pendingInstances);
                 procurementOrder.setCreatedBy(requestedBy);
                 procurementOrder.setInventoryItem(dbItem);
+                procurementOrder.setDeliverToWarehouse(wantedIn);
                 procurementOrder.setInventoryProcurementStatus(InventoryProcurementStatus.CREATED);
                 inventoryProcurementOrderRepository.save(procurementOrder);
             }
@@ -923,6 +950,10 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             }
             List<InventoryInstance> saved = inventoryInstanceRepository.saveAll(instances);
             request.setApprovalStatus(InventoryApprovalStatus.APPROVED);
+            // On the request itself, as a work order's request records it, so the register can say
+            // who decided what without joining to the approval row.
+            request.setApprovedBy(approvedBy);
+            request.setApprovedDate(now);
             inventoryRequestRepository.save(request);
 
             InventoryBookingApproval approval = new InventoryBookingApproval();
@@ -964,6 +995,9 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             }
             List<InventoryInstance> saved = inventoryInstanceRepository.saveAll(instances);
             request.setApprovalStatus(InventoryApprovalStatus.REJECTED);
+            request.setApprovedBy(rejectedBy);
+            request.setApprovedDate(now);
+            request.setRejectionReason(rejectRemarks);
             inventoryRequestRepository.save(request);
 
             List<InventoryProcurementOrder> relatedOrders = inventoryProcurementOrderRepository.findByInventoryRequestId(requestId);
@@ -1005,6 +1039,15 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
     @Override
     @Transactional
     public List<InventoryInstance> addInventory(AddInventoryRequest request) {
+        // This entry point writes stock with no document behind it: no purchase order is updated,
+        // no batch or serial is created, nothing is inspected. Opening stock is the one receipt that
+        // legitimately has no document. Everything else is received on a goods receipt note, and
+        // work order output is booked by completing the work order.
+        if (request.getProcurementDecision() != ProcurementDecision.OPENING_STOCK) {
+            throw new IllegalArgumentException(
+                    "Stock can only be added here as opening stock. Receive purchased or other goods "
+                            + "on a goods receipt note (GRN); work order output is booked from the work order.");
+        }
         // Checked before the try below, which wraps every failure in a generic message. A zero quantity
         // wrote an empty ledger row and a negative cost was silently replaced by the standard cost.
         if (request.getQuantity() <= 0) {
@@ -1014,6 +1057,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             throw new IllegalArgumentException("Cost per unit cannot be negative.");
         }
         try {
+            Warehouse targetWarehouse = warehouseService.resolveByCodeOrDefault(request.getWarehouse());
             int inventoryItemId = request.getInventoryItemId();
             BigDecimal addedQty = BigDecimal.valueOf(request.getQuantity());
             BigDecimal costPerUnit = BigDecimal.valueOf(request.getCostPerUnit());
@@ -1041,6 +1085,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     inst.setCostPerUnit(finalCost);
                     inst.setSellPricePerUnit(standardCost);
                     // Pending was a placeholder for goods on order: it counted nowhere until now.
+                    inst.setWarehouse(targetWarehouse);
                     mirrorToWarehouse(inst, qty(inst), 0);
                     resultInstances.add(inst);
                     remainingQty = remainingQty.subtract(BigDecimal.ONE);
@@ -1051,6 +1096,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     inst.setEntryDate(now);
                     inst.setCostPerUnit(finalCost);
                     inst.setSellPricePerUnit(standardCost);
+                    inst.setWarehouse(targetWarehouse);
                     mirrorToWarehouse(inst, qty(inst), 0);
                     resultInstances.add(inst);
                     remainingQty = remainingQty.subtract(canFill);
@@ -1065,7 +1111,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                     for (int i = 0; i < unitCount; i++) {
                         InventoryInstance inst = new InventoryInstance();
                         inst.setInventoryItem(dbItem);
-                        inst.setWarehouse(stockWarehouse());
+                        inst.setWarehouse(targetWarehouse);
                         inst.setEntryDate(now);
                         inst.setQuantity(BigDecimal.ONE);
                         inst.setCostPerUnit(finalCost);
@@ -1076,7 +1122,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
                 } else {
                     InventoryInstance inst = new InventoryInstance();
                     inst.setInventoryItem(dbItem);
-                    inst.setWarehouse(stockWarehouse());
+                    inst.setWarehouse(targetWarehouse);
                     inst.setEntryDate(now);
                     inst.setQuantity(remainingQty);
                     inst.setCostPerUnit(finalCost);
@@ -1113,6 +1159,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             procurementOrder.setInventoryItem(dbItem);
             procurementOrder.setPendingInventoryList(resultInstances);
             procurementOrder.setProcurementDecision(request.getProcurementDecision());
+            procurementOrder.setDeliverToWarehouse(targetWarehouse);
             procurementOrder.setOrderId(request.getReferenceId());
             procurementOrder.setCreatedBy(request.getCreatedBy());
             procurementOrder.setInventoryProcurementStatus(InventoryProcurementStatus.COMPLETED);
@@ -1148,7 +1195,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
             ledger.setInventoryItem(dbItem);
             // warehouse_id is NOT NULL since V164. This path (opening stock and manual receipts)
             // has no warehouse of its own to carry, so it lands in the default one.
-            ledger.setWarehouse(warehouseService.resolveDefaultWarehouse());
+            ledger.setWarehouse(targetWarehouse);
             inventoryLedgerRepository.save(ledger);
             // Opening-stock onboarding posts to the GL (Dr Stock / Cr Opening Balance Equity) so a
             // company can migrate to perpetual inventory in one balanced step. Only OPENING_STOCK is
@@ -1391,15 +1438,17 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
     @Override
     @Transactional
-    public Map<String, Object> sendToPlanning(int itemId, java.math.BigDecimal qty, String requestedBy) {
+    public Map<String, Object> sendToPlanning(int itemId, java.math.BigDecimal qty, String requestedBy, String warehouseCode) {
         InventoryItem item = inventoryItemRepository.findByActiveId(itemId);
         if (item == null) throw new com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException("Inventory item not found: " + itemId);
         if (qty == null || qty.signum() <= 0) throw new IllegalArgumentException("Quantity must be greater than zero.");
+        // Whoever raises the need says which warehouse is short; blank is the default one.
+        Warehouse wantedIn = warehouseService.resolveByCodeOrDefault(warehouseCode);
 
         // Create a pending instance to carry the qty through the routing service's shortfallQty calculation
         InventoryInstance pending = new InventoryInstance();
         pending.setInventoryItem(item);
-        pending.setWarehouse(stockWarehouse());
+        pending.setWarehouse(wantedIn);
         pending.setEntryDate(new Date());
         pending.setQuantity(qty);
         pending.setInventoryInstanceStatus(InventoryInstanceStatus.PENDING);
@@ -1407,6 +1456,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
 
         InventoryProcurementOrder order = new InventoryProcurementOrder();
         order.setInventoryItem(item);
+        order.setDeliverToWarehouse(wantedIn);
         order.setPendingInventoryList(List.of(savedPending));
         order.setCreatedBy(requestedBy != null ? requestedBy : "SYSTEM");
         order.setInventoryProcurementStatus(InventoryProcurementStatus.CREATED);
@@ -1423,6 +1473,7 @@ public class InventoryInstanceServiceImp implements InventoryInstanceService {
         Map<String, Object> result = new HashMap<>();
         result.put("procurementOrderId", routed.getId());
         result.put("decision", routed.getProcurementDecision().name());
+        result.put("deliverToWarehouse", wantedIn.getCode());
         if (routed.getOrderId() != null) result.put("orderId", routed.getOrderId());
         return result;
     }

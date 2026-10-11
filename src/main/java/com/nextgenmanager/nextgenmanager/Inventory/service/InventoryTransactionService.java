@@ -53,6 +53,20 @@ public interface InventoryTransactionService {
     /** Direct balance correction. Creates an ADJUSTMENT ledger entry. */
     void adjustStock(InventoryTransactionDTO dto);
 
+    /**
+     * Sets aside stock that is already on the books because an inspection rejected it: out of the
+     * warehouse it was received into and into quarantine, marked FAILED so it cannot be picked.
+     * The company-wide quantity does not change — the goods are still in the building.
+     *
+     * @param dto          item, quantity, the warehouse the stock is in, and the inspection as the
+     *                     reference
+     * @param sourceDocNo  the receipt the stock came in on; its own batches are set aside before
+     *                     any other
+     * @return the quantity actually set aside — less than asked when some of the stock has
+     *         already been reserved or used and is no longer free to move
+     */
+    double quarantineStock(InventoryTransactionDTO dto, String sourceDocNo);
+
     /** Returns ledger entries for an item, newest first. */
     List<InventoryLedger> getStockHistory(int itemId, LocalDate from, LocalDate to);
 

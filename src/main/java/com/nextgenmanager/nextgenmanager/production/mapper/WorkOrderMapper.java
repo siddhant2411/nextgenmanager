@@ -16,6 +16,9 @@ import org.mapstruct.Mapping;
 public interface WorkOrderMapper {
 
     @Mapping(target = "workCenter", source = "workCenter.centerCode")
+    @Mapping(target = "produceIntoWarehouseCode", source = "produceIntoWarehouse.code")
+    @Mapping(target = "produceIntoWarehouseName", source = "produceIntoWarehouse.name")
+    @Mapping(target = "materialWarehouseCode", expression = "java(workOrder.stockWarehouseCode())")
     @Mapping(target = "materials", source = "materials")
     @Mapping(target = "operations", source = "operations")
     @Mapping(target = "inventoryItem", source = "bom.parentInventoryItem")

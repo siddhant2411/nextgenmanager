@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.production.model;
 
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderPriority;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderSourceType;
@@ -109,6 +110,15 @@ public class WorkOrder {
     @JoinColumn(name = "workCenterId")
     private WorkCenter workCenter;
 
+    /**
+     * Where the finished goods are wanted, when that is not the store the order works out of. A
+     * work order raised from a procurement need inherits the need's destination; one keyed by hand
+     * may name its own. Null means the goods stay in the store the material came from.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "produceIntoWarehouseId")
+    private Warehouse produceIntoWarehouse;
+
     private Date dueDate;
 
     private Date plannedStartDate;
@@ -178,6 +188,16 @@ public class WorkOrder {
                         op -> op.getSequence() != null ? op.getSequence() : Integer.MAX_VALUE))
                 .map(op -> op.getWorkCenter().getWarehouse().getCode())
                 .orElse(null);
+    }
+
+    /**
+     * Code of the warehouse finished goods are booked into: the destination the order names, else
+     * the store it draws its material from. Only what the order makes goes here -- reserving,
+     * issuing, consuming and returning material all stay on {@link #stockWarehouseCode()}, because
+     * the material is wherever the machines are.
+     */
+    public String produceWarehouseCode() {
+        return produceIntoWarehouse != null ? produceIntoWarehouse.getCode() : stockWarehouseCode();
     }
 
     /** Live, non-deleted lines in line-number order. */

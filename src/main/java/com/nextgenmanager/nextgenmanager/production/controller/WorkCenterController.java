@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresOperationsAccess;
 import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresProductionAccess;
 import org.springframework.web.bind.annotation.*;
 
@@ -46,6 +47,9 @@ public class WorkCenterController {
             logger.error("Work Center with ID {} does not exist", id);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", "Failed to update Work Center: " + e.getMessage()));
+        }
+        catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
         }
         catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
@@ -91,7 +95,10 @@ public class WorkCenterController {
     }
 
 
+    // Read-only list: a requisition names the work centre it is for, so everyone who can raise
+    // one (purchase and inventory, not only production) has to be able to pick from it.
     @GetMapping("/search")
+    @RequiresOperationsAccess
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<?> searchWorkCenter(    @RequestParam(defaultValue = "0") int page,
                                                   @RequestParam(defaultValue = "10") int size,

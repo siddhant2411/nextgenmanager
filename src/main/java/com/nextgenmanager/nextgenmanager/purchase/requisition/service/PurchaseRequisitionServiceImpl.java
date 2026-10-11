@@ -13,10 +13,13 @@ import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderMaterialRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workcenter.WorkCenterRepository;
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
+import com.nextgenmanager.nextgenmanager.Inventory.service.WarehouseService;
 import com.nextgenmanager.nextgenmanager.purchase.dto.PurchaseOrderCreateDto;
 import com.nextgenmanager.nextgenmanager.purchase.dto.PurchaseOrderDto;
 import com.nextgenmanager.nextgenmanager.purchase.dto.PurchaseOrderItemCreateDto;
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderType;
+import com.nextgenmanager.nextgenmanager.purchase.model.ShipToKind;
 import com.nextgenmanager.nextgenmanager.purchase.service.PurchaseOrderService;
 import com.nextgenmanager.nextgenmanager.purchase.requisition.dto.*;
 import com.nextgenmanager.nextgenmanager.purchase.requisition.exception.InvalidPurchaseRequisitionStateException;
@@ -56,6 +59,7 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
     private final PurchaseRequisitionApprovalService approvalService;
     private final PurchaseRequisitionMapper mapper;
     private final PurchaseOrderService purchaseOrderService;
+    private final WarehouseService warehouseService;
 
     public PurchaseRequisitionServiceImpl(PurchaseRequisitionRepository prRepo,
                                           ContactRepository contactRepo,
@@ -68,7 +72,8 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
                                           PurchaseRequisitionNumberGenerator numberGen,
                                           PurchaseRequisitionApprovalService approvalService,
                                           PurchaseRequisitionMapper mapper,
-                                          PurchaseOrderService purchaseOrderService) {
+                                          PurchaseOrderService purchaseOrderService,
+                                          WarehouseService warehouseService) {
         this.prRepo = prRepo;
         this.contactRepo = contactRepo;
         this.itemRepo = itemRepo;
@@ -81,6 +86,7 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
         this.approvalService = approvalService;
         this.mapper = mapper;
         this.purchaseOrderService = purchaseOrderService;
+        this.warehouseService = warehouseService;
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -93,6 +99,8 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
         applyHeader(pr, dto.requiredByDate(),
                 StringUtils.hasText(dto.requestedBy()) ? dto.requestedBy() : currentUsername(),
                 dto.department(), dto.workCenterId(), dto.priority(), dto.notes());
+        // Always named from here on: blank is the default warehouse, said out loud.
+        pr.setDeliverToWarehouse(warehouseService.resolveByCodeOrDefault(dto.deliverToWarehouseCode()));
         pr.setSource(dto.source() != null ? dto.source() : PurchaseRequisitionSource.MANUAL);
         pr.setSourceRefId(dto.sourceRefId());
         pr.setSourceRefNumber(dto.sourceRefNumber());
@@ -132,6 +140,9 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
         assertDraft(pr);
         applyHeader(pr, dto.requiredByDate(), dto.requestedBy(), dto.department(),
                 dto.workCenterId(), dto.priority(), dto.notes());
+        if (dto.deliverToWarehouseCode() != null) {
+            pr.setDeliverToWarehouse(warehouseService.resolveByCodeOrDefault(dto.deliverToWarehouseCode()));
+        }
         if (dto.requestDate() != null) pr.setRequestDate(dto.requestDate());
         if (dto.items() != null) {
             pr.getItems().clear();
@@ -191,6 +202,14 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
             throw new InvalidPurchaseRequisitionStateException(
                     "Cannot cancel a CLOSED or already CANCELLED requisition.");
         }
+        // The requester may withdraw a requisition that is still theirs to edit. After it has
+        // gone for approval, cancelling it is the purchase admin's call.
+        boolean stillWithRequester = pr.getApprovalStatus() == PurchaseRequisitionApprovalStatus.DRAFT
+                || pr.getApprovalStatus() == PurchaseRequisitionApprovalStatus.REJECTED;
+        if (!stillWithRequester && !isPurchaseAdmin()) {
+            throw new InvalidPurchaseRequisitionStateException(
+                    "PR " + pr.getPrNumber() + " has been submitted for approval; only a purchase admin can cancel it.");
+        }
         pr.setStatus(PurchaseRequisitionStatus.CANCELLED);
         if (StringUtils.hasText(dto.reason())) {
             String prev = pr.getNotes();
@@ -247,6 +266,13 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
             ));
         }
 
+        // The requisition's destination becomes the order's ship-to plant. The default warehouse
+        // is not named: an order with no ship-to is already delivered to the registered address
+        // and received into the default warehouse, and naming it would print that warehouse's
+        // address -- often never filled in on a single-site installation -- in its place.
+        Warehouse deliverTo = pr.getDeliverToWarehouse();
+        boolean toPlant = deliverTo != null && !deliverTo.isDefault();
+
         PurchaseOrderCreateDto poDto = new PurchaseOrderCreateDto(
                 dto.vendorId(),
                 PurchaseOrderType.STANDARD,
@@ -261,7 +287,8 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
                 null,
                 "Generated from requisition " + pr.getPrNumber(),
                 null,
-                null, null                  // ship-to: the company address, as before
+                toPlant ? ShipToKind.PLANT : null,
+                toPlant ? deliverTo.getId() : null
         );
 
         PurchaseOrderDto created = purchaseOrderService.create(poDto);
@@ -300,6 +327,8 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
         pr.setSource(PurchaseRequisitionSource.WORK_ORDER);
         pr.setSourceRefId(workOrderId);
         pr.setSourceRefNumber(wo.getWorkOrderNumber());
+        // Material short for a work order is wanted where that order draws its material.
+        pr.setDeliverToWarehouse(warehouseService.resolveByCodeOrDefault(wo.stockWarehouseCode()));
         pr.setPriority(PurchaseRequisitionPriority.NORMAL);
         pr.setNotes("Auto-generated from Work Order " + wo.getWorkOrderNumber());
 
@@ -476,5 +505,14 @@ public class PurchaseRequisitionServiceImpl implements PurchaseRequisitionServic
     private String currentUsername() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         return auth != null ? auth.getName() : "system";
+    }
+
+    private boolean isPurchaseAdmin() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SUPER_ADMIN")
+                        || a.getAuthority().equals("ROLE_ADMIN")
+                        || a.getAuthority().equals("ROLE_PURCHASE_ADMIN"));
     }
 }

@@ -446,7 +446,8 @@ public class InventoryInstanceController {
         try {
             java.math.BigDecimal qty = new java.math.BigDecimal(body.get("qty").toString());
             String requestedBy = body.containsKey("requestedBy") ? (String) body.get("requestedBy") : "SYSTEM";
-            Map<String, Object> result = inventoryInstanceService.sendToPlanning(itemId, qty, requestedBy);
+            String warehouse = body.get("warehouse") != null ? body.get("warehouse").toString() : null;
+            Map<String, Object> result = inventoryInstanceService.sendToPlanning(itemId, qty, requestedBy, warehouse);
             return ResponseEntity.ok(result);
         } catch (com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));

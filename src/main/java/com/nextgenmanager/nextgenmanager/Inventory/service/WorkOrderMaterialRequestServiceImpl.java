@@ -36,6 +36,8 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
     @Autowired private WorkOrderMaterialRepository workOrderMaterialRepository;
     @Autowired private WorkOrderMaterialReorderRepository workOrderMaterialReorderRepository;
     @Autowired private InventoryTransactionService inventoryTransactionService;
+    @Autowired private WarehouseService warehouseService;
+    @Autowired private com.nextgenmanager.nextgenmanager.Inventory.repository.ItemWarehouseStockRepository itemWarehouseStockRepository;
 
     @Override
     @Transactional
@@ -195,9 +197,16 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
         ProductInventorySettings settings = mr.getInventoryItem().getProductInventorySettings();
         double available = settings.getAvailableQuantity();
         double requested = qty.doubleValue();
-        if (requested <= available) return; // sufficient available stock — nothing to warn about
-
         String itemCode = mr.getInventoryItem().getItemCode();
+
+        if (requested <= available) {
+            // Enough in the company. A work order that draws from a named store also needs it
+            // to be in that store: reserving there regardless left the plant's stock negative
+            // while the material sat on another site's shelf.
+            guardStoreStock(mr, settings, itemCode, requested, force);
+            return;
+        }
+
         if (settings.isBatchTracked() || settings.isSerialTracked()) {
             throw new IllegalStateException(String.format(
                     "Insufficient stock to approve %s of %s (available %s). Negative stock is not allowed for batch/serial-tracked items.",
@@ -208,6 +217,32 @@ public class WorkOrderMaterialRequestServiceImpl implements WorkOrderMaterialReq
         }
         logger.warn("MR {} approved with negative stock override — {} of {} against available {}",
                 mr.getId(), fmt(requested), itemCode, fmt(available));
+    }
+
+    private void guardStoreStock(InventoryRequest mr, ProductInventorySettings settings,
+                                 String itemCode, double requested, boolean force) {
+        String storeCode = warehouseCodeFor(mr);
+        if (storeCode == null) return; // default store: the company-wide check is the check
+
+        com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse store =
+                warehouseService.resolveByCodeOrDefault(storeCode);
+        double inStore = itemWarehouseStockRepository
+                .find(mr.getInventoryItem().getInventoryItemId(), store.getId())
+                .map(s -> s.getOnHand() != null ? s.getOnHand().doubleValue() : 0.0)
+                .orElse(0.0);
+        if (requested <= inStore + 1e-6) return;
+
+        if (settings.isBatchTracked() || settings.isSerialTracked()) {
+            throw new IllegalStateException(String.format(
+                    "Only %s of %s is in %s and this approves %s. Transfer the rest into %s first: "
+                            + "batch and serial units cannot be reserved in a store they are not in.",
+                    fmt(inStore), itemCode, storeCode, fmt(requested), storeCode));
+        }
+        if (!force) {
+            throw new NegativeStockConfirmationException(itemCode, inStore, requested, storeCode);
+        }
+        logger.warn("MR {} approved with a store shortfall override — {} of {} against {} in {}",
+                mr.getId(), fmt(requested), itemCode, fmt(inStore), storeCode);
     }
 
     private static String fmt(double d) {

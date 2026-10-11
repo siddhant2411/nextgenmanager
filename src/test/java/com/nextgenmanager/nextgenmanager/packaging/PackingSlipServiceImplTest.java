@@ -350,11 +350,29 @@ class PackingSlipServiceImplTest {
     }
 
     @Test
-    void aClosedSlipCannotBeCancelled() {
+    void aClosedSlipThatHasNotShippedCanStillBeCancelled() {
+        // Closed is only a description of boxes on a bench until a delivery note takes it. A
+        // mistake found at that point used to be permanent: the slip could be neither reopened
+        // nor cancelled, so the pick could never be boxed again.
         slip.setStatus(PackingSlipStatus.CLOSED);
+        lenient().when(packingSlipRepository.save(any(PackingSlip.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.cancel(1L);
+
+        assertThat(slip.getStatus()).isEqualTo(PackingSlipStatus.CANCELLED);
+    }
+
+    @Test
+    void aSlipThatShippedCannotBeCancelled() {
+        slip.setStatus(PackingSlipStatus.CLOSED);
+        com.nextgenmanager.nextgenmanager.sales.model.DeliveryNote challan =
+                new com.nextgenmanager.nextgenmanager.sales.model.DeliveryNote();
+        challan.setDeliveryNoteNo("DC/2026/0007");
+        slip.setDeliveryNote(challan);
 
         assertThatThrownBy(() -> service.cancel(1L))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("is closed");
+                .hasMessageContaining("shipped on DC/2026/0007");
+        assertThat(slip.getStatus()).isEqualTo(PackingSlipStatus.CLOSED);
     }
 }
