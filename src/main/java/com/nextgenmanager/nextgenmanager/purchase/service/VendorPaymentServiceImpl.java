@@ -1,5 +1,8 @@
 package com.nextgenmanager.nextgenmanager.purchase.service;
 
+import com.nextgenmanager.nextgenmanager.common.audit.AuditActions;
+import com.nextgenmanager.nextgenmanager.common.audit.AuditEvent;
+import com.nextgenmanager.nextgenmanager.common.audit.service.AuditTrailService;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.common.events.DocumentVoidedEvent;
 import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
@@ -26,6 +29,7 @@ public class VendorPaymentServiceImpl implements VendorPaymentService {
     private final VendorPaymentRepository paymentRepository;
     private final VendorInvoiceRepository invoiceRepository;
     private final DomainEventPublisher domainEventPublisher;
+    private final AuditTrailService auditTrail;
 
     @Override
     public VendorPaymentDto recordPayment(Long vendorInvoiceId, VendorPaymentCreateDto dto) {
@@ -88,6 +92,23 @@ public class VendorPaymentServiceImpl implements VendorPaymentService {
     public void deletePayment(Long paymentId) {
         VendorPayment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found: " + paymentId));
+        // The row is removed, so the audit trail keeps a full copy of what was deleted and by whom.
+        String bill = payment.getVendorInvoice() != null ? payment.getVendorInvoice().getInvoiceNumber() : null;
+        java.util.Map<String, Object> copy = new java.util.LinkedHashMap<>();
+        copy.put("vendorInvoice", bill);
+        copy.put("paymentDate", payment.getPaymentDate() != null ? payment.getPaymentDate().toString() : null);
+        copy.put("amount", payment.getAmount());
+        copy.put("paymentMode", payment.getPaymentMode() != null ? payment.getPaymentMode().name() : null);
+        copy.put("referenceNumber", payment.getReferenceNumber());
+        copy.put("notes", payment.getNotes());
+        copy.put("tdsSection", payment.getTdsSectionCode());
+        copy.put("tdsRate", payment.getTdsRate());
+        copy.put("tdsAmount", payment.getTdsAmount());
+        copy.put("recordedBy", payment.getCreatedBy());
+        copy.put("recordedOn", payment.getCreationDate());
+        auditTrail.record(AuditEvent.of(AuditActions.DELETE, SourceDocTypes.VENDOR_PAYMENT, paymentId)
+                .label("Payment #" + paymentId + (bill != null ? " on bill " + bill : ""))
+                .summary("Vendor payment of " + payment.getAmount() + " deleted").details(copy));
         paymentRepository.delete(payment);
 
         // Accounting reverses the PAYMENT voucher (listener runs after this tx commits).

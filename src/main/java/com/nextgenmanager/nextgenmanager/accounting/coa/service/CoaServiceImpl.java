@@ -6,6 +6,8 @@ import com.nextgenmanager.nextgenmanager.accounting.coa.repository.AccountGroupR
 import com.nextgenmanager.nextgenmanager.accounting.coa.repository.LedgerAccountRepository;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.repository.VoucherLineRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
+import com.nextgenmanager.nextgenmanager.common.audit.AuditEvent;
+import com.nextgenmanager.nextgenmanager.common.audit.service.AuditTrailService;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.contact.repository.ContactRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.*;
+
+import static com.nextgenmanager.nextgenmanager.common.audit.AuditActions.*;
 
 @Service
 @Transactional
@@ -24,6 +28,7 @@ public class CoaServiceImpl implements CoaService {
     private final LedgerAccountRepository ledgerRepo;
     private final VoucherLineRepository voucherLineRepo;
     private final ContactRepository contactRepo;
+    private final AuditTrailService auditTrail;
 
     // ─── Account Groups ──────────────────────────────────────────────────────
 
@@ -43,13 +48,17 @@ public class CoaServiceImpl implements CoaService {
                     .orElseThrow(() -> new ResourceNotFoundException("Parent group not found: " + dto.getParentGroupId()));
             g.setParentGroup(parent);
         }
-        return toGroupDto(groupRepo.save(g));
+        AccountGroup saved = groupRepo.save(g);
+        auditTrail.record(AuditEvent.of(CREATE, ACCOUNT_GROUP, saved.getId()).label(groupLabel(saved))
+                .summary("Group created").details(groupSnapshot(saved)));
+        return toGroupDto(saved);
     }
 
     @Override
     public AccountGroupDto updateGroup(Long id, AccountGroupCreateDto dto) {
         AccountGroup g = groupRepo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Account group not found: " + id));
+        Map<String, Object> before = groupSnapshot(g);
         g.setName(dto.getName().trim());
         g.setNature(dto.getNature());
         g.setScheduleIIIHead(dto.getScheduleIIIHead());
@@ -61,7 +70,13 @@ public class CoaServiceImpl implements CoaService {
         } else {
             g.setParentGroup(null);
         }
-        return toGroupDto(groupRepo.save(g));
+        AccountGroup saved = groupRepo.save(g);
+        Map<String, Object> changed = AuditTrailService.changes(before, groupSnapshot(saved));
+        if (!changed.isEmpty()) {
+            auditTrail.record(AuditEvent.of(UPDATE, ACCOUNT_GROUP, saved.getId()).label(groupLabel(saved))
+                    .summary("Changed " + String.join(", ", changed.keySet())).details(changed));
+        }
+        return toGroupDto(saved);
     }
 
     @Override
@@ -73,6 +88,8 @@ public class CoaServiceImpl implements CoaService {
         }
         g.setDeletedDate(new Date());
         groupRepo.save(g);
+        auditTrail.record(AuditEvent.of(DELETE, ACCOUNT_GROUP, g.getId()).label(groupLabel(g))
+                .summary("Group deleted").details(groupSnapshot(g)));
     }
 
     @Override
@@ -141,16 +158,27 @@ public class CoaServiceImpl implements CoaService {
         if (ledgerRepo.existsByCodeAndDeletedDateIsNull(dto.getCode())) {
             throw new IllegalArgumentException("Ledger code already exists: " + dto.getCode());
         }
-        LedgerAccount la = buildFromDto(dto, new LedgerAccount());
-        return toLedgerDto(ledgerRepo.save(la));
+        LedgerAccount la = ledgerRepo.save(buildFromDto(dto, new LedgerAccount()));
+        auditTrail.record(AuditEvent.of(CREATE, LEDGER, la.getId()).label(ledgerLabel(la))
+                .summary("Ledger created").details(ledgerSnapshot(la)));
+        return toLedgerDto(la);
     }
 
     @Override
     public LedgerAccountDto updateLedger(Long id, LedgerAccountCreateDto dto) {
         LedgerAccount la = ledgerRepo.findByIdAndDeletedDateIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Ledger account not found: " + id));
+        // Recorded field by field: an opening balance typed onto a ledger changes every report without
+        // a voucher, so the old and new figures, and who changed them, must be kept.
+        Map<String, Object> before = ledgerSnapshot(la);
         buildFromDto(dto, la);
-        return toLedgerDto(ledgerRepo.save(la));
+        LedgerAccount saved = ledgerRepo.save(la);
+        Map<String, Object> changed = AuditTrailService.changes(before, ledgerSnapshot(saved));
+        if (!changed.isEmpty()) {
+            auditTrail.record(AuditEvent.of(UPDATE, LEDGER, saved.getId()).label(ledgerLabel(saved))
+                    .summary("Changed " + String.join(", ", changed.keySet())).details(changed));
+        }
+        return toLedgerDto(saved);
     }
 
     @Override
@@ -165,6 +193,8 @@ public class CoaServiceImpl implements CoaService {
         }
         la.setDeletedDate(new Date());
         ledgerRepo.save(la);
+        auditTrail.record(AuditEvent.of(DELETE, LEDGER, la.getId()).label(ledgerLabel(la))
+                .summary("Ledger deleted").details(ledgerSnapshot(la)));
     }
 
     @Override
@@ -262,8 +292,50 @@ public class CoaServiceImpl implements CoaService {
                     la.setSubLedgerType(type);
                     la.setContact(contact);
                     la.setOpeningBalance(BigDecimal.ZERO);
-                    return ledgerRepo.save(la);
+                    LedgerAccount saved = ledgerRepo.save(la);
+                    auditTrail.record(AuditEvent.of(CREATE, LEDGER, saved.getId()).label(ledgerLabel(saved))
+                            .summary("Party ledger created for " + contact.getCompanyName()).details(ledgerSnapshot(saved)));
+                    return saved;
                 });
+    }
+
+    // ─── Audit snapshots: the fields a person would check, as plain values ────
+
+    private static String ledgerLabel(LedgerAccount la) {
+        return la.getCode() + " " + la.getName();
+    }
+
+    private static String groupLabel(AccountGroup g) {
+        return g.getCode() + " " + g.getName();
+    }
+
+    private static Map<String, Object> ledgerSnapshot(LedgerAccount la) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("code", la.getCode());
+        m.put("name", la.getName());
+        m.put("group", la.getGroup() != null ? groupLabel(la.getGroup()) : null);
+        m.put("openingBalance", la.getOpeningBalance());
+        m.put("openingBalanceDrCr", la.getOpeningBalanceDrCr());
+        m.put("subLedgerType", la.getSubLedgerType() != null ? la.getSubLedgerType().name() : null);
+        m.put("controlAccount", la.isControlAccount());
+        m.put("bankAccount", la.isBankAccount());
+        m.put("cashAccount", la.isCashAccount());
+        m.put("reconcilable", la.isReconcilable());
+        m.put("gstApplicable", la.isGstApplicable());
+        m.put("gstRate", la.getGstRate());
+        m.put("contact", la.getContact() != null ? la.getContact().getCompanyName() : null);
+        return m;
+    }
+
+    private static Map<String, Object> groupSnapshot(AccountGroup g) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("code", g.getCode());
+        m.put("name", g.getName());
+        m.put("parentGroup", g.getParentGroup() != null ? groupLabel(g.getParentGroup()) : null);
+        m.put("nature", g.getNature() != null ? g.getNature().name() : null);
+        m.put("scheduleIIIHead", g.getScheduleIIIHead());
+        m.put("sortOrder", g.getSortOrder());
+        return m;
     }
 
     // ─── Mappers (manual — no lazy risk, called inside @Transactional) ────────

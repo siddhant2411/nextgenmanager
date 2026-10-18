@@ -44,6 +44,7 @@ class PostingServiceImplTest {
     @Mock private FinancialYearService fyService;
     @Mock private VoucherNumberGenerator numberGenerator;
     @Mock private ApprovalEngine approvalEngine;
+    @Mock private com.nextgenmanager.nextgenmanager.common.audit.service.AuditTrailService auditTrail;
 
     @InjectMocks private PostingServiceImpl service;
 
@@ -117,5 +118,41 @@ class PostingServiceImplTest {
 
         assertThat(result.getStatus()).isEqualTo(VoucherStatus.PENDING_APPROVAL);
         verify(approvalEngine).submit(eq("MANUAL_VOUCHER"), any(), anyMap(), eq("accountant"));
+    }
+
+    @Test
+    void postingAVoucherIsRecordedInTheAuditTrail_withItsLinesAndWhoPostedIt() {
+        primePostingInfra();
+        when(approvalEngine.evaluate(eq("MANUAL_VOUCHER"), anyMap())).thenReturn(List.of());
+
+        service.post(balancedDraft(), "accountant");
+
+        org.mockito.ArgumentCaptor<com.nextgenmanager.nextgenmanager.common.audit.AuditEvent> event =
+                org.mockito.ArgumentCaptor.forClass(com.nextgenmanager.nextgenmanager.common.audit.AuditEvent.class);
+        verify(auditTrail).record(event.capture());
+        var e = event.getValue();
+        assertThat(e.getAction()).isEqualTo("POST");
+        assertThat(e.getEntityType()).isEqualTo("VOUCHER");
+        assertThat(e.getLabel()).isEqualTo("JNL/2526/0001");
+        assertThat(e.getUsername()).isEqualTo("accountant");
+        assertThat(e.getSummary()).isEqualTo("Posted · 100.00");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> details = (java.util.Map<String, Object>) e.getDetails();
+        assertThat(details).containsEntry("type", "JOURNAL").containsEntry("date", "2025-06-01");
+        assertThat((List<?>) details.get("lines")).hasSize(2);
+    }
+
+    @Test
+    void aVoucherSavedForApprovalIsRecordedAsSubmitted() {
+        primePostingInfra();
+        when(approvalEngine.evaluate(eq("MANUAL_VOUCHER"), anyMap()))
+                .thenReturn(List.of(mock(RequiredStep.class)));
+
+        service.post(balancedDraft(), "accountant");
+
+        org.mockito.ArgumentCaptor<com.nextgenmanager.nextgenmanager.common.audit.AuditEvent> event =
+                org.mockito.ArgumentCaptor.forClass(com.nextgenmanager.nextgenmanager.common.audit.AuditEvent.class);
+        verify(auditTrail).record(event.capture());
+        assertThat(event.getValue().getAction()).isEqualTo("SUBMIT");
     }
 }
