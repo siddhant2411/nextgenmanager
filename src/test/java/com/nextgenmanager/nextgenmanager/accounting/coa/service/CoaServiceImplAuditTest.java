@@ -121,6 +121,20 @@ class CoaServiceImplAuditTest {
     }
 
     @Test
+    void theFormFillingInDrForALedgerWithNoBalanceIsNotAChange() {
+        // Seen live: a zero-balance ledger stored with no side; the form sends "DR" back on every save.
+        bank.setOpeningBalance(BigDecimal.ZERO);
+        bank.setOpeningBalanceDrCr(null);
+        LedgerAccountCreateDto dto = unchanged();
+        dto.setOpeningBalance(BigDecimal.ZERO);
+        dto.setOpeningBalanceDrCr("DR");
+
+        service.updateLedger(12L, dto);
+
+        verify(auditTrail, never()).record(any());
+    }
+
+    @Test
     void savingWithoutAChangeWritesNothing() {
         service.updateLedger(12L, unchanged());
 

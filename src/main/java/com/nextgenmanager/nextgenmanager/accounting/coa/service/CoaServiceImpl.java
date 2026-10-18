@@ -74,7 +74,7 @@ public class CoaServiceImpl implements CoaService {
         Map<String, Object> changed = AuditTrailService.changes(before, groupSnapshot(saved));
         if (!changed.isEmpty()) {
             auditTrail.record(AuditEvent.of(UPDATE, ACCOUNT_GROUP, saved.getId()).label(groupLabel(saved))
-                    .summary("Changed " + String.join(", ", changed.keySet())).details(changed));
+                    .summary(AuditTrailService.changedSummary(changed)).details(changed));
         }
         return toGroupDto(saved);
     }
@@ -176,7 +176,7 @@ public class CoaServiceImpl implements CoaService {
         Map<String, Object> changed = AuditTrailService.changes(before, ledgerSnapshot(saved));
         if (!changed.isEmpty()) {
             auditTrail.record(AuditEvent.of(UPDATE, LEDGER, saved.getId()).label(ledgerLabel(saved))
-                    .summary("Changed " + String.join(", ", changed.keySet())).details(changed));
+                    .summary(AuditTrailService.changedSummary(changed)).details(changed));
         }
         return toLedgerDto(saved);
     }
@@ -315,7 +315,10 @@ public class CoaServiceImpl implements CoaService {
         m.put("name", la.getName());
         m.put("group", la.getGroup() != null ? groupLabel(la.getGroup()) : null);
         m.put("openingBalance", la.getOpeningBalance());
-        m.put("openingBalanceDrCr", la.getOpeningBalanceDrCr());
+        // The side of a zero balance means nothing — and the form fills in "DR" for a ledger that has
+        // none, which would log a change on a save that changed nothing.
+        boolean noBalance = la.getOpeningBalance() == null || la.getOpeningBalance().signum() == 0;
+        m.put("openingBalanceDrCr", noBalance ? null : la.getOpeningBalanceDrCr());
         m.put("subLedgerType", la.getSubLedgerType() != null ? la.getSubLedgerType().name() : null);
         m.put("controlAccount", la.isControlAccount());
         m.put("bankAccount", la.isBankAccount());

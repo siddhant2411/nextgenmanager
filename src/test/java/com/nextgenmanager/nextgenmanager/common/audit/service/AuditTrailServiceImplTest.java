@@ -45,6 +45,16 @@ class AuditTrailServiceImplTest {
     }
 
     @Test
+    void theSummaryNamesFieldsInWords() {
+        Map<String, Object> changed = AuditTrailService.changes(
+                map("name", "Bank", "openingBalanceDrCr", null, "bankAccount", true),
+                map("name", "HDFC", "openingBalanceDrCr", "CR", "bankAccount", false));
+
+        assertThat(AuditTrailService.changedSummary(changed))
+                .isEqualTo("Changed name, opening balance side, bank account");
+    }
+
+    @Test
     void anAmountWrittenWithMoreDecimalsIsNotAChange() {
         assertThat(AuditTrailService.changes(
                 map("openingBalance", new BigDecimal("100")),

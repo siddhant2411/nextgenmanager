@@ -52,6 +52,17 @@ public interface AuditTrailService {
         return out;
     }
 
+    /** "Changed name, opening balance" from a {@link #changes} result — field names as a person reads them. */
+    static String changedSummary(Map<String, Object> changed) {
+        return "Changed " + String.join(", ", changed.keySet().stream().map(AuditTrailService::words).toList());
+    }
+
+    /** openingBalanceDrCr → "opening balance side"; camelCase → lower-case words otherwise. */
+    static String words(String field) {
+        if ("openingBalanceDrCr".equals(field)) return "opening balance side";
+        return field.replaceAll("([a-z])([A-Z])", "$1 $2").toLowerCase();
+    }
+
     private static boolean same(Object a, Object b) {
         if (a instanceof java.math.BigDecimal x && b instanceof java.math.BigDecimal y) return x.compareTo(y) == 0;
         return Objects.equals(a, b);
