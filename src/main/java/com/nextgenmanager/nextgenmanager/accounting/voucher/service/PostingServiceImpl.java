@@ -16,6 +16,7 @@ import com.nextgenmanager.nextgenmanager.common.approval.service.ApprovalEngine;
 import com.nextgenmanager.nextgenmanager.common.audit.AuditActions;
 import com.nextgenmanager.nextgenmanager.common.audit.AuditEvent;
 import com.nextgenmanager.nextgenmanager.common.audit.service.AuditTrailService;
+import com.nextgenmanager.nextgenmanager.common.security.CurrentUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -101,6 +102,9 @@ public class PostingServiceImpl implements PostingService {
         return toDto(saved);
     }
 
+    /** The user the auto-posting listeners post as. */
+    private static final String SYSTEM_USER = "SYSTEM";
+
     /** One audit row per voucher event, carrying its lines so the entry can be read without the voucher. */
     private void audit(String action, Voucher v, String username, String what) {
         BigDecimal total = v.getLines().stream().map(VoucherLine::getDrAmount)
@@ -118,9 +122,18 @@ public class PostingServiceImpl implements PostingService {
             m.put("cr", l.getCrAmount());
             return m;
         }).toList());
+        // Auto-posts run as "SYSTEM" but inside the request of the person whose action raised them
+        // (recording a payment, posting an invoice). The trail names that person, marked automatic.
+        String who = username;
+        String summary = what;
+        String person = SYSTEM_USER.equals(username) ? CurrentUser.nameOrNull() : null;
+        if (person != null) {
+            who = person;
+            summary = what + " automatically";
+        }
         auditTrail.record(AuditEvent.of(action, AuditActions.VOUCHER, v.getId()).label(v.getVoucherNumber())
-                .summary(what + " · " + total.setScale(2, RoundingMode.HALF_UP).toPlainString())
-                .details(details).voucher(v.getId()).by(username));
+                .summary(summary + " · " + total.setScale(2, RoundingMode.HALF_UP).toPlainString())
+                .details(details).voucher(v.getId()).by(who));
     }
 
     @Override
