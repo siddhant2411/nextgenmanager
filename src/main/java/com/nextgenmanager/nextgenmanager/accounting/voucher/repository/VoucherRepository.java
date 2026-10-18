@@ -36,5 +36,8 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long> {
 
     boolean existsBySourceDocTypeAndSourceDocIdAndDeletedDateIsNull(String docType, Long docId);
 
+    /** Year-end close refuses while vouchers dated in the year still wait for approval. */
+    long countByDeletedDateIsNullAndStatusAndDateBetween(VoucherStatus status, LocalDate from, LocalDate to);
+
     Optional<Voucher> findBySourceDocTypeAndSourceDocIdAndDeletedDateIsNull(String docType, Long docId);
 }

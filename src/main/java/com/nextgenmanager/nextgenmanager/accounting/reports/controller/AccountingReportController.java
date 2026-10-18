@@ -1,12 +1,15 @@
 package com.nextgenmanager.nextgenmanager.accounting.reports.controller;
 
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.AgeingReportDto;
+import com.nextgenmanager.nextgenmanager.accounting.reports.dto.BalanceSheetDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.DayBookDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.LedgerStatementDto;
+import com.nextgenmanager.nextgenmanager.accounting.reports.dto.ProfitLossDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.StockGlReconciliationDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.dto.TrialBalanceDto;
 import com.nextgenmanager.nextgenmanager.accounting.reports.service.AccountingReportService;
 import com.nextgenmanager.nextgenmanager.accounting.reports.service.AgeingReportService;
+import com.nextgenmanager.nextgenmanager.accounting.reports.service.FinancialStatementService;
 import com.nextgenmanager.nextgenmanager.accounting.reports.service.StockGlReconciliationService;
 import com.nextgenmanager.nextgenmanager.common.security.authorization.RequiresAccountingAccess;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +32,7 @@ public class AccountingReportController {
     private final AccountingReportService reportService;
     private final AgeingReportService ageingReportService;
     private final StockGlReconciliationService stockGlReconciliationService;
+    private final FinancialStatementService financialStatementService;
 
     @GetMapping("/trial-balance")
     public ResponseEntity<TrialBalanceDto> trialBalance(
@@ -97,6 +101,44 @@ public class AccountingReportController {
         LocalDate d = asOf != null ? asOf : LocalDate.now();
         byte[] body = stockGlReconciliationService.toExcel(stockGlReconciliationService.reconcile(from, d));
         return excel(body, "Stock_GL_Reconciliation_" + d + ".xlsx");
+    }
+
+    // ─── Financial statements (Phase 5) ──────────────────────────────────────
+
+    @GetMapping("/profit-loss")
+    public ResponseEntity<ProfitLossDto> profitAndLoss(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate previousFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate previousTo) {
+        return ResponseEntity.ok(financialStatementService.profitAndLoss(from, to, previousFrom, previousTo));
+    }
+
+    @GetMapping("/profit-loss/excel")
+    public ResponseEntity<byte[]> profitAndLossExcel(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate previousFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate previousTo) {
+        byte[] body = financialStatementService.profitAndLossExcel(
+                financialStatementService.profitAndLoss(from, to, previousFrom, previousTo));
+        return excel(body, "Profit_Loss_" + from + "_to_" + to + ".xlsx");
+    }
+
+    @GetMapping("/balance-sheet")
+    public ResponseEntity<BalanceSheetDto> balanceSheet(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate previousAsOf) {
+        return ResponseEntity.ok(financialStatementService.balanceSheet(asOf != null ? asOf : LocalDate.now(), previousAsOf));
+    }
+
+    @GetMapping("/balance-sheet/excel")
+    public ResponseEntity<byte[]> balanceSheetExcel(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate previousAsOf) {
+        LocalDate d = asOf != null ? asOf : LocalDate.now();
+        byte[] body = financialStatementService.balanceSheetExcel(financialStatementService.balanceSheet(d, previousAsOf));
+        return excel(body, "Balance_Sheet_" + d + ".xlsx");
     }
 
     private ResponseEntity<byte[]> excel(byte[] body, String fileName) {

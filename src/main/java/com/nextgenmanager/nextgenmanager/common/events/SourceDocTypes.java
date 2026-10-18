@@ -26,4 +26,12 @@ public final class SourceDocTypes {
     public static final String PAYROLL = "PAYROLL";
     /** A periodic depreciation voucher. */
     public static final String DEPRECIATION = "DEPRECIATION";
+
+    // ─ Phase 5 (year-end) ─
+    /**
+     * A year-end CLOSING voucher. Posted with no sourceDocId — the financial year's own status
+     * guards against closing twice, so a year that was reopened (its closing voucher reversed,
+     * which still counts for the sourceDoc idempotency check) can be closed again.
+     */
+    public static final String FY_CLOSE = "FY_CLOSE";
 }

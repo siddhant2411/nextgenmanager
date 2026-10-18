@@ -23,6 +23,10 @@ public interface LedgerAccountRepository extends JpaRepository<LedgerAccount, Lo
 
     List<LedgerAccount> findByGroupIdAndDeletedDateIsNull(Long groupId);
 
+    /** Ledgers that can be reconciled against a bank statement. */
+    @Query("SELECT la FROM LedgerAccount la WHERE la.deletedDate IS NULL AND (la.isBankAccount = true OR la.isReconcilable = true) ORDER BY la.code")
+    List<LedgerAccount> findReconcilable();
+
     List<LedgerAccount> findBySubLedgerTypeAndDeletedDateIsNull(SubLedgerType subLedgerType);
 
     Optional<LedgerAccount> findByContactIdAndSubLedgerTypeAndDeletedDateIsNull(int contactId, SubLedgerType subLedgerType);

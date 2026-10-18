@@ -16,4 +16,7 @@ public class LedgerLineDto {
     private BigDecimal crAmount;
     private BigDecimal runningBalance;
     private String runningBalanceDrCr;
+    private Long voucherId;
+    private String sourceDocType;
+    private Long sourceDocId;
 }

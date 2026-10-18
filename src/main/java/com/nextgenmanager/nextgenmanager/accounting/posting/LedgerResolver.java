@@ -60,6 +60,8 @@ public class LedgerResolver {
     // ─ Depreciation (Phase 4) ─
     public static final String DEPRECIATION_EXPENSE = "5070E";
     public static final String ACCUMULATED_DEPRECIATION = "1020";
+    // ─ Statements / year-end close (Phase 5) ─
+    public static final String RETAINED_EARNINGS = "3020E";
 
     private final LedgerAccountRepository ledgerRepo;
 

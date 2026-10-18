@@ -2,6 +2,7 @@ package com.nextgenmanager.nextgenmanager.accounting.voucher.repository;
 
 import com.nextgenmanager.nextgenmanager.accounting.coa.model.SubLedgerType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherLine;
+import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -31,11 +32,34 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
     List<Object[]> aggregateByAccount(@Param("asOf") LocalDate asOf);
 
     /**
-     * Ledger statement: all posted lines for one account in date range,
-     * ordered chronologically. Returns Object[]{date, voucherNumber, voucherType, narration, drAmount, crAmount}.
+     * Dr/Cr movement per ledger account for POSTED vouchers dated within a range, leaving out one
+     * voucher type. The P&L passes CLOSING so a closed year still shows its income and expenses
+     * (the closing voucher only moves them to Retained Earnings). Returns Object[]{accountId, sumDr, sumCr}.
      */
     @Query("""
-        SELECT v.date, v.voucherNumber, v.voucherType, vl.narration, vl.drAmount, vl.crAmount
+        SELECT vl.ledgerAccount.id, COALESCE(SUM(vl.drAmount), 0), COALESCE(SUM(vl.crAmount), 0)
+        FROM VoucherLine vl
+        JOIN vl.voucher v
+        WHERE v.status IN ('POSTED', 'REVERSED')
+          AND v.deletedDate IS NULL
+          AND vl.deletedDate IS NULL
+          AND v.date BETWEEN :from AND :to
+          AND v.voucherType <> :excludeType
+        GROUP BY vl.ledgerAccount.id
+        """)
+    List<Object[]> aggregateByAccountInRange(@Param("from") LocalDate from,
+                                             @Param("to") LocalDate to,
+                                             @Param("excludeType") VoucherType excludeType);
+
+    /**
+     * Ledger statement: all posted lines for one account in date range,
+     * ordered chronologically. Returns Object[]{date, voucherNumber, voucherType, narration, drAmount, crAmount,
+     * voucherId, sourceDocType, sourceDocId} — the last three let the statement open the voucher and its document.
+     * The narration is the line's own, else the voucher's: most lines carry none, which left the statement blank.
+     */
+    @Query("""
+        SELECT v.date, v.voucherNumber, v.voucherType, COALESCE(vl.narration, v.narration), vl.drAmount, vl.crAmount,
+               v.id, v.sourceDocType, v.sourceDocId
         FROM VoucherLine vl
         JOIN vl.voucher v
         WHERE vl.ledgerAccount.id = :accountId
@@ -104,4 +128,21 @@ public interface VoucherLineRepository extends JpaRepository<VoucherLine, Long> 
         GROUP BY vl.ledgerAccount.code
         """)
     List<Object[]> balanceByCodeAsOf(@Param("asOf") LocalDate asOf, @Param("codes") List<String> codes);
+
+    /**
+     * Bank reconciliation's book side: every line on one ledger up to asOf, from vouchers that still
+     * stand. A reversed voucher and its reversal net to nothing, so neither is offered for matching.
+     */
+    @Query("""
+        SELECT vl FROM VoucherLine vl
+        JOIN FETCH vl.voucher v
+        WHERE vl.ledgerAccount.id = :ledgerId
+          AND vl.deletedDate IS NULL
+          AND v.deletedDate IS NULL
+          AND v.status = 'POSTED'
+          AND v.reversalOf IS NULL
+          AND v.date <= :asOf
+        ORDER BY v.date ASC, v.voucherNumber ASC
+        """)
+    List<VoucherLine> standingLinesUpTo(@Param("ledgerId") Long ledgerId, @Param("asOf") LocalDate asOf);
 }
