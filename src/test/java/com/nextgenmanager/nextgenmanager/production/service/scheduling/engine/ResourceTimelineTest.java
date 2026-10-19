@@ -138,4 +138,68 @@ class ResourceTimelineTest {
     void noSlotWhenTheCalendarNeverOpens() {
         assertThat(new ResourceTimeline().findSlot(new WorkCalendar(), MONDAY.atTime(9, 0), 60, HORIZON)).isEmpty();
     }
+
+    // ─── backward ─────────────────────────────────────────────────────────────
+
+    private static final LocalDateTime FLOOR = MONDAY.atTime(0, 0);
+
+    @Test
+    void backwardAJobEndsAtTheLatestMomentAllowed() {
+        Slot slot = new ResourceTimeline().findLatestSlot(dayShift(1.0), TUESDAY.atTime(15, 0), 120, FLOOR).orElseThrow();
+
+        assertThat(slot).isEqualTo(new Slot(TUESDAY.atTime(13, 0), TUESDAY.atTime(15, 0)));
+    }
+
+    @Test
+    void backwardALatestEndAfterTheShiftMeansTheShiftsClose() {
+        Slot slot = new ResourceTimeline().findLatestSlot(dayShift(1.0), TUESDAY.atTime(22, 0), 60, FLOOR).orElseThrow();
+
+        assertThat(slot).isEqualTo(new Slot(TUESDAY.atTime(16, 0), TUESDAY.atTime(17, 0)));
+    }
+
+    @Test
+    void backwardALongJobRunsBackAcrossTheNight() {
+        Slot slot = new ResourceTimeline().findLatestSlot(dayShift(1.0), TUESDAY.atTime(13, 0), 720, FLOOR).orElseThrow();
+
+        assertThat(slot).isEqualTo(new Slot(MONDAY.atTime(9, 0), TUESDAY.atTime(13, 0)));
+    }
+
+    @Test
+    void backwardAJobTooBigForTheGapGoesBeforeTheBooking() {
+        ResourceTimeline timeline = new ResourceTimeline();
+        timeline.block(TUESDAY.atTime(14, 0), TUESDAY.atTime(15, 0));
+
+        Slot slot = timeline.findLatestSlot(dayShift(1.0), TUESDAY.atTime(17, 0), 180, FLOOR).orElseThrow();
+
+        assertThat(slot).isEqualTo(new Slot(TUESDAY.atTime(11, 0), TUESDAY.atTime(14, 0)));
+    }
+
+    @Test
+    void backwardAJobFitsInTheGapAfterABookingWhenItCan() {
+        ResourceTimeline timeline = new ResourceTimeline();
+        timeline.block(TUESDAY.atTime(9, 0), TUESDAY.atTime(15, 0));
+
+        Slot slot = timeline.findLatestSlot(dayShift(1.0), TUESDAY.atTime(17, 0), 120, FLOOR).orElseThrow();
+
+        assertThat(slot).isEqualTo(new Slot(TUESDAY.atTime(15, 0), TUESDAY.atTime(17, 0)));
+    }
+
+    @Test
+    void backwardABookingOvernightBreaksAJobThatWouldSpanIt() {
+        ResourceTimeline timeline = new ResourceTimeline();
+        // Something holds the machine overnight, while the work centre is closed.
+        timeline.block(MONDAY.atTime(20, 0), MONDAY.atTime(21, 0));
+
+        Slot slot = timeline.findLatestSlot(dayShift(1.0), TUESDAY.atTime(10, 0), 120, FLOOR).orElseThrow();
+
+        assertThat(slot).isEqualTo(new Slot(MONDAY.atTime(15, 0), MONDAY.atTime(17, 0)));
+    }
+
+    @Test
+    void backwardNothingWhenTheJobWouldHaveToStartBeforeTheFloor() {
+        assertThat(new ResourceTimeline()
+                .findLatestSlot(dayShift(1.0), MONDAY.atTime(11, 0), 180, MONDAY.atTime(9, 0))).isEmpty();
+        assertThat(new ResourceTimeline()
+                .findLatestSlot(dayShift(1.0), MONDAY.atTime(11, 0), 120, MONDAY.atTime(9, 0))).isPresent();
+    }
 }

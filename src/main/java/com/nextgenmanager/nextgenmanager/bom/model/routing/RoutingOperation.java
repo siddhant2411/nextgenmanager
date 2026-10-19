@@ -91,6 +91,24 @@ public class RoutingOperation {
 
     private BigDecimal setupTime;
     private BigDecimal runTime;
+
+    // ---- Scheduling: time between operations (minutes, wall clock) ----
+
+    /** Minimum wait after material arrives before this operation can start. */
+    @Column(precision = 10, scale = 2)
+    private BigDecimal queueTime;
+
+    /** Time to carry this operation's output to the next operation. */
+    @Column(precision = 10, scale = 2)
+    private BigDecimal moveTime;
+
+    /**
+     * Output moves on in batches of this size, letting the next operation start before this
+     * one finishes. Null (or not below the operation's quantity) = the whole lot moves at once.
+     */
+    @Column(precision = 12, scale = 4)
+    private BigDecimal transferQuantity;
+
     private Boolean inspection;
     private String notes;
     @Column(columnDefinition = "TEXT")

@@ -80,4 +80,33 @@ class WorkCalendarTest {
         assertThat(new WorkCalendar().hasCapacity()).isFalse();
         assertThat(dayShift().hasCapacity()).isTrue();
     }
+
+    @Test
+    void advancingCountsOnlyOpenTime() {
+        // Saturday 15:00 + 180 working minutes: two hours on Saturday, Sunday off, one on Monday.
+        LocalDate saturday = MONDAY.plusDays(5);
+
+        assertThat(dayShift().advance(saturday.atTime(15, 0), 180, 365))
+                .contains(saturday.plusDays(2).atTime(10, 0));
+        assertThat(dayShift().advance(MONDAY.atTime(7, 0), 60, 365)).contains(MONDAY.atTime(10, 0));
+    }
+
+    @Test
+    void retreatingIsTheMirrorOfAdvancing() {
+        LocalDate nextMonday = MONDAY.plusDays(7);
+
+        assertThat(dayShift().retreat(nextMonday.atTime(10, 0), 180, 365))
+                .contains(MONDAY.plusDays(5).atTime(15, 0));
+        assertThat(dayShift().retreat(MONDAY.atTime(20, 0), 60, 365)).contains(MONDAY.atTime(16, 0));
+    }
+
+    @Test
+    void productiveMinutesBetweenTwoMomentsSkipClosedTime() {
+        WorkCalendar calendar = dayShift();
+
+        assertThat(calendar.productiveMinutesBetween(MONDAY.atTime(16, 0), MONDAY.plusDays(1).atTime(10, 0)))
+                .isEqualTo(120.0);
+        assertThat(calendar.productiveMinutesBetween(MONDAY.plusDays(1).atTime(10, 0), MONDAY.atTime(16, 0)))
+                .isEqualTo(-120.0);
+    }
 }

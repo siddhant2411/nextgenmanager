@@ -15,6 +15,8 @@ import com.nextgenmanager.nextgenmanager.production.repository.workcenter.Downti
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderOperationRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import com.nextgenmanager.nextgenmanager.production.service.audit.WorkOrderAuditService;
+import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.DispatchRule;
+import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.ScheduleDirection;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,9 +44,12 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -79,7 +84,7 @@ class ProductionSchedulerServiceTest {
         service.setClock(Clock.fixed(NOW.atZone(IST).toInstant(), IST));
         when(entityManager.createQuery(anyString())).thenReturn(query);
         when(query.setParameter(anyString(), any())).thenReturn(query);
-        when(workOrderOperationRepository.findBookedLoad(any(), anyList(), anyList())).thenReturn(List.of());
+        when(workOrderOperationRepository.findBookedLoad(any(), any(), anyList(), anyList())).thenReturn(List.of());
         when(downtimeEventRepository.findByMachineIdAndEndTimeAfter(any(), any())).thenReturn(List.of());
     }
 
@@ -122,7 +127,7 @@ class ProductionSchedulerServiceTest {
         booked.setWorkOrder(other);
         booked.setPlannedStartDate(date(day(5, 9, 0)));
         booked.setPlannedEndDate(date(day(5, 13, 0)));
-        when(workOrderOperationRepository.findBookedLoad(any(), anyList(), anyList())).thenReturn(List.of(booked));
+        when(workOrderOperationRepository.findBookedLoad(any(), any(), anyList(), anyList())).thenReturn(List.of(booked));
 
         WorkOrder wo = workOrder(10, "WO-10");
         operations(wo, operation(1, cutting, 120));
@@ -146,7 +151,7 @@ class ProductionSchedulerServiceTest {
         booked.setAssignedMachine(busy);
         booked.setPlannedStartDate(date(day(5, 9, 0)));
         booked.setPlannedEndDate(date(day(5, 17, 0)));
-        when(workOrderOperationRepository.findBookedLoad(any(), anyList(), anyList())).thenReturn(List.of(booked));
+        when(workOrderOperationRepository.findBookedLoad(any(), any(), anyList(), anyList())).thenReturn(List.of(booked));
 
         WorkOrder wo = workOrder(10, "WO-10");
         WorkOrderOperation op = operation(1, cnc, 60);
@@ -270,6 +275,350 @@ class ProductionSchedulerServiceTest {
         assertThat(firstOfBroken.getPlannedStartDate()).isNull();
         assertThat(broken.getWorkOrderStatus()).isEqualTo(WorkOrderStatus.CREATED);
         assertThat(at(good.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+    }
+
+    @Test
+    void batchSchedulingByEarliestDueDateIgnoresPriority() {
+        WorkCenter cutting = workCenter(1, "WC-CUT");
+        WorkOrder dueSoon = workOrder(10, "WO-10");
+        dueSoon.setDueDate(date(day(6, 0, 0)));
+        WorkOrder urgentLater = workOrder(11, "WO-11");
+        urgentLater.setPriority(WorkOrderPriority.URGENT);
+        urgentLater.setDueDate(date(day(20, 0, 0)));
+        operations(dueSoon, operation(1, cutting, 480));
+        operations(urgentLater, operation(1, cutting, 480));
+        when(workOrderRepository.findByWorkOrderStatus(WorkOrderStatus.CREATED))
+                .thenReturn(new ArrayList<>(List.of(urgentLater, dueSoon)));
+
+        service.scheduleAll(DispatchRule.EDD, ScheduleDirection.FORWARD);
+
+        assertThat(at(dueSoon.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(at(urgentLater.getPlannedStartDate())).isEqualTo(day(6, 9, 0));
+    }
+
+    // ─── backward ─────────────────────────────────────────────────────────────
+
+    @Test
+    void backwardTheLastOperationEndsAtTheCloseOfTheDueDayAndEarlierOnesArePulledBack() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setDueDate(date(day(7, 0, 0)));
+        operations(wo, operation(1, workCenter(1, "WC-CUT"), 120), operation(2, workCenter(2, "WC-WELD"), 60));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+
+        assertThat(result.getDirection()).isEqualTo("BACKWARD");
+        assertThat(result.getOperationSchedules())
+                .extracting(s -> at(s.getPlannedStartDate()), s -> at(s.getPlannedEndDate()))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(day(7, 14, 0), day(7, 16, 0)),
+                        org.assertj.core.groups.Tuple.tuple(day(7, 16, 0), day(7, 17, 0)));
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    void backwardFallsBackToForwardWhenTheOrderCannotFinishInTime() {
+        WorkCenter cutting = workCenter(1, "WC-CUT");
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setDueDate(date(day(5, 0, 0)));
+        operations(wo, operation(1, cutting, 480), operation(2, cutting, 480));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+
+        assertThat(result.getDirection()).isEqualTo("FORWARD");
+        assertThat(at(result.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getWarnings())
+                .anyMatch(w -> w.startsWith("Cannot finish by the due date working back from it"))
+                .anyMatch(w -> w.startsWith("Due date will be missed by 1 day(s)."));
+    }
+
+    @Test
+    void schedulingForwardAfterAJustInTimePlanPullsTheOrderBackToNow() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setDueDate(date(day(9, 0, 0)));
+        operations(wo, operation(1, workCenter(1, "WC-CUT"), 60));
+
+        ScheduleResultDTO late = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+        ScheduleResultDTO asap = service.scheduleWorkOrder(10, ScheduleDirection.FORWARD);
+
+        assertThat(at(late.getPlannedStartDate())).isEqualTo(day(9, 16, 0));
+        assertThat(at(asap.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+    }
+
+    @Test
+    void aStartDateEnteredBeforeTheFirstScheduleIsRespected() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setPlannedStartDate(date(day(7, 0, 0)));
+        operations(wo, operation(1, workCenter(1, "WC-CUT"), 60));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(result.getPlannedStartDate())).isEqualTo(day(7, 9, 0));
+    }
+
+    @Test
+    void backwardWithoutADueDateSchedulesForward() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        operations(wo, operation(1, workCenter(1, "WC-CUT"), 60));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+
+        assertThat(result.getDirection()).isEqualTo("FORWARD");
+        assertThat(at(result.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getWarnings()).anyMatch(w -> w.startsWith("There is no due date to schedule back from"));
+    }
+
+    // ─── time between operations ──────────────────────────────────────────────
+
+    @Test
+    void moveAndQueueTimeSitBetweenTwoOperations() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 120);
+        cut.getRoutingOperation().setMoveTime(new BigDecimal("30"));
+        WorkOrderOperation weld = operation(2, workCenter(2, "WC-WELD"), 60);
+        weld.getRoutingOperation().setQueueTime(new BigDecimal("30"));
+        operations(wo, cut, weld);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(result.getOperationSchedules().get(1).getPlannedStartDate())).isEqualTo(day(5, 12, 0));
+        assertThat(at(result.getOperationSchedules().get(1).getPlannedEndDate())).isEqualTo(day(5, 13, 0));
+    }
+
+    @Test
+    void aTransferBatchLetsTheNextOperationStartBeforeThisOneEnds() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        // Ten pieces: cutting takes 12 min each and passes them on in twos; welding takes 6.
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 12);
+        cut.setPlannedQuantity(BigDecimal.TEN);
+        cut.getRoutingOperation().setTransferQuantity(new BigDecimal("2"));
+        WorkOrderOperation weld = operation(2, workCenter(2, "WC-WELD"), 6);
+        weld.setPlannedQuantity(BigDecimal.TEN);
+        operations(wo, cut, weld);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        List<ScheduleResultDTO.OperationSchedule> ops = result.getOperationSchedules();
+        assertThat(at(ops.get(0).getPlannedEndDate())).isEqualTo(day(5, 11, 0));
+        // Welding could start at 09:24 with the first pair, but would then run dry; it starts
+        // so that it finishes 12 minutes after the last pair arrives at 11:00.
+        assertThat(at(ops.get(1).getPlannedStartDate())).isEqualTo(day(5, 10, 12));
+        assertThat(at(ops.get(1).getPlannedEndDate())).isEqualTo(day(5, 11, 12));
+    }
+
+    @Test
+    void backwardATransferBatchOverlapsThePredecessorWithItsSuccessor() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setDueDate(date(day(5, 0, 0)));
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 12);
+        cut.setPlannedQuantity(BigDecimal.TEN);
+        cut.getRoutingOperation().setTransferQuantity(new BigDecimal("2"));
+        WorkOrderOperation weld = operation(2, workCenter(2, "WC-WELD"), 6);
+        weld.setPlannedQuantity(BigDecimal.TEN);
+        operations(wo, cut, weld);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+
+        List<ScheduleResultDTO.OperationSchedule> ops = result.getOperationSchedules();
+        assertThat(result.getDirection()).isEqualTo("BACKWARD");
+        assertThat(at(ops.get(1).getPlannedStartDate())).isEqualTo(day(5, 16, 0));
+        assertThat(at(ops.get(1).getPlannedEndDate())).isEqualTo(day(5, 17, 0));
+        // The last pair must reach welding by 16:48 to be welded by 17:00.
+        assertThat(at(ops.get(0).getPlannedStartDate())).isEqualTo(day(5, 14, 48));
+        assertThat(at(ops.get(0).getPlannedEndDate())).isEqualTo(day(5, 16, 48));
+    }
+
+    // ─── work already under way ───────────────────────────────────────────────
+
+    @Test
+    void aCompletedOperationIsNotMovedAndTheStartedOrderKeepsItsStatus() {
+        WorkCenter cutting = workCenter(1, "WC-CUT");
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
+        WorkOrderOperation done = operation(1, cutting, 180);
+        done.setStatus(OperationStatus.COMPLETED);
+        done.setPlannedStartDate(date(day(2, 9, 0)));
+        done.setPlannedEndDate(date(day(2, 12, 0)));
+        done.setActualStartDate(date(day(2, 9, 30)));
+        done.setActualEndDate(date(day(2, 13, 0)));
+        WorkOrderOperation next = operation(2, cutting, 60);
+        operations(wo, done, next);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        verify(workOrderOperationRepository, never()).save(done);
+        assertThat(at(done.getPlannedStartDate())).isEqualTo(day(2, 9, 0));
+        assertThat(at(done.getPlannedEndDate())).isEqualTo(day(2, 12, 0));
+        assertThat(result.getOperationSchedules().get(0).isPinned()).isTrue();
+        assertThat(result.getOperationSchedules().get(0).getStatus()).isEqualTo("COMPLETED");
+        // The finished work books nothing: the next operation takes the shift from its start.
+        assertThat(at(next.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getOperationSchedules().get(1).isPinned()).isFalse();
+        assertThat(at(result.getPlannedStartDate())).isEqualTo(day(2, 9, 30));
+        assertThat(wo.getWorkOrderStatus()).isEqualTo(WorkOrderStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void aRunningOperationKeepsItsMachineAndEndsWhenItsRemainingQuantityIsMade() {
+        service.setClock(Clock.fixed(day(5, 10, 0).atZone(IST).toInstant(), IST));
+        WorkCenter cnc = workCenter(1, "WC-CNC");
+        MachineDetails running = machine(1L, "CNC-01", cnc);
+        MachineDetails idle = machine(2L, "CNC-02", cnc);
+        cnc.setWorkStations(List.of(running, idle));
+
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
+        WorkOrderOperation turning = operation(1, cnc, 10);
+        turning.setPlannedQuantity(BigDecimal.TEN);
+        turning.setStatus(OperationStatus.IN_PROGRESS);
+        turning.setAssignedMachine(running);
+        turning.setActualStartDate(date(day(5, 9, 0)));
+        turning.setPlannedStartDate(date(day(5, 9, 0)));
+        turning.setPlannedEndDate(date(day(5, 10, 40)));
+        turning.setCompletedQuantity(new BigDecimal("3"));
+        turning.setScrappedQuantity(BigDecimal.ONE);
+        WorkOrderOperation inspect = operation(2, workCenter(2, "WC-QC"), 30);
+        operations(wo, turning, inspect);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        // Six still to make at 10 minutes each, from 10:00.
+        assertThat(turning.getAssignedMachine()).isSameAs(running);
+        assertThat(at(turning.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(at(turning.getPlannedEndDate())).isEqualTo(day(5, 11, 0));
+        assertThat(at(inspect.getPlannedStartDate())).isEqualTo(day(5, 11, 0));
+        assertThat(result.getOperationSchedules().get(0).isPinned()).isTrue();
+    }
+
+    @Test
+    void anotherOrdersOverrunningOperationStillHoldsItsMachine() {
+        service.setClock(Clock.fixed(day(5, 10, 0).atZone(IST).toInstant(), IST));
+        WorkCenter cutting = workCenter(1, "WC-CUT");
+
+        WorkOrder other = workOrder(99, "WO-99");
+        WorkOrderOperation overrunning = operation(1, cutting, 180);
+        overrunning.setWorkOrder(other);
+        overrunning.setStatus(OperationStatus.IN_PROGRESS);
+        // Planned to end at 10:00, but nothing has been made yet.
+        overrunning.setPlannedStartDate(date(day(5, 7, 0)));
+        overrunning.setPlannedEndDate(date(day(5, 10, 0)));
+        when(workOrderOperationRepository.findBookedLoad(any(), any(), anyList(), anyList()))
+                .thenReturn(List.of(overrunning));
+
+        WorkOrder wo = workOrder(10, "WO-10");
+        operations(wo, operation(1, cutting, 60));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(result.getPlannedStartDate())).isEqualTo(day(5, 13, 0));
+    }
+
+    @Test
+    void aRunningOperationBookedOverOtherWorkIsReportedNotMoved() {
+        service.setClock(Clock.fixed(day(5, 10, 0).atZone(IST).toInstant(), IST));
+        WorkCenter cutting = workCenter(1, "WC-CUT");
+
+        WorkOrder other = workOrder(99, "WO-99");
+        WorkOrderOperation booked = operation(1, cutting, 60);
+        booked.setWorkOrder(other);
+        booked.setPlannedStartDate(date(day(5, 10, 30)));
+        booked.setPlannedEndDate(date(day(5, 11, 30)));
+        when(workOrderOperationRepository.findBookedLoad(any(), any(), anyList(), anyList()))
+                .thenReturn(List.of(booked));
+
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
+        WorkOrderOperation running = operation(1, cutting, 120);
+        running.setStatus(OperationStatus.IN_PROGRESS);
+        running.setActualStartDate(date(day(5, 9, 0)));
+        operations(wo, running);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(running.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(at(running.getPlannedEndDate())).isEqualTo(day(5, 12, 0));
+        assertThat(result.getWarnings()).anyMatch(w -> w.contains("still running") && w.contains("WC-CUT"));
+    }
+
+    @Test
+    void anOperationOnHoldKeepsItsSlotAndItsSuccessorWaitsForIt() {
+        WorkCenter cutting = workCenter(1, "WC-CUT");
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.HOLD);
+        WorkOrderOperation held = operation(1, cutting, 120);
+        held.setStatus(OperationStatus.HOLD);
+        held.setPlannedStartDate(date(day(6, 9, 0)));
+        held.setPlannedEndDate(date(day(6, 11, 0)));
+        WorkOrderOperation next = operation(2, workCenter(2, "WC-WELD"), 60);
+        // Ten hours: from Monday 09:00 it would run into Tuesday morning, across the held slot.
+        WorkOrderOperation parallel = operation(1, cutting, 600);
+        next.setDependsOnOperationIds(new HashSet<>(Set.of(held.getId())));
+        operations(wo, held, parallel, next);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        verify(workOrderOperationRepository, never()).save(held);
+        assertThat(at(held.getPlannedStartDate())).isEqualTo(day(6, 9, 0));
+        assertThat(at(next.getPlannedStartDate())).isEqualTo(day(6, 11, 0));
+        // The held slot stays booked, so the long job waits until it is over.
+        assertThat(at(parallel.getPlannedStartDate())).isEqualTo(day(6, 11, 0));
+        assertThat(result.getWarnings()).anyMatch(w -> w.contains("on hold"));
+        assertThat(wo.getWorkOrderStatus()).isEqualTo(WorkOrderStatus.HOLD);
+    }
+
+    @Test
+    void anOperationOnHoldThatWasNeverPlannedIsPlannedWithTheRest() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        WorkOrderOperation held = operation(1, workCenter(1, "WC-CUT"), 60);
+        held.setStatus(OperationStatus.HOLD);
+        operations(wo, held);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(held.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getOperationSchedules().get(0).isPinned()).isFalse();
+    }
+
+    @Test
+    void backwardPlansOnlyWhatIsLeftOfAStartedOrder() {
+        WorkCenter cutting = workCenter(1, "WC-CUT");
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
+        wo.setDueDate(date(day(7, 0, 0)));
+        WorkOrderOperation done = operation(1, cutting, 60);
+        done.setStatus(OperationStatus.COMPLETED);
+        done.setActualStartDate(date(day(2, 9, 0)));
+        done.setActualEndDate(date(day(2, 10, 0)));
+        WorkOrderOperation next = operation(2, cutting, 60);
+        operations(wo, done, next);
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+
+        assertThat(result.getDirection()).isEqualTo("BACKWARD");
+        assertThat(at(next.getPlannedEndDate())).isEqualTo(day(7, 17, 0));
+        verify(workOrderOperationRepository, never()).save(done);
+    }
+
+    @Test
+    void aMaterialStateOrderCanBeScheduledAndKeepsItsStatus() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.MATERIAL_PENDING);
+        operations(wo, operation(1, workCenter(1, "WC-CUT"), 60));
+
+        service.scheduleWorkOrder(10);
+
+        assertThat(wo.getWorkOrderStatus()).isEqualTo(WorkOrderStatus.MATERIAL_PENDING);
+        assertThat(wo.getScheduledAt()).isNotNull();
+    }
+
+    @Test
+    void aFinishedOrderCannotBeScheduled() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.COMPLETED);
+        operations(wo, operation(1, workCenter(1, "WC-CUT"), 60));
+
+        assertThatThrownBy(() -> service.scheduleWorkOrder(10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("COMPLETED");
     }
 
     // ─── fixtures ─────────────────────────────────────────────────────────────
