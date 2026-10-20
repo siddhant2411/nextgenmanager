@@ -1,6 +1,6 @@
 # Production Scheduling Rebuild — Handover
 
-*Last updated 2026-10-19. Phase 3 under way: step 1 (pin started operations) built; step 2 (child before parent) next.*
+*Last updated 2026-10-20. Phase 3 under way: step 1 committed (`12520fb`, UI `ed168f7`); step 2 (sub-assembly before parent) built, not committed; step 3 (material) next.*
 
 The scheduler is being rebuilt in six phases. The old one claimed finite capacity but never
 subtracted what was already booked, so every work order saw an empty factory.
@@ -9,7 +9,7 @@ subtracted what was already booked, so every work order saw an empty factory.
 |---|---|---|
 | 1 | Finite capacity, to the minute | Done, committed `65f8fe2` |
 | 2 | Dispatch rules, forward/backward, queue/move/overlap | **Done, tested live, not committed** |
-| 3 | Material availability, child WO before parent, pin started operations, frozen window | **In progress** — step 1 built and tested live 2026-10-20, not committed |
+| 3 | Material availability, child WO before parent, pin started operations, frozen window | **In progress** — step 1 committed; step 2 built and tested live 2026-10-20, not committed |
 | 4 | Planner board: draft/publish plans, drag-drop Gantt, load heatmap, real KPIs | Planned |
 | 5 | Optimiser (Timefold) with sequence-dependent setups | Planned |
 | 6 | Auto-repair on breakdown, capable-to-promise | Planned |
@@ -154,6 +154,19 @@ node playwright/scheduling-phase2-ui.js    # 8 browser steps, screenshots in pla
 - **Tested live 2026-10-20** on `ngm_test_server` after a restart (no migration): `nextgen-regression/playwright/scheduling-phase3-pin-api.js` 11/11, and `scheduling-phase2-api.js` still 26/26, so the changed `findBookedLoad` JPQL runs. The script takes an order through release (MATERIAL_PENDING), store approval and the start of its first operation, then checks the running operation stays pinned forward, on a repeat run and backward, and that a second order queues behind it on CNC-01. It **stops before completing anything** (completion consumes stock and posts WIP vouchers that cancelling would not undo), so COMPLETED and HOLD are covered by unit tests only. Cancel returns the reserved stock; the material request record stays APPROVED, which is existing behaviour.
 - **Caveat:** if operators record quantities only at the end, `completedQuantity` stays 0 while running, so the projection assumes the whole quantity is still to make. That is conservative.
 
+### Step 2 built: sub-assembly before parent (2026-10-20, uncommitted, no migration)
+- **Which children count:** `parentWorkOrder` points at the order, it is not a split of it (`splitFromWorkOrderId`), it is not cancelled, and its output item (per active line, else its BOM's item) is one of the parent's `WorkOrderMaterial` components. Rework orders also set `parentWorkOrder` (`RejectionServiceImpl`), but they make the parent's own item, so the material match drops them along with splits.
+- **The constraint ("floor"):** the parent operation the material is issued to (`WorkOrderMaterial.workOrderOperation`), or else the first operations of the order (of the material's line, if it has one), cannot start before the child is ready = the child's last operation end + that operation's move time. A completed operation uses its actual end. A finished child (COMPLETED, CLOSED, SHORT_CLOSED) imposes nothing.
+- Floors are generic (`Floor(at, reason)` per operation, built in `floors()`), so material availability (step 3) adds to the same map.
+- **Forward:** the floor is one more "not before" on the operation; when it binds, a warning names it ("waits for sub-assembly WO-…, ready 24 Oct 2026 14:00").
+- **Backward:** the floor raises that operation's earliest allowed start above now. If it cannot fit, the order falls back to forward and the warning says "would have to start before sub-assembly WO-… is ready".
+- **Single order:** a child that was never planned gives a warning ("not scheduled yet … schedule it first") and is not waited for. The child is not scheduled automatically: scheduling one order never re-plans another.
+- **Child re-planned later than its parent needs it:** warns, naming the parent ("WO-… needs this order's output at …, but it will be ready only at …"). The parent is not moved.
+- **Schedule All:** orders are grouped by depth among the batch's sub-assemblies. Forward runs leaves first (children before parents); backward runs parents first, and each child is then planned back from when its parent needs it (its consuming operation's start, minus the child's final move), or its own due date if sooner. The dispatch rule orders work within each level. A loop in the parent links counts as depth 0.
+- New: `ProductionSchedulerService` reads `WorkOrderMaterialRepository.findByWorkOrderId` and `WorkOrderRepository.findByParentWorkOrderIdAndDeletedDateIsNullOrderByIdAsc`. The ledger carries `readyAt` (orders planned this run) and `batch`.
+- Tests: 10 new in `ProductionSchedulerServiceTest` (75 in the four scheduling classes, all green). With the floors switched off, the 5 tests that depend on them fail.
+- **Live:** `nextgen-regression/playwright/scheduling-phase3-subassembly-api.js`, on BOM 3 (Wheel Hub Assembly, FG-0002) with a child on BOM 2 (Wheel Hub Machined, SF-0001); the parent's SF-0001 material is tied to its Hub Assembly operation. Run against the **old** backend it showed the bug: Hub Assembly planned for 20 Oct 13:50 while the hub it uses was machined only by 21 Oct 00:38. After the restart (2026-10-20) it passed **13/13**: unscheduled-child warning; Hub Assembly moved to 21 Oct 09:00, after the hub was ready at 00:47; pushing the child later warns and naming the parent; Schedule All forward planned the LOW child before its URGENT parent; Schedule All backward planned the parent first and the child ready at 15:18, the minute Hub Assembly needs it. `scheduling-phase2-api.js` 26/26 and `scheduling-phase3-pin-api.js` 11/11 still pass. Do not pipe it through `head`: that kills it before its cleanup.
+
 ### What was found in the code
 
 Phase 3 is "the plan respects reality": material, multi-level work orders, work already under way, and a near-term window nobody should churn.
@@ -199,7 +212,7 @@ Open questions for the product owner:
 
 ### 5.5 Suggested order of work
 1. ~~**Pin started operations.**~~ Done (step 1 above). It removes the worst current behaviour (replanning finished work) and gives later steps a correct base.
-2. **Child before parent.** Self-contained; the data model is already there.
+2. ~~**Child before parent.**~~ Built (step 2 above).
 3. **Material availability.** Biggest, and it needs the product owner's answers in 5.1 first.
 4. **Frozen window.**
 

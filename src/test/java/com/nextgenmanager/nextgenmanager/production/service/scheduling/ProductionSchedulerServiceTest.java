@@ -1,17 +1,21 @@
 package com.nextgenmanager.nextgenmanager.production.service.scheduling;
 
 import com.nextgenmanager.nextgenmanager.assets.model.MachineDetails;
+import com.nextgenmanager.nextgenmanager.bom.model.Bom;
 import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.production.dto.ScheduleResultDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.OperationStatus;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderPriority;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.DowntimeEvent;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenterShift;
 import com.nextgenmanager.nextgenmanager.production.repository.workcenter.DowntimeEventRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderMaterialRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderOperationRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import com.nextgenmanager.nextgenmanager.production.service.audit.WorkOrderAuditService;
@@ -65,6 +69,8 @@ class ProductionSchedulerServiceTest {
     private WorkOrderRepository workOrderRepository;
     @Mock
     private WorkOrderOperationRepository workOrderOperationRepository;
+    @Mock
+    private WorkOrderMaterialRepository workOrderMaterialRepository;
     @Mock
     private DowntimeEventRepository downtimeEventRepository;
     @Mock
@@ -621,7 +627,253 @@ class ProductionSchedulerServiceTest {
                 .hasMessageContaining("COMPLETED");
     }
 
+    // ─── sub-assemblies ───────────────────────────────────────────────────────
+
+    @Test
+    void theOperationThatUsesASubAssemblyWaitsUntilItIsReady() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 60);
+        WorkOrderOperation assemble = operation(2, workCenter(2, "WC-ASM"), 60);
+        operations(parent, cut, assemble);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        WorkOrderOperation weld = operation(1, workCenter(3, "WC-WELD"), 60);
+        weld.setPlannedStartDate(date(day(6, 11, 0)));
+        weld.setPlannedEndDate(date(day(6, 12, 0)));
+        weld.getRoutingOperation().setMoveTime(BigDecimal.valueOf(30));
+        operations(child, weld);
+        materials(parent, material(parent, bracket, assemble));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        // Cutting does not need the bracket; assembly waits for it to be welded and moved.
+        assertThat(at(cut.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(at(assemble.getPlannedStartDate())).isEqualTo(day(6, 12, 30));
+        assertThat(result.getWarnings()).anyMatch(w -> w.contains("waits for sub-assembly WO-20")
+                && w.contains("6 Oct 2026 12:30"));
+    }
+
+    @Test
+    void aSubAssemblyMaterialNotTiedToAnOperationHoldsTheFirstOperation() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        WorkOrderOperation first = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, first);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        WorkOrderOperation weld = operation(1, workCenter(3, "WC-WELD"), 60);
+        weld.setPlannedStartDate(date(day(6, 11, 0)));
+        weld.setPlannedEndDate(date(day(6, 12, 0)));
+        operations(child, weld);
+        materials(parent, material(parent, bracket, null));
+
+        service.scheduleWorkOrder(10);
+
+        assertThat(at(first.getPlannedStartDate())).isEqualTo(day(6, 12, 0));
+    }
+
+    @Test
+    void aSplitOfTheOrderDoesNotHoldItUp() {
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder parent = workOrder(10, "WO-10");
+        WorkOrderOperation first = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, first);
+
+        WorkOrder split = subAssembly(20, "WO-20", parent, bracket);
+        split.setSplitFromWorkOrderId(10);
+        WorkOrderOperation splitOp = operation(1, workCenter(3, "WC-WELD"), 60);
+        splitOp.setPlannedStartDate(date(day(9, 9, 0)));
+        splitOp.setPlannedEndDate(date(day(9, 10, 0)));
+        operations(split, splitOp);
+        materials(parent, material(parent, bracket, null));
+
+        service.scheduleWorkOrder(10);
+
+        assertThat(at(first.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+    }
+
+    @Test
+    void aChildOrderMakingSomethingTheParentDoesNotUseDoesNotHoldItUp() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        WorkOrderOperation first = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, first);
+
+        // A rework order makes the parent's own item, which the parent does not consume.
+        WorkOrder rework = subAssembly(20, "WO-20", parent, item(900, "FG-VALVE"));
+        WorkOrderOperation reworkOp = operation(1, workCenter(3, "WC-WELD"), 60);
+        reworkOp.setPlannedStartDate(date(day(9, 9, 0)));
+        reworkOp.setPlannedEndDate(date(day(9, 10, 0)));
+        operations(rework, reworkOp);
+        materials(parent, material(parent, item(500, "SA-BRACKET"), null));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(first.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getWarnings()).noneMatch(w -> w.contains("WO-20"));
+    }
+
+    @Test
+    void anUnscheduledSubAssemblyIsReportedAndNotWaitedFor() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        WorkOrderOperation first = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, first);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        operations(child, operation(1, workCenter(3, "WC-WELD"), 60));
+        materials(parent, material(parent, bracket, null));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(first.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getWarnings()).anyMatch(w -> w.contains("WO-20 is not scheduled yet"));
+    }
+
+    @Test
+    void aFinishedSubAssemblyIsAlreadyInStock() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        WorkOrderOperation first = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, first);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        child.setWorkOrderStatus(WorkOrderStatus.COMPLETED);
+        operations(child, operation(1, workCenter(3, "WC-WELD"), 60));
+        materials(parent, material(parent, bracket, null));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(first.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    void backwardThatWouldStartBeforeTheSubAssemblyIsReadyFallsBackToForward() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        parent.setDueDate(date(day(7, 0, 0)));
+        WorkOrderOperation assemble = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, assemble);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        WorkOrderOperation weld = operation(1, workCenter(3, "WC-WELD"), 60);
+        weld.setPlannedStartDate(date(day(7, 15, 30)));
+        weld.setPlannedEndDate(date(day(7, 16, 30)));
+        operations(child, weld);
+        materials(parent, material(parent, bracket, assemble));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+
+        assertThat(result.getDirection()).isEqualTo("FORWARD");
+        assertThat(result.getWarnings()).anyMatch(w -> w.contains("before sub-assembly WO-20 is ready"));
+        assertThat(at(assemble.getPlannedStartDate())).isEqualTo(day(7, 16, 30));
+    }
+
+    @Test
+    void reschedulingASubAssemblyPastWhenItsParentNeedsItIsReported() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        parent.setWorkOrderStatus(WorkOrderStatus.SCHEDULED);
+        WorkOrderOperation assemble = operation(1, workCenter(1, "WC-ASM"), 60);
+        assemble.setPlannedStartDate(date(day(5, 10, 0)));
+        assemble.setPlannedEndDate(date(day(5, 11, 0)));
+        operations(parent, assemble);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        WorkOrderOperation weld = operation(1, workCenter(3, "WC-WELD"), 480);
+        operations(child, weld);
+        materials(parent, material(parent, bracket, assemble));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(20);
+
+        assertThat(result.getWarnings()).anyMatch(w -> w.startsWith("WO-10 needs this order's output at 5 Oct 2026 10:00")
+                && w.contains("ready only at 5 Oct 2026 17:00"));
+    }
+
+    @Test
+    void scheduleAllPlansASubAssemblyBeforeTheOrderThatUsesItWhateverItsPriority() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        parent.setPriority(WorkOrderPriority.URGENT);
+        WorkOrderOperation assemble = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, assemble);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        child.setPriority(WorkOrderPriority.LOW);
+        child.setWorkOrderStatus(WorkOrderStatus.CREATED);
+        WorkOrderOperation weld = operation(1, workCenter(3, "WC-WELD"), 120);
+        operations(child, weld);
+        materials(parent, material(parent, bracket, null));
+        when(workOrderRepository.findByWorkOrderStatus(WorkOrderStatus.CREATED)).thenReturn(List.of(parent, child));
+
+        List<ScheduleResultDTO> results = service.scheduleAll(DispatchRule.PRIORITY, ScheduleDirection.FORWARD);
+
+        assertThat(results).extracting(ScheduleResultDTO::getWorkOrderNumber).containsExactly("WO-20", "WO-10");
+        assertThat(at(weld.getPlannedEndDate())).isEqualTo(day(5, 11, 0));
+        assertThat(at(assemble.getPlannedStartDate())).isEqualTo(day(5, 11, 0));
+    }
+
+    @Test
+    void scheduleAllBackwardMakesTheSubAssemblyDueWhenItsParentNeedsIt() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        parent.setDueDate(date(day(7, 0, 0)));
+        WorkOrderOperation assemble = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, assemble);
+
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        child.setWorkOrderStatus(WorkOrderStatus.CREATED);
+        WorkOrderOperation weld = operation(1, workCenter(3, "WC-WELD"), 120);
+        weld.getRoutingOperation().setMoveTime(BigDecimal.valueOf(30));
+        operations(child, weld);
+        materials(parent, material(parent, bracket, null));
+        when(workOrderRepository.findByWorkOrderStatus(WorkOrderStatus.CREATED)).thenReturn(List.of(child, parent));
+
+        List<ScheduleResultDTO> results = service.scheduleAll(DispatchRule.PRIORITY, ScheduleDirection.BACKWARD);
+
+        assertThat(results).extracting(ScheduleResultDTO::getWorkOrderNumber).containsExactly("WO-10", "WO-20");
+        assertThat(results).extracting(ScheduleResultDTO::getDirection).containsOnly("BACKWARD");
+        // Assembly 16:00-17:00 on the due day; the bracket must be welded and moved by 16:00.
+        assertThat(at(assemble.getPlannedStartDate())).isEqualTo(day(7, 16, 0));
+        assertThat(at(weld.getPlannedEndDate())).isEqualTo(day(7, 15, 30));
+        assertThat(results.get(1).getWarnings()).anyMatch(w -> w.contains("when WO-10 needs it"));
+    }
+
     // ─── fixtures ─────────────────────────────────────────────────────────────
+
+    private InventoryItem item(int id, String code) {
+        InventoryItem item = new InventoryItem();
+        item.setInventoryItemId(id);
+        item.setItemCode(code);
+        return item;
+    }
+
+    /** A child order of {@code parent}, making {@code makes}, planned but not started. */
+    private WorkOrder subAssembly(int id, String number, WorkOrder parent, InventoryItem makes) {
+        WorkOrder child = workOrder(id, number);
+        child.setWorkOrderStatus(WorkOrderStatus.SCHEDULED);
+        child.setParentWorkOrder(parent);
+        Bom bom = new Bom();
+        bom.setParentInventoryItem(makes);
+        child.setBom(bom);
+        List<WorkOrder> siblings = new ArrayList<>(workOrderRepository.findByParentWorkOrderIdAndDeletedDateIsNullOrderByIdAsc(parent.getId()));
+        siblings.add(child);
+        when(workOrderRepository.findByParentWorkOrderIdAndDeletedDateIsNullOrderByIdAsc(parent.getId())).thenReturn(siblings);
+        return child;
+    }
+
+    private WorkOrderMaterial material(WorkOrder workOrder, InventoryItem component, WorkOrderOperation usedAt) {
+        WorkOrderMaterial material = new WorkOrderMaterial();
+        material.setWorkOrder(workOrder);
+        material.setComponent(component);
+        material.setWorkOrderOperation(usedAt);
+        return material;
+    }
+
+    private void materials(WorkOrder workOrder, WorkOrderMaterial... materials) {
+        when(workOrderMaterialRepository.findByWorkOrderId(workOrder.getId())).thenReturn(Arrays.asList(materials));
+    }
 
     private WorkOrder workOrder(int id, String number) {
         WorkOrder wo = new WorkOrder();

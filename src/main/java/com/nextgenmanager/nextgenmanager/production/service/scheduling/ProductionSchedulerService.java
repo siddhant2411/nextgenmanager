@@ -8,10 +8,13 @@ import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderPriority;
 import com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus;
 import com.nextgenmanager.nextgenmanager.production.model.ScheduleDecisionLog;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
+import com.nextgenmanager.nextgenmanager.production.model.WorkOrderMaterial;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderOperation;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.DowntimeEvent;
 import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import com.nextgenmanager.nextgenmanager.production.repository.workcenter.DowntimeEventRepository;
+import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderMaterialRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderOperationRepository;
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import com.nextgenmanager.nextgenmanager.production.service.audit.WorkOrderAuditService;
@@ -37,6 +40,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -82,6 +86,12 @@ public class ProductionSchedulerService {
     private static final List<OperationStatus> FINISHED_OPERATIONS =
             List.of(OperationStatus.COMPLETED, OperationStatus.CANCELLED);
 
+    /** Operations already under way or done: they no longer wait for anything. */
+    private static final Set<OperationStatus> STARTED_OPERATIONS =
+            EnumSet.of(OperationStatus.IN_PROGRESS, OperationStatus.COMPLETED);
+
+    private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("d MMM yyyy HH:mm", Locale.ENGLISH);
+
     private static final List<WorkOrderStatus> FINISHED_WORK_ORDERS = List.of(
             WorkOrderStatus.COMPLETED, WorkOrderStatus.CLOSED,
             WorkOrderStatus.CANCELLED, WorkOrderStatus.SHORT_CLOSED);
@@ -101,6 +111,9 @@ public class ProductionSchedulerService {
 
     @Autowired
     private WorkOrderOperationRepository workOrderOperationRepository;
+
+    @Autowired
+    private WorkOrderMaterialRepository workOrderMaterialRepository;
 
     @Autowired
     private DowntimeEventRepository downtimeEventRepository;
@@ -147,7 +160,7 @@ public class ProductionSchedulerService {
 
         LocalDateTime now = now();
         Ledger ledger = loadLedger(now, Set.of(workOrder.getId()));
-        return doSchedule(workOrder, loadOperations(workOrder), overrideStartDate, direction, ledger, now);
+        return doSchedule(workOrder, loadOperations(workOrder), overrideStartDate, direction, null, ledger, now);
     }
 
     // ──────────────────────────────── scheduleAll ────────────────────────────────
@@ -162,6 +175,11 @@ public class ProductionSchedulerService {
      * Batch-schedule all CREATED Work Orders, sequenced by {@code rule} so the orders that
      * matter most under it get first claim on capacity. One that fails is reported and leaves
      * nothing booked; the rest carry on.
+     *
+     * <p>Sub-assemblies in the batch come in levels. Forward, a sub-assembly is planned before
+     * the order that uses it, so that order can wait for it. Backward, the order that uses it is
+     * planned first, and the sub-assembly is then due when it is needed. The rule sequences the
+     * orders within each level.
      */
     @Transactional
     public List<ScheduleResultDTO> scheduleAll(DispatchRule rule, ScheduleDirection direction) {
@@ -173,18 +191,46 @@ public class ProductionSchedulerService {
         Ledger ledger = loadLedger(now, workOrders.stream().map(WorkOrder::getId).collect(Collectors.toSet()));
 
         Map<Integer, List<WorkOrderOperation>> operationsByOrder = new HashMap<>();
-        List<DispatchSequencer.Job<WorkOrder>> jobs = new ArrayList<>();
+        Map<Integer, DispatchSequencer.Job<WorkOrder>> jobs = new HashMap<>();
         for (WorkOrder wo : workOrders) {
             List<WorkOrderOperation> operations = loadOperations(wo);
             operationsByOrder.put(wo.getId(), operations);
-            jobs.add(dispatchJob(wo, operations, ledger, now));
+            jobs.put(wo.getId(), dispatchJob(wo, operations, ledger, now));
         }
 
+        Map<Integer, List<SubAssembly>> subAssembliesInBatch = new HashMap<>();
+        for (WorkOrder wo : workOrders) {
+            subAssembliesInBatch.put(wo.getId(), subAssemblies(wo).stream()
+                    .filter(sub -> jobs.containsKey(sub.child().getId())).toList());
+        }
+        Map<Integer, Integer> levels = new HashMap<>();
+        for (WorkOrder wo : workOrders) level(wo.getId(), subAssembliesInBatch, levels, new HashSet<>());
+        TreeMap<Integer, List<DispatchSequencer.Job<WorkOrder>>> byLevel = new TreeMap<>(
+                direction == ScheduleDirection.BACKWARD ? Comparator.<Integer>reverseOrder() : Comparator.<Integer>naturalOrder());
+        for (WorkOrder wo : workOrders) {
+            byLevel.computeIfAbsent(levels.get(wo.getId()), k -> new ArrayList<>()).add(jobs.get(wo.getId()));
+        }
+        List<DispatchSequencer.Job<WorkOrder>> sequence = new ArrayList<>();
+        byLevel.values().forEach(level -> sequence.addAll(DispatchSequencer.sequence(level, rule)));
+
+        // Backward: when the orders already planned need each sub-assembly's output.
+        Map<Integer, LocalDateTime> neededBy = new HashMap<>();
+
         List<ScheduleResultDTO> results = new ArrayList<>();
-        for (DispatchSequencer.Job<WorkOrder> job : DispatchSequencer.sequence(jobs, rule)) {
+        for (DispatchSequencer.Job<WorkOrder> job : sequence) {
             WorkOrder wo = job.ref();
             try {
-                results.add(doSchedule(wo, operationsByOrder.get(wo.getId()), null, direction, ledger, now));
+                List<WorkOrderOperation> operations = operationsByOrder.get(wo.getId());
+                LocalDateTime readyBy = neededBy.get(wo.getId());
+                LocalDateTime dueOverride = readyBy == null ? null
+                        : readyBy.minusMinutes(finalMoveMinutes(operations));
+                results.add(doSchedule(wo, operations, null, direction, dueOverride, ledger, now));
+                if (direction == ScheduleDirection.BACKWARD) {
+                    for (SubAssembly sub : subAssembliesInBatch.get(wo.getId())) {
+                        LocalDateTime needed = neededAt(sub, operations);
+                        if (needed != null) neededBy.merge(sub.child().getId(), needed, ProductionSchedulerService::earlier);
+                    }
+                }
             } catch (Exception e) {
                 logger.error("Failed to schedule WorkOrder {}: {}", wo.getWorkOrderNumber(), e.getMessage());
                 ScheduleResultDTO errorResult = new ScheduleResultDTO();
@@ -230,9 +276,14 @@ public class ProductionSchedulerService {
                 .toList();
     }
 
+    /**
+     * @param dueOverride when, in a batch, the order that uses this one's output needs it; the
+     *                    order is then planned back from that or its own due date, whichever is
+     *                    sooner
+     */
     private ScheduleResultDTO doSchedule(WorkOrder workOrder, List<WorkOrderOperation> operations,
                                          Date overrideStartDate, ScheduleDirection direction,
-                                         Ledger ledger, LocalDateTime now) {
+                                         LocalDateTime dueOverride, Ledger ledger, LocalDateTime now) {
 
         if (operations.isEmpty()) {
             throw new IllegalStateException("WorkOrder has no operations to schedule");
@@ -248,9 +299,15 @@ public class ProductionSchedulerService {
         Map<String, ResourceTimeline> draft = null;
         List<Placement> placements = null;
         ScheduleDirection used = ScheduleDirection.FORWARD;
+        Map<Long, Floor> floors = floors(workOrder, operations, predecessors, ledger, warnings);
 
         if (direction == ScheduleDirection.BACKWARD) {
             LocalDateTime due = dueBy(workOrder);
+            if (dueOverride != null && (due == null || dueOverride.isBefore(due))) {
+                due = dueOverride;
+                warnings.add("Planned to be ready by " + fmt(dueOverride.plusMinutes(finalMoveMinutes(operations)))
+                        + ", when " + workOrder.getParentWorkOrder().getWorkOrderNumber() + " needs it.");
+            }
             if (due == null) {
                 warnings.add("There is no due date to schedule back from, so the order was scheduled forward.");
             } else {
@@ -258,7 +315,7 @@ public class ProductionSchedulerService {
                 Map<String, ResourceTimeline> attemptDraft = new HashMap<>();
                 try {
                     Map<Long, Placement> pinned = pin(workOrder, operations, ledger, attemptDraft, attemptWarnings);
-                    placements = planBackward(workOrder, order, predecessors, pinned, due, now, ledger,
+                    placements = planBackward(workOrder, order, predecessors, pinned, floors, due, now, ledger,
                             attemptDraft, attemptWarnings);
                     draft = attemptDraft;
                     warnings.addAll(attemptWarnings);
@@ -273,9 +330,15 @@ public class ProductionSchedulerService {
             draft = new HashMap<>();
             Map<Long, Placement> pinned = pin(workOrder, operations, ledger, draft, warnings);
             LocalDateTime startFrom = requestedStart(workOrder, overrideStartDate, now);
-            placements = planForward(workOrder, order, predecessors, pinned, startFrom, ledger, draft, warnings);
+            placements = planForward(workOrder, order, predecessors, pinned, floors, startFrom, ledger, draft, warnings);
         }
         ledger.timelines.putAll(draft);
+
+        LocalDateTime ready = placements.stream()
+                .map(p -> p.slot().end().plusMinutes(moveMinutes(p.operation())))
+                .max(Comparator.naturalOrder()).orElseThrow();
+        ledger.readyAt.put(workOrder.getId(), ready);
+        checkParentNeeds(workOrder, ready, ledger, warnings);
 
         // ── Clean up previous schedule data (reschedule support) ──
         entityManager.createQuery(
@@ -427,7 +490,7 @@ public class ProductionSchedulerService {
      */
     private List<Placement> planForward(WorkOrder workOrder, List<WorkOrderOperation> order,
                                         Map<Long, Set<Long>> predecessors, Map<Long, Placement> pinned,
-                                        LocalDateTime startFrom, Ledger ledger,
+                                        Map<Long, Floor> floors, LocalDateTime startFrom, Ledger ledger,
                                         Map<String, ResourceTimeline> draft, List<String> warnings) {
         Map<Long, Placement> placed = new HashMap<>();
         List<Placement> placements = new ArrayList<>();
@@ -459,6 +522,13 @@ public class ProductionSchedulerService {
                 }
             }
 
+            Floor floor = floors.get(op.getId());
+            if (floor != null && floor.at().isAfter(earliest)) {
+                earliest = floor.at();
+                warnings.add("Operation " + op.getSequence() + " (" + op.getOperationName() + ") waits for "
+                        + floor.reason() + ", ready " + fmt(floor.at()) + ".");
+            }
+
             Placement placement = placeForward(workOrder, op, station, earliest, finishNoSoonerThan,
                     ledger, draft, warnings);
             placements.add(placement);
@@ -473,7 +543,7 @@ public class ProductionSchedulerService {
      */
     private List<Placement> planBackward(WorkOrder workOrder, List<WorkOrderOperation> order,
                                          Map<Long, Set<Long>> predecessors, Map<Long, Placement> pinned,
-                                         LocalDateTime due, LocalDateTime floor, Ledger ledger,
+                                         Map<Long, Floor> floors, LocalDateTime due, LocalDateTime floor, Ledger ledger,
                                          Map<String, ResourceTimeline> draft, List<String> warnings) {
         Map<Long, List<Long>> successors = new HashMap<>();
         predecessors.forEach((opId, preds) ->
@@ -515,8 +585,13 @@ public class ProductionSchedulerService {
                 latestEnd = earlier(latestEnd, lastArriveBy.minusMinutes(moveMinutes(op)));
             }
 
-            Placement placement = placeBackward(workOrder, op, station, latestEnd, handOverBy, floor,
-                    ledger, draft, warnings);
+            // Nothing may start before now, nor before what the operation waits for is there.
+            Floor waitsFor = floors.get(op.getId());
+            Placement placement = waitsFor != null && waitsFor.at().isAfter(floor)
+                    ? placeBackward(workOrder, op, station, latestEnd, handOverBy, waitsFor.at(),
+                            waitsFor.reason() + " is ready", ledger, draft, warnings)
+                    : placeBackward(workOrder, op, station, latestEnd, handOverBy, floor, "now",
+                            ledger, draft, warnings);
             placements.add(placement);
             placed.put(op.getId(), placement);
         }
@@ -662,7 +737,8 @@ public class ProductionSchedulerService {
      */
     private Placement placeBackward(WorkOrder workOrder, WorkOrderOperation op, Station station,
                                     LocalDateTime latestEnd, LocalDateTime handOverBy, LocalDateTime floor,
-                                    Ledger ledger, Map<String, ResourceTimeline> draft, List<String> warnings) {
+                                    String floorReason, Ledger ledger, Map<String, ResourceTimeline> draft,
+                                    List<String> warnings) {
         BigDecimal minutes = durationMinutes(workOrder, op);
         long wholeMinutes = minutes.setScale(0, RoundingMode.CEILING).longValue();
 
@@ -687,7 +763,7 @@ public class ProductionSchedulerService {
             }
         }
         if (bestSlot == null) {
-            throw new BackwardInfeasible("operation " + op.getSequence() + " would have to start before now");
+            throw new BackwardInfeasible("operation " + op.getSequence() + " would have to start before " + floorReason);
         }
         return book(workOrder, op, station, bestMachine, bestSlot, minutes, ledger, draft);
     }
@@ -698,6 +774,198 @@ public class ProductionSchedulerService {
                 .block(slot.start(), slot.end());
         return new Placement(op, station.workCenter(), machine, station.calendar(), slot, minutes,
                 handOverAt(workOrder, op, station.calendar(), slot), null);
+    }
+
+    // ──────────────────────────────── waiting for inputs ────────────────────────────────
+
+    /** An operation may not start before {@code at}, because it waits for {@code reason}. */
+    private record Floor(LocalDateTime at, String reason) {
+    }
+
+    /** An order making a part its parent uses, and the parent's materials it supplies. */
+    private record SubAssembly(WorkOrder child, List<WorkOrderMaterial> consumedBy) {
+    }
+
+    /**
+     * When each operation can start at the earliest, because of what it waits for: here, the
+     * sub-assemblies this order uses. Operations with nothing to wait for are left out.
+     */
+    private Map<Long, Floor> floors(WorkOrder workOrder, List<WorkOrderOperation> operations,
+                                    Map<Long, Set<Long>> predecessors, Ledger ledger, List<String> warnings) {
+        Map<Long, Floor> floors = new HashMap<>();
+        for (SubAssembly sub : subAssemblies(workOrder)) {
+            WorkOrder child = sub.child();
+            // Whatever a finished sub-assembly made is already in stock.
+            if (FINISHED_WORK_ORDERS.contains(child.getWorkOrderStatus())) continue;
+
+            LocalDateTime ready = readyAt(child, ledger);
+            if (ready == null) {
+                warnings.add("Sub-assembly " + child.getWorkOrderNumber() + " is not scheduled yet, so this order "
+                        + "was planned without waiting for it. Schedule " + child.getWorkOrderNumber() + " first.");
+                continue;
+            }
+            Floor floor = new Floor(ready, "sub-assembly " + child.getWorkOrderNumber());
+            for (WorkOrderMaterial material : sub.consumedBy()) {
+                for (Long opId : consumers(material, operations, predecessors)) {
+                    floors.merge(opId, floor, (a, b) -> b.at().isAfter(a.at()) ? b : a);
+                }
+            }
+        }
+        return floors;
+    }
+
+    /**
+     * The orders raised to make a part this order uses. A split and a rework order also point
+     * at the order they came from, but make nothing it consumes, so matching on the parent's
+     * materials leaves them out.
+     */
+    private List<SubAssembly> subAssemblies(WorkOrder parent) {
+        List<WorkOrder> children = workOrderRepository.findByParentWorkOrderIdAndDeletedDateIsNullOrderByIdAsc(parent.getId());
+        if (children.isEmpty()) return List.of();
+
+        List<WorkOrderMaterial> materials = workOrderMaterialRepository.findByWorkOrderId(parent.getId()).stream()
+                .filter(m -> m.getDeletedDate() == null && m.getComponent() != null)
+                .toList();
+        List<SubAssembly> subAssemblies = new ArrayList<>();
+        for (WorkOrder child : children) {
+            if (child.getWorkOrderStatus() == WorkOrderStatus.CANCELLED) continue;
+            if (Integer.valueOf(parent.getId()).equals(child.getSplitFromWorkOrderId())) continue;
+            Set<Integer> outputs = outputItemIds(child);
+            List<WorkOrderMaterial> used = materials.stream()
+                    .filter(m -> outputs.contains(m.getComponent().getInventoryItemId()))
+                    .toList();
+            if (!used.isEmpty()) subAssemblies.add(new SubAssembly(child, used));
+        }
+        return subAssemblies;
+    }
+
+    /** The items an order makes: one per line, or its BOM's item when it has no lines. */
+    private static Set<Integer> outputItemIds(WorkOrder workOrder) {
+        Set<Integer> ids = new HashSet<>();
+        for (WorkOrderLine line : workOrder.activeLines()) {
+            if (line.getInventoryItem() != null) ids.add(line.getInventoryItem().getInventoryItemId());
+            else if (line.getBom() != null && line.getBom().getParentInventoryItem() != null) {
+                ids.add(line.getBom().getParentInventoryItem().getInventoryItemId());
+            }
+        }
+        if (ids.isEmpty() && workOrder.getBom() != null && workOrder.getBom().getParentInventoryItem() != null) {
+            ids.add(workOrder.getBom().getParentInventoryItem().getInventoryItemId());
+        }
+        return ids;
+    }
+
+    /**
+     * The operations that use a material: the one it is issued to, or else the first
+     * operations of the order — of its line, when the material belongs to one.
+     */
+    private static List<Long> consumers(WorkOrderMaterial material, List<WorkOrderOperation> operations,
+                                        Map<Long, Set<Long>> predecessors) {
+        WorkOrderOperation at = material.getWorkOrderOperation();
+        if (at != null && operations.stream().anyMatch(op -> op.getId().equals(at.getId()))) {
+            return List.of(at.getId());
+        }
+        Long lineId = material.getWorkOrderLine() != null ? material.getWorkOrderLine().getId() : null;
+        return operations.stream()
+                .filter(op -> predecessors.get(op.getId()).isEmpty())
+                .filter(op -> lineId == null || op.getWorkOrderLine() == null || lineId.equals(op.getWorkOrderLine().getId()))
+                .map(WorkOrderOperation::getId)
+                .toList();
+    }
+
+    /**
+     * When an order's output is ready to move on: its last operation's end plus that
+     * operation's move time. Taken from this run when the order was planned in it, otherwise
+     * from its saved plan. Null when it has never been planned.
+     */
+    private LocalDateTime readyAt(WorkOrder workOrder, Ledger ledger) {
+        LocalDateTime planned = ledger.readyAt.get(workOrder.getId());
+        if (planned != null) return planned;
+
+        List<WorkOrderOperation> operations = loadOperations(workOrder);
+        if (operations.isEmpty()) {
+            return workOrder.getPlannedEndDate() != null ? toLocal(workOrder.getPlannedEndDate()) : null;
+        }
+        LocalDateTime ready = null;
+        for (WorkOrderOperation op : operations) {
+            boolean done = op.getStatus() == OperationStatus.COMPLETED;
+            Date end = done && op.getActualEndDate() != null ? op.getActualEndDate() : op.getPlannedEndDate();
+            if (end == null) {
+                if (done) continue;
+                return null;
+            }
+            LocalDateTime arrives = toLocal(end).plusMinutes(moveMinutes(op));
+            ready = ready == null ? arrives : later(ready, arrives);
+        }
+        // Every operation done, none of them dated: the output is there now.
+        return ready != null ? ready : ledger.now;
+    }
+
+    /**
+     * When the parent first needs a sub-assembly: the earliest planned start among the
+     * operations that use it and have not started yet.
+     */
+    private LocalDateTime neededAt(SubAssembly sub, List<WorkOrderOperation> parentOperations) {
+        Map<Long, Set<Long>> predecessors = predecessors(parentOperations);
+        Map<Long, WorkOrderOperation> byId = parentOperations.stream()
+                .collect(Collectors.toMap(WorkOrderOperation::getId, op -> op));
+        LocalDateTime needed = null;
+        for (WorkOrderMaterial material : sub.consumedBy()) {
+            for (Long opId : consumers(material, parentOperations, predecessors)) {
+                WorkOrderOperation op = byId.get(opId);
+                if (op.getPlannedStartDate() == null || STARTED_OPERATIONS.contains(op.getStatus())) continue;
+                LocalDateTime start = toLocal(op.getPlannedStartDate());
+                needed = needed == null ? start : earlier(needed, start);
+            }
+        }
+        return needed;
+    }
+
+    /**
+     * Warns when this order, as now planned, makes its output later than the order it is a
+     * sub-assembly of plans to use it. A parent planned later in the same run waits for it by
+     * itself, so it is not checked.
+     */
+    private void checkParentNeeds(WorkOrder child, LocalDateTime ready, Ledger ledger, List<String> warnings) {
+        WorkOrder parent = child.getParentWorkOrder();
+        if (parent == null || parent.getDeletedDate() != null
+                || FINISHED_WORK_ORDERS.contains(parent.getWorkOrderStatus())) return;
+        if (ledger.batch.contains(parent.getId()) && !ledger.readyAt.containsKey(parent.getId())) return;
+
+        for (SubAssembly sub : subAssemblies(parent)) {
+            if (sub.child().getId() != child.getId()) continue;
+            LocalDateTime needed = neededAt(sub, loadOperations(parent));
+            if (needed != null && ready.isAfter(needed)) {
+                warnings.add(parent.getWorkOrderNumber() + " needs this order's output at " + fmt(needed)
+                        + ", but it will be ready only at " + fmt(ready) + ". Reschedule "
+                        + parent.getWorkOrderNumber() + " so it waits for it.");
+            }
+        }
+    }
+
+    /** The longest move time after an operation nothing else follows: the last leg to the parent. */
+    private long finalMoveMinutes(List<WorkOrderOperation> operations) {
+        Set<Long> followed = new HashSet<>();
+        predecessors(operations).values().forEach(followed::addAll);
+        return operations.stream().filter(op -> !followed.contains(op.getId()))
+                .mapToLong(ProductionSchedulerService::moveMinutes).max().orElse(0);
+    }
+
+    /**
+     * How deep an order sits among the batch's sub-assemblies: 0 when it uses none of them,
+     * otherwise one more than the deepest it uses. A loop in the parent links counts as 0.
+     */
+    private static int level(int workOrderId, Map<Integer, List<SubAssembly>> subAssemblies,
+                             Map<Integer, Integer> levels, Set<Integer> visiting) {
+        Integer known = levels.get(workOrderId);
+        if (known != null) return known;
+        if (!visiting.add(workOrderId)) return 0;
+        int level = 0;
+        for (SubAssembly sub : subAssemblies.getOrDefault(workOrderId, List.of())) {
+            level = Math.max(level, 1 + level(sub.child().getId(), subAssemblies, levels, visiting));
+        }
+        visiting.remove(workOrderId);
+        levels.put(workOrderId, level);
+        return level;
     }
 
     // ──────────────────────────────── work already under way ────────────────────────────────
@@ -934,6 +1202,10 @@ public class ProductionSchedulerService {
     private static class Ledger {
         final Map<String, ResourceTimeline> timelines = new HashMap<>();
         final Map<Integer, WorkCalendar> calendars = new HashMap<>();
+        /** When each order planned in this run has its output ready to move on. */
+        final Map<Integer, LocalDateTime> readyAt = new HashMap<>();
+        /** The orders this run plans. */
+        final Set<Integer> batch = new HashSet<>();
         final LocalDateTime now;
 
         Ledger(LocalDateTime now) {
@@ -952,6 +1224,7 @@ public class ProductionSchedulerService {
      */
     private Ledger loadLedger(LocalDateTime now, Set<Integer> workOrdersBeingScheduled) {
         Ledger ledger = new Ledger(now);
+        ledger.batch.addAll(workOrdersBeingScheduled);
         List<WorkOrderOperation> booked = workOrderOperationRepository.findBookedLoad(
                 toDate(now), OperationStatus.IN_PROGRESS, FINISHED_OPERATIONS, FINISHED_WORK_ORDERS);
 
@@ -1070,6 +1343,11 @@ public class ProductionSchedulerService {
         LocalDateTime now = LocalDateTime.now(clock);
         LocalDateTime truncated = now.truncatedTo(ChronoUnit.MINUTES);
         return truncated.equals(now) ? now : truncated.plusMinutes(1);
+    }
+
+    /** A moment as the planner reads it, e.g. "24 Oct 2026 14:00". */
+    private static String fmt(LocalDateTime dateTime) {
+        return dateTime.format(WHEN);
     }
 
     private static LocalDateTime later(LocalDateTime a, LocalDateTime b) {
