@@ -45,6 +45,12 @@ public class RoutingOperationDto {
     private BigDecimal setupTime;
     private BigDecimal runTime;
 
+    /** Scheduling: minimum wait before the operation, and transit after it (minutes). */
+    private BigDecimal queueTime;
+    private BigDecimal moveTime;
+    /** Scheduling: batch size passed on to the next operation; null = the whole lot at once. */
+    private BigDecimal transferQuantity;
+
     private Boolean inspection;
     private String notes;
     private String instructions;

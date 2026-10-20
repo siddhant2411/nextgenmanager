@@ -3,7 +3,10 @@ package com.nextgenmanager.nextgenmanager.production.service.scheduling.engine;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -95,6 +98,71 @@ public class ResourceTimeline {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * The latest slot that ends at or before {@code latest} and starts no earlier than
+     * {@code floor}, giving the job {@code minutes} of productive time — the backward-scheduling
+     * mirror of {@link #findSlot}. Empty when the job cannot fit between the two.
+     */
+    public Optional<Slot> findLatestSlot(WorkCalendar calendar, LocalDateTime latest, long minutes, LocalDateTime floor) {
+        LocalDateTime cursor = latest;
+        LocalDate firstDay = floor.toLocalDate().minusDays(1);
+
+        LocalDateTime end = null;
+        LocalDateTime workedFrom = null;
+        double remaining = minutes;
+
+        for (LocalDate day = latest.toLocalDate(); !day.isBefore(firstDay); day = day.minusDays(1)) {
+            List<TimeWindow> windows = new ArrayList<>(calendar.windowsOn(day));
+            Collections.reverse(windows);
+            for (TimeWindow window : windows) {
+                LocalDateTime t = window.end().isBefore(cursor) ? window.end() : cursor;
+
+                while (t.isAfter(window.start())) {
+                    // Anything still to find from here would start before the floor.
+                    if (!t.isAfter(floor)) return Optional.empty();
+                    Map.Entry<LocalDateTime, LocalDateTime> prior = blocked.lowerEntry(t);
+                    boolean busyJustBefore = prior != null && !prior.getValue().isBefore(t);
+                    // While paused between windows the job still holds the resource.
+                    boolean interrupted = end != null && !busyJustBefore && heldDuring(t, workedFrom);
+                    if (busyJustBefore || interrupted) {
+                        end = null;
+                        remaining = minutes;
+                        if (busyJustBefore) {
+                            t = prior.getKey();
+                            continue;
+                        }
+                    }
+                    if (end == null) end = t;
+
+                    LocalDateTime segmentStart = prior != null && prior.getValue().isAfter(window.start())
+                            ? prior.getValue() : window.start();
+
+                    double capacity = ChronoUnit.MINUTES.between(segmentStart, t) * window.rate();
+                    if (capacity + EPSILON >= remaining) {
+                        long wallMinutes = (long) Math.ceil(remaining / window.rate() - EPSILON);
+                        LocalDateTime start = t.minusMinutes(wallMinutes);
+                        return start.isBefore(floor) ? Optional.empty() : Optional.of(new Slot(start, end));
+                    }
+                    remaining -= capacity;
+                    t = segmentStart;
+                    workedFrom = t;
+                }
+                if (t.isBefore(cursor)) cursor = t;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** True when anything is booked inside [from, until). */
+    public boolean isBusyDuring(LocalDateTime from, LocalDateTime until) {
+        return until.isAfter(from) && heldDuring(from, until);
+    }
+
+    private boolean heldDuring(LocalDateTime from, LocalDateTime until) {
+        Map.Entry<LocalDateTime, LocalDateTime> entry = blocked.lowerEntry(until);
+        return entry != null && entry.getValue().isAfter(from);
     }
 
     private LocalDateTime blockedUntil(LocalDateTime t) {

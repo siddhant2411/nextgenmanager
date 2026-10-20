@@ -44,6 +44,7 @@ class PostingServiceImplTest {
     @Mock private FinancialYearService fyService;
     @Mock private VoucherNumberGenerator numberGenerator;
     @Mock private ApprovalEngine approvalEngine;
+    @Mock private com.nextgenmanager.nextgenmanager.common.audit.service.AuditTrailService auditTrail;
 
     @InjectMocks private PostingServiceImpl service;
 
@@ -117,5 +118,83 @@ class PostingServiceImplTest {
 
         assertThat(result.getStatus()).isEqualTo(VoucherStatus.PENDING_APPROVAL);
         verify(approvalEngine).submit(eq("MANUAL_VOUCHER"), any(), anyMap(), eq("accountant"));
+    }
+
+    @Test
+    void postingAVoucherIsRecordedInTheAuditTrail_withItsLinesAndWhoPostedIt() {
+        primePostingInfra();
+        when(approvalEngine.evaluate(eq("MANUAL_VOUCHER"), anyMap())).thenReturn(List.of());
+
+        service.post(balancedDraft(), "accountant");
+
+        org.mockito.ArgumentCaptor<com.nextgenmanager.nextgenmanager.common.audit.AuditEvent> event =
+                org.mockito.ArgumentCaptor.forClass(com.nextgenmanager.nextgenmanager.common.audit.AuditEvent.class);
+        verify(auditTrail).record(event.capture());
+        var e = event.getValue();
+        assertThat(e.getAction()).isEqualTo("POST");
+        assertThat(e.getEntityType()).isEqualTo("VOUCHER");
+        assertThat(e.getLabel()).isEqualTo("JNL/2526/0001");
+        assertThat(e.getUsername()).isEqualTo("accountant");
+        assertThat(e.getSummary()).isEqualTo("Posted · 100.00");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> details = (java.util.Map<String, Object>) e.getDetails();
+        assertThat(details).containsEntry("type", "JOURNAL").containsEntry("date", "2025-06-01");
+        assertThat((List<?>) details.get("lines")).hasSize(2);
+    }
+
+    @Test
+    void aVoucherSavedForApprovalIsRecordedAsSubmitted() {
+        primePostingInfra();
+        when(approvalEngine.evaluate(eq("MANUAL_VOUCHER"), anyMap()))
+                .thenReturn(List.of(mock(RequiredStep.class)));
+
+        service.post(balancedDraft(), "accountant");
+
+        org.mockito.ArgumentCaptor<com.nextgenmanager.nextgenmanager.common.audit.AuditEvent> event =
+                org.mockito.ArgumentCaptor.forClass(com.nextgenmanager.nextgenmanager.common.audit.AuditEvent.class);
+        verify(auditTrail).record(event.capture());
+        assertThat(event.getValue().getAction()).isEqualTo("SUBMIT");
+    }
+
+    @Test
+    void anAutoPostIsCreditedToThePersonWhoseActionRaisedIt() {
+        // Seen live: recording a vendor payment posted its voucher "by SYSTEM". The listener runs in
+        // the request of the person who recorded it, so the trail names them and marks it automatic.
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("admin", null, List.of()));
+        try {
+            primePostingInfra();
+            VoucherDraft draft = balancedDraft();
+            draft.setSourceDocType("VENDOR_PAYMENT");
+            draft.setSourceDocId(9L);
+            when(voucherRepo.existsBySourceDocTypeAndSourceDocIdAndDeletedDateIsNull("VENDOR_PAYMENT", 9L)).thenReturn(false);
+
+            service.post(draft, "SYSTEM");
+
+            org.mockito.ArgumentCaptor<com.nextgenmanager.nextgenmanager.common.audit.AuditEvent> event =
+                    org.mockito.ArgumentCaptor.forClass(com.nextgenmanager.nextgenmanager.common.audit.AuditEvent.class);
+            verify(auditTrail).record(event.capture());
+            assertThat(event.getValue().getUsername()).isEqualTo("admin");
+            assertThat(event.getValue().getSummary()).isEqualTo("Posted automatically · 100.00");
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void anAutoPostWithNoOneSignedInStaysSystem() {
+        primePostingInfra();
+        VoucherDraft draft = balancedDraft();
+        draft.setSourceDocType("INVENTORY_MOVEMENT");
+        draft.setSourceDocId(3L);
+        when(voucherRepo.existsBySourceDocTypeAndSourceDocIdAndDeletedDateIsNull("INVENTORY_MOVEMENT", 3L)).thenReturn(false);
+
+        service.post(draft, "SYSTEM");
+
+        org.mockito.ArgumentCaptor<com.nextgenmanager.nextgenmanager.common.audit.AuditEvent> event =
+                org.mockito.ArgumentCaptor.forClass(com.nextgenmanager.nextgenmanager.common.audit.AuditEvent.class);
+        verify(auditTrail).record(event.capture());
+        assertThat(event.getValue().getUsername()).isEqualTo("SYSTEM");
+        assertThat(event.getValue().getSummary()).isEqualTo("Posted · 100.00");
     }
 }

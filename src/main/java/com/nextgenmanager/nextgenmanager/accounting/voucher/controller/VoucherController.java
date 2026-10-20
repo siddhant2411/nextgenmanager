@@ -136,6 +136,8 @@ public class VoucherController {
                             dto.setCreatedBy(v.getCreatedBy());
                             dto.setSourceDocType(v.getSourceDocType());
                             dto.setSourceDocId(v.getSourceDocId());
+                            // Reading the id of a lazy reference does not load it, so this adds no queries.
+                            if (v.getReversalOf() != null) dto.setReversalOfId(v.getReversalOf().getId());
                             return dto;
                         })
                         .collect(Collectors.toList()));

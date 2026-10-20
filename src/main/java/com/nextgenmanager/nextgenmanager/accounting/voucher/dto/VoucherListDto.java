@@ -20,4 +20,6 @@ public class VoucherListDto {
     private String createdBy;
     private String sourceDocType;
     private Long sourceDocId;
+    /** Set when this voucher reverses another, so lists can say "Reversal" rather than "entered by hand". */
+    private Long reversalOfId;
 }

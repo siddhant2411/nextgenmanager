@@ -182,6 +182,9 @@ public class AccountingReportServiceImpl implements AccountingReportService {
             line.setNarration((String) row[3]);
             line.setDrAmount((BigDecimal) row[4]);
             line.setCrAmount((BigDecimal) row[5]);
+            line.setVoucherId((Long) row[6]);
+            line.setSourceDocType((String) row[7]);
+            line.setSourceDocId((Long) row[8]);
             running = running.add(line.getDrAmount()).subtract(line.getCrAmount());
             line.setRunningBalance(running.abs());
             line.setRunningBalanceDrCr(running.compareTo(BigDecimal.ZERO) >= 0 ? "DR" : "CR");

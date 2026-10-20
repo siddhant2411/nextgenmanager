@@ -15,6 +15,11 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder,Integer>, J
 
     List<WorkOrder> findByWorkOrderStatus(WorkOrderStatus status);
 
+    /** Live orders that have both a due date and a planned end: the ones that can be late. */
+    @Query("SELECT w FROM WorkOrder w WHERE w.deletedDate IS NULL AND w.dueDate IS NOT NULL "
+            + "AND w.plannedEndDate IS NOT NULL AND w.workOrderStatus NOT IN :finished")
+    List<WorkOrder> findOpenWithDueDate(@Param("finished") List<WorkOrderStatus> finished);
+
     /**
      * Work orders raised under {@code parentId}, however the link was made — by hand when
      * creating a sub-assembly order, or automatically by a split. Both write parentWorkOrder,

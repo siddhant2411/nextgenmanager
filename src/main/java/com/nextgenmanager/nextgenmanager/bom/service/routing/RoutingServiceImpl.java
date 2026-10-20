@@ -167,6 +167,9 @@ public class RoutingServiceImpl implements RoutingService{
             op.setApplyOverhead(Boolean.TRUE.equals(opDto.getApplyOverhead()));
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
+            op.setQueueTime(opDto.getQueueTime());
+            op.setMoveTime(opDto.getMoveTime());
+            op.setTransferQuantity(opDto.getTransferQuantity());
             op.setInspection(opDto.getInspection());
             op.setNotes(opDto.getNotes());
 
@@ -264,6 +267,9 @@ public class RoutingServiceImpl implements RoutingService{
             op.setApplyOverhead(Boolean.TRUE.equals(opDto.getApplyOverhead()));
             op.setSetupTime(opDto.getSetupTime());
             op.setRunTime(opDto.getRunTime());
+            op.setQueueTime(opDto.getQueueTime());
+            op.setMoveTime(opDto.getMoveTime());
+            op.setTransferQuantity(opDto.getTransferQuantity());
             op.setInspection(opDto.getInspection());
             op.setNotes(opDto.getNotes());
 

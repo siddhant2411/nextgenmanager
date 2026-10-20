@@ -4,6 +4,9 @@ import com.nextgenmanager.nextgenmanager.accounting.voucher.model.Voucher;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherStatus;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.repository.VoucherRepository;
 import com.nextgenmanager.nextgenmanager.common.approval.event.ApprovalCompletedEvent;
+import com.nextgenmanager.nextgenmanager.common.audit.AuditActions;
+import com.nextgenmanager.nextgenmanager.common.audit.AuditEvent;
+import com.nextgenmanager.nextgenmanager.common.audit.service.AuditTrailService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +22,7 @@ public class VoucherApprovalListener {
     private static final String MANUAL_VOUCHER = "MANUAL_VOUCHER";
 
     private final VoucherRepository voucherRepo;
+    private final AuditTrailService auditTrail;
 
     @EventListener
     @Transactional
@@ -29,6 +33,9 @@ public class VoucherApprovalListener {
             if (v.getStatus() == VoucherStatus.PENDING_APPROVAL) {
                 v.setStatus(VoucherStatus.POSTED);
                 voucherRepo.save(v);
+                auditTrail.record(AuditEvent.of(AuditActions.APPROVE, AuditActions.VOUCHER, v.getId())
+                        .label(v.getVoucherNumber()).summary("Approved and posted").voucher(v.getId())
+                        .by(event.getApprovedBy()));
                 log.info("Voucher {} promoted to POSTED after approval by {}",
                         v.getVoucherNumber(), event.getApprovedBy());
             }

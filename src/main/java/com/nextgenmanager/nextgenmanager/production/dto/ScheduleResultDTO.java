@@ -24,6 +24,9 @@ public class ScheduleResultDTO {
     private BigDecimal estimatedProductionMinutes;
     private BigDecimal estimatedTotalCost;
 
+    /** FORWARD or BACKWARD — the direction actually used, which a backward request can fall back from. */
+    private String direction;
+
     private List<OperationSchedule> operationSchedules;
     private List<String> warnings;  // e.g., "Due date will be missed by 2 days"
 
@@ -41,5 +44,12 @@ public class ScheduleResultDTO {
         private BigDecimal durationMinutes;
         /** Parallel path label for Gantt grouping (e.g. "PATH_A"). Null for sequential ops. */
         private String parallelPath;
+        /** The operation's status when it was planned. */
+        private String status;
+        /**
+         * True when the operation was held where it is rather than planned: it is completed,
+         * in progress or on hold.
+         */
+        private boolean pinned;
     }
 }

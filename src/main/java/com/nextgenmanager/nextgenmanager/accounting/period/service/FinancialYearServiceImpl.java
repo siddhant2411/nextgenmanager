@@ -175,6 +175,12 @@ public class FinancialYearServiceImpl implements FinancialYearService {
         dto.setOpeningDate(fy.getOpeningDate());
         dto.setStatus(fy.getStatus());
         dto.setPeriods(periods.stream().map(this::toPeriodDto).toList());
+        dto.setClosingVoucherId(fy.getClosingVoucherId());
+        dto.setClosedAt(fy.getClosedAt());
+        dto.setClosedBy(fy.getClosedBy());
+        dto.setReopenedAt(fy.getReopenedAt());
+        dto.setReopenedBy(fy.getReopenedBy());
+        dto.setReopenReason(fy.getReopenReason());
         return dto;
     }
 

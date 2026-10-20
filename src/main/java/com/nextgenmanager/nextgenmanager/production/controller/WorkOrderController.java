@@ -5,6 +5,8 @@ import com.nextgenmanager.nextgenmanager.production.dto.*;
 import com.nextgenmanager.nextgenmanager.production.service.workorder.*;
 import com.nextgenmanager.nextgenmanager.production.dto.RejectionEntryDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.YieldMetricsDTO;
+import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.DispatchRule;
+import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.ScheduleDirection;
 import com.nextgenmanager.nextgenmanager.production.enums.DispositionStatus;
 import com.nextgenmanager.nextgenmanager.production.service.workorder.RejectionService;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.MachineScheduleService;
@@ -1297,10 +1299,15 @@ public class WorkOrderController {
             required = true,
             example = "1"
         )
-        @PathVariable int id) {
+        @PathVariable int id,
+        @Parameter(
+            name = "direction",
+            description = "FORWARD (default): as soon as possible. BACKWARD: as late as possible, finishing by the due date; falls back to forward with a warning when that cannot be done."
+        )
+        @RequestParam(defaultValue = "FORWARD") ScheduleDirection direction) {
         try {
-            logger.debug("Scheduling WorkOrder id: {}", id);
-            ScheduleResultDTO result = workOrderService.scheduleWorkOrder(id);
+            logger.debug("Scheduling WorkOrder id: {} ({})", id, direction);
+            ScheduleResultDTO result = productionSchedulerService.scheduleWorkOrder(id, direction);
             return ResponseEntity.ok(result);
         } catch (EntityNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -1381,7 +1388,7 @@ public class WorkOrderController {
 
     @Operation(
         summary = "Batch Schedule All Work Orders",
-        description = "Batch schedules all CREATED work orders in priority order. Uses multi-criteria scheduling algorithm (FIFO, priority, due date). Useful for shift planning.",
+        description = "Batch schedules all CREATED work orders. The dispatch rule decides which order gets first claim on capacity: PRIORITY (priority, then due date), EDD (earliest due date), CRITICAL_RATIO (time left over work left) or ATC (apparent tardiness cost).",
         tags = {"Scheduling"}
     )
     @ApiResponses(value = {
@@ -1401,10 +1408,20 @@ public class WorkOrderController {
     })
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/schedule-all")
-    public ResponseEntity<?> scheduleAll() {
+    public ResponseEntity<?> scheduleAll(
+        @Parameter(
+            name = "rule",
+            description = "Order in which work orders claim capacity: PRIORITY (default), EDD, CRITICAL_RATIO or ATC."
+        )
+        @RequestParam(defaultValue = "PRIORITY") DispatchRule rule,
+        @Parameter(
+            name = "direction",
+            description = "FORWARD (default) or BACKWARD from each order's due date."
+        )
+        @RequestParam(defaultValue = "FORWARD") ScheduleDirection direction) {
         try {
-            logger.debug("Batch scheduling all CREATED work orders");
-            java.util.List<ScheduleResultDTO> results = productionSchedulerService.scheduleAll();
+            logger.debug("Batch scheduling all CREATED work orders ({}, {})", rule, direction);
+            java.util.List<ScheduleResultDTO> results = productionSchedulerService.scheduleAll(rule, direction);
             return ResponseEntity.ok(results);
         } catch (Exception e) {
             logger.error("Error in batch scheduling", e);
@@ -1521,6 +1538,31 @@ public class WorkOrderController {
 
     @Autowired
     private com.nextgenmanager.nextgenmanager.production.service.scheduling.ProductionScheduleViewService productionScheduleViewService;
+
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.production.service.scheduling.ScheduleBoardService scheduleBoardService;
+
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Planner board", tags = {"Production Schedule"},
+            description = "Every machine (or work centre without machines) with its working time, load and booked "
+                    + "operations between two dates, plus late, at-risk and unscheduled orders, overrunning work "
+                    + "and machines down. 'to' is inclusive. Defaults to today and the six days after it.")
+    @GetMapping("/schedule/board")
+    public ResponseEntity<?> getScheduleBoard(
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd") java.time.LocalDate from,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd") java.time.LocalDate to) {
+        if (from == null) from = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (to == null) to = from.plusDays(6);
+        if (to.isBefore(from) || java.time.temporal.ChronoUnit.DAYS.between(from, to) > 92) {
+            return ResponseEntity.badRequest().body(Map.of("error", "'to' must be on or after 'from', and at most 92 days later"));
+        }
+        try {
+            return ResponseEntity.ok(scheduleBoardService.board(from, to));
+        } catch (Exception e) {
+            logger.error("Error building the schedule board", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
 
     @Operation(
         summary = "Get Combined Plant Schedule",

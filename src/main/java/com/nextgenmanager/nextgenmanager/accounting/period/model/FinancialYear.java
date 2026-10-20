@@ -37,6 +37,19 @@ public class FinancialYear {
     @Column(name = "openingEntryVoucher_id")
     private Long openingEntryVoucherId;
 
+    // ─ Year-end close (V185) ─
+    /** The CLOSING voucher that moved this year's income and expenses to Retained Earnings; null while open. */
+    @Column(name = "closingVoucher_id")
+    private Long closingVoucherId;
+    private Date closedAt;
+    @Column(length = 100)
+    private String closedBy;
+    private Date reopenedAt;
+    @Column(length = 100)
+    private String reopenedBy;
+    @Column(length = 500)
+    private String reopenReason;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Date creationDate;

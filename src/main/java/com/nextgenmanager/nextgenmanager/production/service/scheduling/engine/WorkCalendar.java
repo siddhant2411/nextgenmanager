@@ -4,13 +4,16 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -23,6 +26,8 @@ import java.util.Set;
  * holiday, then the shift pattern.
  */
 public class WorkCalendar {
+
+    private static final double EPSILON = 1e-6;
 
     /** A shift that ends at or before its start time runs past midnight into the next day. */
     public record Shift(LocalTime start, LocalTime end, Set<DayOfWeek> days, double rate) {
@@ -118,6 +123,74 @@ public class WorkCalendar {
 
     public int productiveMinutesOn(LocalDate date) {
         return (int) Math.floor(windowsOn(date).stream().mapToDouble(TimeWindow::productiveMinutes).sum() + 1e-6);
+    }
+
+    /**
+     * The moment {@code minutes} of productive time have passed, counting forward from
+     * {@code from} through open time only. Bookings are not considered: this is for measuring
+     * along a job that already holds its resource. Empty if the calendar never gets there.
+     */
+    public Optional<LocalDateTime> advance(LocalDateTime from, double minutes, int horizonDays) {
+        if (minutes <= EPSILON) return Optional.of(from);
+        double remaining = minutes;
+        LocalDateTime cursor = from;
+        LocalDate lastDay = from.toLocalDate().plusDays(horizonDays);
+        for (LocalDate day = from.toLocalDate().minusDays(1); !day.isAfter(lastDay); day = day.plusDays(1)) {
+            for (TimeWindow window : windowsOn(day)) {
+                if (!window.end().isAfter(cursor)) continue;
+                LocalDateTime t = window.start().isAfter(cursor) ? window.start() : cursor;
+                double capacity = ChronoUnit.MINUTES.between(t, window.end()) * window.rate();
+                if (capacity + EPSILON >= remaining) {
+                    return Optional.of(t.plusMinutes((long) Math.ceil(remaining / window.rate() - EPSILON)));
+                }
+                remaining -= capacity;
+                cursor = window.end();
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** The mirror of {@link #advance}: the moment that leaves {@code minutes} of productive time before {@code to}. */
+    public Optional<LocalDateTime> retreat(LocalDateTime to, double minutes, int horizonDays) {
+        if (minutes <= EPSILON) return Optional.of(to);
+        double remaining = minutes;
+        LocalDateTime cursor = to;
+        LocalDate firstDay = to.toLocalDate().minusDays(horizonDays);
+        for (LocalDate day = to.toLocalDate(); !day.isBefore(firstDay); day = day.minusDays(1)) {
+            List<TimeWindow> windows = new ArrayList<>(windowsOn(day));
+            Collections.reverse(windows);
+            for (TimeWindow window : windows) {
+                if (!window.start().isBefore(cursor)) continue;
+                LocalDateTime t = window.end().isBefore(cursor) ? window.end() : cursor;
+                double capacity = ChronoUnit.MINUTES.between(window.start(), t) * window.rate();
+                if (capacity + EPSILON >= remaining) {
+                    return Optional.of(t.minusMinutes((long) Math.ceil(remaining / window.rate() - EPSILON)));
+                }
+                remaining -= capacity;
+                cursor = window.start();
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Productive minutes between two moments, negative when {@code to} is before {@code from}.
+     * Lets "time left until the due date" be compared with "work left" in the same unit.
+     */
+    public double productiveMinutesBetween(LocalDateTime from, LocalDateTime to) {
+        if (to.isBefore(from)) return -productiveMinutesBetween(to, from);
+        double total = 0;
+        LocalDateTime cursor = from;
+        for (LocalDate day = from.toLocalDate().minusDays(1); !day.isAfter(to.toLocalDate()); day = day.plusDays(1)) {
+            for (TimeWindow window : windowsOn(day)) {
+                LocalDateTime start = window.start().isAfter(cursor) ? window.start() : cursor;
+                LocalDateTime end = window.end().isBefore(to) ? window.end() : to;
+                if (!end.isAfter(start)) continue;
+                total += ChronoUnit.MINUTES.between(start, end) * window.rate();
+                cursor = end;
+            }
+        }
+        return total;
     }
 
     private static LocalDateTime earlier(LocalDateTime a, LocalDateTime b) {
