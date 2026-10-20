@@ -69,6 +69,39 @@ class MaterialLedgerTest {
     }
 
     @Test
+    void aPurchaseOrderArrivingAfterAFreshPurchaseCouldIsNotWaitedFor() {
+        LocalDateTime inLeadTime = NOW.plusDays(5);
+        MaterialLedger ledger = new MaterialLedger()
+                .supply(STEEL, NOW, 30, "stock")
+                .supply(STEEL, NOW.plusDays(9), 500, "PO/0040")
+                .fallback(STEEL, inLeadTime, "lead time 5 days");
+
+        MaterialLedger.Allocation allocation = ledger.allocate(STEEL, 100);
+
+        assertThat(allocation.readyAt()).isEqualTo(inLeadTime);
+        assertThat(allocation.source()).isEqualTo("lead time 5 days");
+    }
+
+    @Test
+    void aPurchaseOrderArrivingBeforeAFreshPurchaseCouldIsStillUsed() {
+        MaterialLedger ledger = new MaterialLedger()
+                .supply(STEEL, NOW, 30, "stock")
+                .supply(STEEL, NOW.plusDays(3), 500, "PO/0031")
+                .fallback(STEEL, NOW.plusDays(5), "lead time 5 days");
+
+        assertThat(ledger.allocate(STEEL, 100).source()).isEqualTo("PO/0031");
+    }
+
+    @Test
+    void withNoLeadTimeALatePurchaseOrderIsStillTheOnlyWay() {
+        MaterialLedger ledger = new MaterialLedger()
+                .supply(STEEL, NOW, 30, "stock")
+                .supply(STEEL, NOW.plusDays(9), 500, "PO/0040");
+
+        assertThat(ledger.allocate(STEEL, 100).source()).isEqualTo("PO/0040");
+    }
+
+    @Test
     void withNoSupplyAndNoLeadTimeANeedCannotBeDated() {
         MaterialLedger ledger = new MaterialLedger().supply(STEEL, NOW, 10, "stock");
 

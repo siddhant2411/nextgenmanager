@@ -12,8 +12,9 @@ import java.util.Map;
  *
  * <p>Supply is handed out earliest first, in the order demands are made, so two orders never
  * both count on the same stock: whoever is planned first takes it, and the next one waits for
- * what arrives after. Beyond all known supply an item can still be bought in its lead time,
- * without limit; an item with no lead time has no date at all.
+ * what arrives after. An item can always be bought again in its lead time, without limit, so
+ * an order never waits for supply arriving later than that: purchasing would buy fresh. An
+ * item with no lead time has no date beyond its known supply.
  *
  * <p>The ledger is derived for each scheduling run, like the capacity ledger, so it cannot
  * drift from the stock and orders it is read from.
@@ -75,14 +76,20 @@ public class MaterialLedger {
         return lots.containsKey(itemId) || fallbacks.containsKey(itemId);
     }
 
-    /** Claims {@code quantity} of an item, earliest supply first, and says when the last of it arrives. */
+    /**
+     * Claims {@code quantity} of an item, earliest supply first, and says when the last of it
+     * arrives. Supply arriving after a fresh purchase could ({@link #fallback}) is not waited for
+     * or used up: buying again is sooner, so the rest is bought in the lead time instead.
+     */
     public Allocation allocate(int itemId, double quantity) {
         if (quantity <= EPSILON) return new Allocation(null, null);
 
+        Fallback fallback = fallbacks.get(itemId);
         double needed = quantity;
         LocalDateTime readyAt = null;
         String source = null;
         for (Lot lot : lots.getOrDefault(itemId, List.of())) {
+            if (fallback != null && lot.arrives.isAfter(fallback.arrives())) break;
             if (lot.left <= EPSILON) continue;
             double take = Math.min(lot.left, needed);
             lot.left -= take;
@@ -91,7 +98,6 @@ public class MaterialLedger {
             source = lot.source;
             if (needed <= EPSILON) return new Allocation(readyAt, source);
         }
-        Fallback fallback = fallbacks.get(itemId);
         if (fallback == null) return new Allocation(null, null);
         return new Allocation(fallback.arrives(), fallback.source());
     }
