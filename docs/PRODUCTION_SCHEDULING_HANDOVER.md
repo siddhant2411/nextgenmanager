@@ -167,6 +167,23 @@ node playwright/scheduling-phase2-ui.js    # 8 browser steps, screenshots in pla
 - Tests: 10 new in `ProductionSchedulerServiceTest` (75 in the four scheduling classes, all green). With the floors switched off, the 5 tests that depend on them fail.
 - **Live:** `nextgen-regression/playwright/scheduling-phase3-subassembly-api.js`, on BOM 3 (Wheel Hub Assembly, FG-0002) with a child on BOM 2 (Wheel Hub Machined, SF-0001); the parent's SF-0001 material is tied to its Hub Assembly operation. Run against the **old** backend it showed the bug: Hub Assembly planned for 20 Oct 13:50 while the hub it uses was machined only by 21 Oct 00:38. After the restart (2026-10-20) it passed **13/13**: unscheduled-child warning; Hub Assembly moved to 21 Oct 09:00, after the hub was ready at 00:47; pushing the child later warns and naming the parent; Schedule All forward planned the LOW child before its URGENT parent; Schedule All backward planned the parent first and the child ready at 15:18, the minute Hub Assembly needs it. `scheduling-phase2-api.js` 26/26 and `scheduling-phase3-pin-api.js` 11/11 still pass. Do not pipe it through `head`: that kills it before its cleanup.
 
+### Step 3 built: material availability (2026-10-20, uncommitted, no migration)
+Product-owner rules: missing material **delays** the plan and warns; supply = free stock, open POs, approved requisitions, then lead time.
+
+- **What a material still needs:** `netRequiredQuantity` − max(`issuedQuantity`, the approved quantity of its material request when that request is APPROVED or PARTIAL). Approved stock is reserved for the order and already out of `availableQuantity`, so nothing is counted twice.
+- **Supply per item, earliest first** (`MaterialSupply.load`):
+  1. free stock now (`ProductInventorySettings.availableQuantity`, negative counts as 0);
+  2. open PO lines (PO status SENT or PARTIALLY_RECEIVED, the purchase module's own "pending receipt"), ordered − received, on the PO's `expectedDeliveryDate` (else the line's `requiredByDate`, else now + lead time). An overdue PO counts as now, labelled "overdue";
+  3. approved requisition lines still PENDING (a CONVERTED line is already a PO line), at now + lead time, or the requisition's required-by date when the item has no lead time;
+  4. beyond all of that, now + the item's lead time (`leadTime`, days), without limit. No lead time → no date: the plan does not wait and warns "Not enough … no lead time".
+- **Plan order:** other scheduled orders (not in this run) claim their unreserved needs first, earliest planned start first. Then the run's orders claim in the order they are planned. Each order claims on a copy of the ledger that is kept only if the order books (a failed order leaves its material for the next).
+- **Where it applies:** a `Floor` on the operation the material is issued to, else the order's first operations, the same mechanism as sub-assemblies. A material made by an unfinished sub-assembly order is left to step 2; once that child is finished its output is checked as stock.
+- **An existing PO wins over a faster fresh purchase.** If a PO delivers in 6 days and the lead time is 5, an order that needs the PO's quantity waits 6 days: the plan uses what is actually on order.
+- Code: `engine/MaterialLedger` (pure), `MaterialSupply` (Spring loader), wired in `ProductionSchedulerService.floors`. New queries: `PurchaseOrderRepository.findLinesForItems`, `PurchaseRequisitionRepository.findOpenLinesForItems`, `WorkOrderMaterialRepository.findScheduledDemandForItems` (none yet run against a DB).
+- Tests: `MaterialLedgerTest` 8, `MaterialSupplyTest` 5, 7 new in `ProductionSchedulerServiceTest`; 104 across the scheduling classes. Switching the material floors off fails the 4 tests that depend on them; claiming on the live ledger instead of a copy fails the rollback test.
+- **Limitations:** stock is plant-wide (the scalar), not per warehouse. Other orders' demand for an item a sub-assembly of theirs is making is still counted against stock. The board does not yet show material-blocked operations.
+- **Live:** `nextgen-regression/playwright/scheduling-phase3-material-api.js` (BOM 7 draws RM-0004: 35 free, lead time 5 days, 0.28 per spacer at the time of writing). It raises, approves and sends a real PO for RM-0004 and cancels it at the end. `--setup-only` just reads the stock.
+
 ### What was found in the code
 
 Phase 3 is "the plan respects reality": material, multi-level work orders, work already under way, and a near-term window nobody should churn.
@@ -213,7 +230,7 @@ Open questions for the product owner:
 ### 5.5 Suggested order of work
 1. ~~**Pin started operations.**~~ Done (step 1 above). It removes the worst current behaviour (replanning finished work) and gives later steps a correct base.
 2. ~~**Child before parent.**~~ Built (step 2 above).
-3. **Material availability.** Biggest, and it needs the product owner's answers in 5.1 first.
+3. ~~**Material availability.**~~ Built (step 3 above).
 4. **Frozen window.**
 
 Extend `scheduling-phase2-api.js` into a phase 3 script in the same style: create its own data, check invariants rather than clock times, and clean up after itself.

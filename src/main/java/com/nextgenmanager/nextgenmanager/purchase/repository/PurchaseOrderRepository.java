@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.purchase.repository;
 
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrder;
+import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderItem;
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderApprovalStatus;
 import com.nextgenmanager.nextgenmanager.purchase.model.PurchaseOrderStatus;
 import org.springframework.data.domain.Page;
@@ -30,6 +31,12 @@ public interface PurchaseOrderRepository
     List<Integer> findDistinctOrderedItemIds();
 
     List<PurchaseOrder> findByStatusInAndDeletedDateIsNull(List<PurchaseOrderStatus> statuses);
+
+    /** Lines of live purchase orders in {@code statuses} for any of {@code itemIds}: supply still to come. */
+    @Query("SELECT l FROM PurchaseOrderItem l JOIN FETCH l.purchaseOrder p "
+            + "WHERE l.item.inventoryItemId IN :itemIds AND p.status IN :statuses AND p.deletedDate IS NULL")
+    List<PurchaseOrderItem> findLinesForItems(@Param("itemIds") java.util.Collection<Integer> itemIds,
+                                              @Param("statuses") List<PurchaseOrderStatus> statuses);
 
     List<PurchaseOrder> findByStatusInAndExpectedDeliveryDateBeforeAndDeletedDateIsNull(
             List<PurchaseOrderStatus> statuses, Date cutoff);

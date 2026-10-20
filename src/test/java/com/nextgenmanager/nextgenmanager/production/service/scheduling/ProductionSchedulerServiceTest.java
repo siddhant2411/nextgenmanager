@@ -20,6 +20,7 @@ import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrd
 import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrderRepository;
 import com.nextgenmanager.nextgenmanager.production.service.audit.WorkOrderAuditService;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.DispatchRule;
+import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.MaterialLedger;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.ScheduleDirection;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
@@ -72,6 +73,8 @@ class ProductionSchedulerServiceTest {
     @Mock
     private WorkOrderMaterialRepository workOrderMaterialRepository;
     @Mock
+    private MaterialSupply materialSupply;
+    @Mock
     private DowntimeEventRepository downtimeEventRepository;
     @Mock
     private WorkOrderAuditService auditService;
@@ -85,6 +88,9 @@ class ProductionSchedulerServiceTest {
 
     private long nextOperationId = 1;
 
+    /** What the scheduler is handed as the material ledger; each test fills it as it needs. */
+    private MaterialLedger materialLedger = new MaterialLedger();
+
     @BeforeEach
     void setUp() {
         service.setClock(Clock.fixed(NOW.atZone(IST).toInstant(), IST));
@@ -92,6 +98,18 @@ class ProductionSchedulerServiceTest {
         when(query.setParameter(anyString(), any())).thenReturn(query);
         when(workOrderOperationRepository.findBookedLoad(any(), any(), anyList(), anyList())).thenReturn(List.of());
         when(downtimeEventRepository.findByMachineIdAndEndTimeAfter(any(), any())).thenReturn(List.of());
+        when(materialSupply.load(any(), any(), any())).thenAnswer(inv -> materialLedger);
+        // Needs worked out the simple way: required less issued.
+        when(materialSupply.needs(anyList())).thenAnswer(inv -> {
+            List<WorkOrderMaterial> materials = inv.getArgument(0);
+            List<MaterialSupply.Need> needs = new ArrayList<>();
+            for (WorkOrderMaterial m : materials) {
+                if (m.getNetRequiredQuantity() == null) continue;
+                double left = m.getNetRequiredQuantity().subtract(m.getIssuedQuantity()).doubleValue();
+                if (left > 0) needs.add(new MaterialSupply.Need(m, m.getComponent(), left));
+            }
+            return needs;
+        });
     }
 
     @Test
@@ -860,7 +878,141 @@ class ProductionSchedulerServiceTest {
         assertThat(results.get(1).getWarnings()).anyMatch(w -> w.contains("when WO-10 needs it"));
     }
 
+    // ─── material ─────────────────────────────────────────────────────────────
+
+    @Test
+    void theOperationThatUsesMaterialOnOrderWaitsForTheOrderToArrive() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 60);
+        WorkOrderOperation weld = operation(2, workCenter(2, "WC-WELD"), 60);
+        operations(wo, cut, weld);
+        InventoryItem rod = item(700, "RM-ROD");
+        materials(wo, need(wo, rod, 50, weld));
+        materialLedger.supply(700, NOW, 20, "stock").supply(700, day(7, 0, 0), 100, "PO/0031");
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        // Cutting needs no rod; welding waits for the PO, delivered Wednesday, and the 09:00 shift.
+        assertThat(at(cut.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(at(weld.getPlannedStartDate())).isEqualTo(day(7, 9, 0));
+        assertThat(result.getWarnings()).anyMatch(w -> w.contains("waits for material RM-ROD (PO/0031)"));
+    }
+
+    @Test
+    void materialInStockDoesNotHoldAnythingUp() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 60);
+        operations(wo, cut);
+        InventoryItem rod = item(700, "RM-ROD");
+        materials(wo, need(wo, rod, 50, null));
+        materialLedger.supply(700, NOW, 50, "stock");
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(cut.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    void materialThatCannotBeDatedIsReportedButNotWaitedFor() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 60);
+        operations(wo, cut);
+        materials(wo, need(wo, item(700, "RM-ROD"), 50, null));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(cut.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(result.getWarnings()).anyMatch(w -> w.startsWith("Not enough RM-ROD") && w.contains("no lead time"));
+    }
+
+    @Test
+    void inABatchTheFirstOrderPlannedTakesTheStockAndTheNextWaitsForTheOrder() {
+        InventoryItem rod = item(700, "RM-ROD");
+        WorkOrder urgent = workOrder(10, "WO-10");
+        urgent.setPriority(WorkOrderPriority.URGENT);
+        WorkOrderOperation urgentCut = operation(1, workCenter(1, "WC-CUT"), 60);
+        operations(urgent, urgentCut);
+        materials(urgent, need(urgent, rod, 50, null));
+        WorkOrder normal = workOrder(11, "WO-11");
+        WorkOrderOperation normalCut = operation(1, workCenter(2, "WC-CUT2"), 60);
+        operations(normal, normalCut);
+        materials(normal, need(normal, rod, 50, null));
+        materialLedger.supply(700, NOW, 60, "stock").supply(700, day(8, 0, 0), 100, "PO/0031");
+        when(workOrderRepository.findByWorkOrderStatus(WorkOrderStatus.CREATED)).thenReturn(List.of(normal, urgent));
+
+        service.scheduleAll(DispatchRule.PRIORITY, ScheduleDirection.FORWARD);
+
+        assertThat(at(urgentCut.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+        assertThat(at(normalCut.getPlannedStartDate())).isEqualTo(day(8, 9, 0));
+    }
+
+    @Test
+    void anOrderThatFailsToScheduleLeavesItsMaterialForTheNext() {
+        InventoryItem rod = item(700, "RM-ROD");
+        WorkOrder failing = workOrder(10, "WO-10");
+        failing.setPriority(WorkOrderPriority.URGENT);
+        WorkCenter closed = workCenter(9, "WC-NONE");
+        closed.setShifts(new ArrayList<>());
+        operations(failing, operation(1, closed, 60));
+        materials(failing, need(failing, rod, 50, null));
+        WorkOrder next = workOrder(11, "WO-11");
+        WorkOrderOperation nextCut = operation(1, workCenter(1, "WC-CUT"), 60);
+        operations(next, nextCut);
+        materials(next, need(next, rod, 50, null));
+        materialLedger.supply(700, NOW, 50, "stock").supply(700, day(8, 0, 0), 100, "PO/0031");
+        when(workOrderRepository.findByWorkOrderStatus(WorkOrderStatus.CREATED)).thenReturn(List.of(failing, next));
+
+        List<ScheduleResultDTO> results = service.scheduleAll(DispatchRule.PRIORITY, ScheduleDirection.FORWARD);
+
+        assertThat(results.get(0).getWarnings()).anyMatch(w -> w.startsWith("Scheduling failed"));
+        assertThat(at(nextCut.getPlannedStartDate())).isEqualTo(day(5, 9, 0));
+    }
+
+    @Test
+    void materialMadeByASubAssemblyOrderIsWaitedForAsThatOrderNotAsStock() {
+        WorkOrder parent = workOrder(10, "WO-10");
+        WorkOrderOperation assemble = operation(1, workCenter(1, "WC-ASM"), 60);
+        operations(parent, assemble);
+        InventoryItem bracket = item(500, "SA-BRACKET");
+        WorkOrder child = subAssembly(20, "WO-20", parent, bracket);
+        WorkOrderOperation weld = operation(1, workCenter(3, "WC-WELD"), 60);
+        weld.setPlannedStartDate(date(day(6, 11, 0)));
+        weld.setPlannedEndDate(date(day(6, 12, 0)));
+        operations(child, weld);
+        materials(parent, need(parent, bracket, 10, null));
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10);
+
+        assertThat(at(assemble.getPlannedStartDate())).isEqualTo(day(6, 12, 0));
+        assertThat(result.getWarnings()).noneMatch(w -> w.contains("Not enough SA-BRACKET"));
+    }
+
+    @Test
+    void backwardDoesNotPlanAnOperationBeforeItsMaterialArrives() {
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setDueDate(date(day(7, 0, 0)));
+        WorkOrderOperation cut = operation(1, workCenter(1, "WC-CUT"), 60);
+        operations(wo, cut);
+        materials(wo, need(wo, item(700, "RM-ROD"), 50, null));
+        materialLedger.supply(700, day(7, 16, 30), 100, "PO/0031");
+
+        ScheduleResultDTO result = service.scheduleWorkOrder(10, ScheduleDirection.BACKWARD);
+
+        assertThat(result.getDirection()).isEqualTo("FORWARD");
+        assertThat(result.getWarnings()).anyMatch(w -> w.contains("before material RM-ROD (PO/0031) is ready"));
+        assertThat(at(cut.getPlannedStartDate())).isEqualTo(day(7, 16, 30));
+    }
+
     // ─── fixtures ─────────────────────────────────────────────────────────────
+
+    private WorkOrderMaterial need(WorkOrder wo, InventoryItem component, double quantity, WorkOrderOperation usedAt) {
+        WorkOrderMaterial material = material(wo, component, usedAt);
+        material.setId(nextOperationId++);
+        material.setNetRequiredQuantity(BigDecimal.valueOf(quantity));
+        material.setIssuedQuantity(BigDecimal.ZERO);
+        return material;
+    }
 
     private InventoryItem item(int id, String code) {
         InventoryItem item = new InventoryItem();

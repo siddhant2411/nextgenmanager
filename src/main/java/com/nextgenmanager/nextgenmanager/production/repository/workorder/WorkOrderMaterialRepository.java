@@ -20,6 +20,17 @@ public interface WorkOrderMaterialRepository extends JpaRepository<WorkOrderMate
 
     List<WorkOrderMaterial> findByWorkOrderId(int workOrderId);
 
+    /**
+     * Materials for any of {@code itemIds} on live, scheduled orders not in {@code finished}: what
+     * other planned work will draw on the same stock and orders.
+     */
+    @Query("SELECT m FROM WorkOrderMaterial m JOIN FETCH m.workOrder w JOIN FETCH m.component c "
+            + "WHERE c.inventoryItemId IN :itemIds AND m.deletedDate IS NULL AND w.deletedDate IS NULL "
+            + "AND w.scheduledAt IS NOT NULL AND w.workOrderStatus NOT IN :finished")
+    List<WorkOrderMaterial> findScheduledDemandForItems(
+            @Param("itemIds") java.util.Collection<Integer> itemIds,
+            @Param("finished") List<com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus> finished);
+
     boolean existsByWorkOrderAndIssueStatusNot(
             WorkOrder workOrder,
             MaterialIssueStatus status

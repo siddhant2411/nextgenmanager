@@ -20,6 +20,7 @@ import com.nextgenmanager.nextgenmanager.production.repository.workorder.WorkOrd
 import com.nextgenmanager.nextgenmanager.production.service.audit.WorkOrderAuditService;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.DispatchRule;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.DispatchSequencer;
+import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.MaterialLedger;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.ResourceTimeline;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.ScheduleDirection;
 import com.nextgenmanager.nextgenmanager.production.service.scheduling.engine.Slot;
@@ -116,6 +117,9 @@ public class ProductionSchedulerService {
     private WorkOrderMaterialRepository workOrderMaterialRepository;
 
     @Autowired
+    private MaterialSupply materialSupply;
+
+    @Autowired
     private DowntimeEventRepository downtimeEventRepository;
 
     @Autowired
@@ -160,6 +164,7 @@ public class ProductionSchedulerService {
 
         LocalDateTime now = now();
         Ledger ledger = loadLedger(now, Set.of(workOrder.getId()));
+        ledger.materials = materialSupply.load(List.of(workOrder), Map.of(workOrder.getId(), materialsOf(workOrder, ledger)), now);
         return doSchedule(workOrder, loadOperations(workOrder), overrideStartDate, direction, null, ledger, now);
     }
 
@@ -189,6 +194,9 @@ public class ProductionSchedulerService {
 
         LocalDateTime now = now();
         Ledger ledger = loadLedger(now, workOrders.stream().map(WorkOrder::getId).collect(Collectors.toSet()));
+        Map<Integer, List<WorkOrderMaterial>> batchMaterials = new HashMap<>();
+        workOrders.forEach(wo -> batchMaterials.put(wo.getId(), materialsOf(wo, ledger)));
+        ledger.materials = materialSupply.load(workOrders, batchMaterials, now);
 
         Map<Integer, List<WorkOrderOperation>> operationsByOrder = new HashMap<>();
         Map<Integer, DispatchSequencer.Job<WorkOrder>> jobs = new HashMap<>();
@@ -200,7 +208,7 @@ public class ProductionSchedulerService {
 
         Map<Integer, List<SubAssembly>> subAssembliesInBatch = new HashMap<>();
         for (WorkOrder wo : workOrders) {
-            subAssembliesInBatch.put(wo.getId(), subAssemblies(wo).stream()
+            subAssembliesInBatch.put(wo.getId(), subAssemblies(wo, ledger).stream()
                     .filter(sub -> jobs.containsKey(sub.child().getId())).toList());
         }
         Map<Integer, Integer> levels = new HashMap<>();
@@ -299,7 +307,8 @@ public class ProductionSchedulerService {
         Map<String, ResourceTimeline> draft = null;
         List<Placement> placements = null;
         ScheduleDirection used = ScheduleDirection.FORWARD;
-        Map<Long, Floor> floors = floors(workOrder, operations, predecessors, ledger, warnings);
+        MaterialLedger materials = ledger.materials.copy();
+        Map<Long, Floor> floors = floors(workOrder, operations, predecessors, ledger, materials, warnings);
 
         if (direction == ScheduleDirection.BACKWARD) {
             LocalDateTime due = dueBy(workOrder);
@@ -333,6 +342,7 @@ public class ProductionSchedulerService {
             placements = planForward(workOrder, order, predecessors, pinned, floors, startFrom, ledger, draft, warnings);
         }
         ledger.timelines.putAll(draft);
+        ledger.materials = materials;
 
         LocalDateTime ready = placements.stream()
                 .map(p -> p.slot().end().plusMinutes(moveMinutes(p.operation())))
@@ -788,16 +798,21 @@ public class ProductionSchedulerService {
     }
 
     /**
-     * When each operation can start at the earliest, because of what it waits for: here, the
-     * sub-assemblies this order uses. Operations with nothing to wait for are left out.
+     * When each operation can start at the earliest, because of what it waits for: the
+     * sub-assemblies this order uses, and the rest of its material. Operations with nothing to
+     * wait for are left out. Material is claimed from {@code materials} as it goes.
      */
     private Map<Long, Floor> floors(WorkOrder workOrder, List<WorkOrderOperation> operations,
-                                    Map<Long, Set<Long>> predecessors, Ledger ledger, List<String> warnings) {
+                                    Map<Long, Set<Long>> predecessors, Ledger ledger, MaterialLedger materials,
+                                    List<String> warnings) {
         Map<Long, Floor> floors = new HashMap<>();
-        for (SubAssembly sub : subAssemblies(workOrder)) {
+        // Materials a sub-assembly order is making: waited for as that order, not as stock.
+        Set<Long> madeBySubAssembly = new HashSet<>();
+        for (SubAssembly sub : subAssemblies(workOrder, ledger)) {
             WorkOrder child = sub.child();
             // Whatever a finished sub-assembly made is already in stock.
             if (FINISHED_WORK_ORDERS.contains(child.getWorkOrderStatus())) continue;
+            sub.consumedBy().forEach(m -> madeBySubAssembly.add(m.getId()));
 
             LocalDateTime ready = readyAt(child, ledger);
             if (ready == null) {
@@ -812,7 +827,32 @@ public class ProductionSchedulerService {
                 }
             }
         }
+
+        List<WorkOrderMaterial> bought = materialsOf(workOrder, ledger).stream()
+                .filter(m -> !madeBySubAssembly.contains(m.getId()))
+                .toList();
+        for (MaterialSupply.Need need : materialSupply.needs(bought)) {
+            String code = need.item().getItemCode();
+            MaterialLedger.Allocation allocation = materials.allocate(need.item().getInventoryItemId(), need.quantity());
+            if (!allocation.dated()) {
+                warnings.add("Not enough " + code + " in stock or on order for this order, and the item has no "
+                        + "lead time, so the plan does not wait for it. Raise a purchase request or set a lead time.");
+                continue;
+            }
+            Floor floor = new Floor(allocation.readyAt(), "material " + code + " (" + allocation.source() + ")");
+            for (Long opId : consumers(need.material(), operations, predecessors)) {
+                floors.merge(opId, floor, (a, b) -> b.at().isAfter(a.at()) ? b : a);
+            }
+        }
         return floors;
+    }
+
+    /** An order's live materials, read once per run. */
+    private List<WorkOrderMaterial> materialsOf(WorkOrder workOrder, Ledger ledger) {
+        return ledger.materialsByOrder.computeIfAbsent(workOrder.getId(), id ->
+                workOrderMaterialRepository.findByWorkOrderId(id).stream()
+                        .filter(m -> m.getDeletedDate() == null && m.getComponent() != null)
+                        .toList());
     }
 
     /**
@@ -820,13 +860,11 @@ public class ProductionSchedulerService {
      * at the order they came from, but make nothing it consumes, so matching on the parent's
      * materials leaves them out.
      */
-    private List<SubAssembly> subAssemblies(WorkOrder parent) {
+    private List<SubAssembly> subAssemblies(WorkOrder parent, Ledger ledger) {
         List<WorkOrder> children = workOrderRepository.findByParentWorkOrderIdAndDeletedDateIsNullOrderByIdAsc(parent.getId());
         if (children.isEmpty()) return List.of();
 
-        List<WorkOrderMaterial> materials = workOrderMaterialRepository.findByWorkOrderId(parent.getId()).stream()
-                .filter(m -> m.getDeletedDate() == null && m.getComponent() != null)
-                .toList();
+        List<WorkOrderMaterial> materials = materialsOf(parent, ledger);
         List<SubAssembly> subAssemblies = new ArrayList<>();
         for (WorkOrder child : children) {
             if (child.getWorkOrderStatus() == WorkOrderStatus.CANCELLED) continue;
@@ -932,7 +970,7 @@ public class ProductionSchedulerService {
                 || FINISHED_WORK_ORDERS.contains(parent.getWorkOrderStatus())) return;
         if (ledger.batch.contains(parent.getId()) && !ledger.readyAt.containsKey(parent.getId())) return;
 
-        for (SubAssembly sub : subAssemblies(parent)) {
+        for (SubAssembly sub : subAssemblies(parent, ledger)) {
             if (sub.child().getId() != child.getId()) continue;
             LocalDateTime needed = neededAt(sub, loadOperations(parent));
             if (needed != null && ready.isAfter(needed)) {
@@ -1207,6 +1245,10 @@ public class ProductionSchedulerService {
         final Map<Integer, LocalDateTime> readyAt = new HashMap<>();
         /** The orders this run plans. */
         final Set<Integer> batch = new HashSet<>();
+        /** When material can be at the floor, item by item, with what earlier orders have claimed. */
+        MaterialLedger materials = new MaterialLedger();
+        /** Each order's materials, read once. */
+        final Map<Integer, List<WorkOrderMaterial>> materialsByOrder = new HashMap<>();
         final LocalDateTime now;
 
         Ledger(LocalDateTime now) {
