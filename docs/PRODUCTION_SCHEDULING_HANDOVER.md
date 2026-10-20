@@ -10,7 +10,7 @@ subtracted what was already booked, so every work order saw an empty factory.
 | 1 | Finite capacity, to the minute | Done, committed `65f8fe2` |
 | 2 | Dispatch rules, forward/backward, queue/move/overlap | **Done, tested live, not committed** |
 | 3 | Material availability, child WO before parent, pin started operations, frozen window | **In progress** — step 1 committed; step 2 built and tested live 2026-10-20, not committed |
-| 4 | Planner board: draft/publish plans, drag-drop Gantt, load heatmap, real KPIs | Planned |
+| 4 | Planner board: draft/publish plans, drag-drop Gantt, load heatmap, real KPIs | **Part 1 (read-only board) built 2026-10-20, not committed**; part 2 (draft/publish, drag-drop) planned |
 | 5 | Optimiser (Timefold) with sequence-dependent setups | Planned |
 | 6 | Auto-repair on breakdown, capable-to-promise | Planned |
 
@@ -217,6 +217,37 @@ Open questions for the product owner:
 4. **Frozen window.**
 
 Extend `scheduling-phase2-api.js` into a phase 3 script in the same style: create its own data, check invariants rather than clock times, and clean up after itself.
+
+## 5b. Phase 4 part 1 — the read-only planner board (2026-10-20, uncommitted, no migration)
+
+Pulled ahead of phase 3 step 3 because the old Schedule Views page reported wrong numbers.
+
+**What was wrong with the old page (`ProductionScheduleView.jsx`, now deleted):**
+- "Utilization" was completed ÷ planned minutes: progress, not how busy anything is. A fully booked week showed 0%.
+- One column per day over a minute-precise plan; no hour axis.
+- Sunday hard-coded as a holiday, ignoring the work-centre calendars.
+- Only machines with work were listed, so free capacity was invisible.
+- Operations selected by `plannedStartDate >= from`, so a job that began before the window vanished from it.
+- Bars did not open their work order; no now line, no late orders, no warnings.
+
+**Backend:** `GET /production/work-order/schedule/board?from=&to=` (`to` inclusive, max 92 days; defaults to today + 6) → `ScheduleBoardDTO`, built by `ScheduleBoardService`.
+- Working time comes from `WorkCalendarFactory`, the same calendars the scheduler plans with. Rows: every live machine, or the work centre when it has none, plus an "unassigned" row for operations on a work centre with machines but none assigned (it adds no capacity).
+- Load = booked productive minutes (each operation clipped to the window) ÷ available productive minutes.
+- Operations by overlap: new `WorkOrderOperationRepository.findBoardOperations`.
+- Alerts: late (planned end after due) and at risk (under a day to spare), counting only orders the scheduler has planned (`scheduledAt` set); unscheduled CREATED orders; IN_PROGRESS operations past their planned end (via `findBookedLoad`); machines not ACTIVE or in downtime now. New `WorkOrderRepository.findOpenWithDueDate`.
+- The old `/schedule/combined`, `/work-center/{id}` and `/machine/{id}` endpoints are untouched.
+- Tests: `ScheduleBoardServiceTest`, 8.
+
+**UI:** `components/production/schedule/{ScheduleBoard, BoardTimeline}.jsx`; `pages/ProductionSchedulePage.jsx` now renders `ScheduleBoard`.
+- Hub layout: dark hero, four KPI cards (load, late, at risk, idle machines), clickable alert panels (late, running over, at risk, not scheduled, machines down).
+- Gantt: Day / 3 days / Week / 2 weeks; By machine (grouped by work centre, each row with a load meter) or By order (sub-assemblies under the order that uses them, due-date marker). Closed time hatched grey, downtime red, now line, opens scrolled to now.
+- Bars: colour by status, priority edge, red ring when the order will be late, hatched when kept, dashed red tail when running over. Click opens the work order. Overlapping bars split into lanes and the row is flagged **Clash**.
+- Search dims what does not match. Zoom and view are remembered per browser (localStorage).
+- Browser test: `nextgen-regression/playwright/schedule-board-ui.js` 8/8 (seeds a sub-assembly pair, a too-big order, a running operation and an unscheduled order; `--keep` leaves them for a look). Screenshots: `playwright-output/schedule-board/` and `schedule-views-review/` (`shot-schedule-views.js`).
+
+**Bug found by the board, fixed in the scheduler:** a running operation kept its old planned start when rescheduled, so a job started earlier than planned was saved starting *after* its new end (WO/2026-27/0114: start Thu 05:25, end Wed 00:54). Now its planned start becomes its actual start. Unit test added; needs a backend restart to take effect. Rows saved before the fix are still drawn across their span and laned correctly.
+
+**Part 2 (planned):** draft / publish plans, drag a bar to another slot or machine with the capacity check behind it, load heatmap.
 
 ## 6. After phase 3
 

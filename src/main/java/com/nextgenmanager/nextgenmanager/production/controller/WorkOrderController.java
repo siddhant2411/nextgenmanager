@@ -1539,6 +1539,31 @@ public class WorkOrderController {
     @Autowired
     private com.nextgenmanager.nextgenmanager.production.service.scheduling.ProductionScheduleViewService productionScheduleViewService;
 
+    @Autowired
+    private com.nextgenmanager.nextgenmanager.production.service.scheduling.ScheduleBoardService scheduleBoardService;
+
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Planner board", tags = {"Production Schedule"},
+            description = "Every machine (or work centre without machines) with its working time, load and booked "
+                    + "operations between two dates, plus late, at-risk and unscheduled orders, overrunning work "
+                    + "and machines down. 'to' is inclusive. Defaults to today and the six days after it.")
+    @GetMapping("/schedule/board")
+    public ResponseEntity<?> getScheduleBoard(
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd") java.time.LocalDate from,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(pattern = "yyyy-MM-dd") java.time.LocalDate to) {
+        if (from == null) from = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (to == null) to = from.plusDays(6);
+        if (to.isBefore(from) || java.time.temporal.ChronoUnit.DAYS.between(from, to) > 92) {
+            return ResponseEntity.badRequest().body(Map.of("error", "'to' must be on or after 'from', and at most 92 days later"));
+        }
+        try {
+            return ResponseEntity.ok(scheduleBoardService.board(from, to));
+        } catch (Exception e) {
+            logger.error("Error building the schedule board", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @Operation(
         summary = "Get Combined Plant Schedule",
         description = "Retrieves complete plant schedule with all work centers and machines combined. Useful for plant manager level planning and capacity analysis.",

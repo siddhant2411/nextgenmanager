@@ -496,6 +496,26 @@ class ProductionSchedulerServiceTest {
     }
 
     @Test
+    void anOperationStartedEarlierThanPlannedIsPlannedFromWhenItStarted() {
+        service.setClock(Clock.fixed(day(5, 10, 0).atZone(IST).toInstant(), IST));
+        WorkCenter cnc = workCenter(1, "WC-CNC");
+        WorkOrder wo = workOrder(10, "WO-10");
+        wo.setWorkOrderStatus(WorkOrderStatus.IN_PROGRESS);
+        WorkOrderOperation turning = operation(1, cnc, 60);
+        turning.setStatus(OperationStatus.IN_PROGRESS);
+        turning.setActualStartDate(date(day(5, 9, 30)));
+        // Planned for Thursday, but the operator started it on Monday morning.
+        turning.setPlannedStartDate(date(day(8, 9, 0)));
+        turning.setPlannedEndDate(date(day(8, 10, 0)));
+        operations(wo, turning);
+
+        service.scheduleWorkOrder(10);
+
+        assertThat(at(turning.getPlannedStartDate())).isEqualTo(day(5, 9, 30));
+        assertThat(at(turning.getPlannedEndDate())).isEqualTo(day(5, 11, 0));
+    }
+
+    @Test
     void anotherOrdersOverrunningOperationStillHoldsItsMachine() {
         service.setClock(Clock.fixed(day(5, 10, 0).atZone(IST).toInstant(), IST));
         WorkCenter cutting = workCenter(1, "WC-CUT");

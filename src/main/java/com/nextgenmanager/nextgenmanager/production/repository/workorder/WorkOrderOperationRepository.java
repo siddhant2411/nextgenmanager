@@ -122,6 +122,28 @@ public interface WorkOrderOperationRepository extends JpaRepository<WorkOrderOpe
             @Param("finishedOperationStatuses") List<OperationStatus> finishedOperationStatuses,
             @Param("finishedWorkOrderStatuses") List<com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus> finishedWorkOrderStatuses);
 
+    /**
+     * Every live operation whose planned time overlaps [from, to): the planner board. Overlap,
+     * not start, so a job that began before the window and is still running shows in it.
+     */
+    @Query("SELECT op FROM WorkOrderOperation op " +
+           "JOIN FETCH op.workOrder wo " +
+           "LEFT JOIN FETCH op.workCenter " +
+           "LEFT JOIN FETCH op.assignedMachine " +
+           "LEFT JOIN FETCH op.routingOperation " +
+           "LEFT JOIN FETCH op.workOrderLine l " +
+           "LEFT JOIN FETCH l.inventoryItem " +
+           "WHERE op.plannedStartDate < :to AND op.plannedEndDate > :from " +
+           "AND op.deletedDate IS NULL AND wo.deletedDate IS NULL " +
+           "AND op.status <> :cancelledOperation " +
+           "AND wo.workOrderStatus NOT IN :closedWorkOrders " +
+           "ORDER BY op.plannedStartDate, op.sequence")
+    List<WorkOrderOperation> findBoardOperations(
+            @Param("from") Date from,
+            @Param("to") Date to,
+            @Param("cancelledOperation") OperationStatus cancelledOperation,
+            @Param("closedWorkOrders") List<com.nextgenmanager.nextgenmanager.production.enums.WorkOrderStatus> closedWorkOrders);
+
     // ── Schedule view queries ──
     // All queries: exclude soft-deleted ops + cancelled ops + soft-deleted WOs
 

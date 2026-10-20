@@ -355,11 +355,12 @@ public class ProductionSchedulerService {
             Date opStart = toDate(p.slot().start());
             Date opEnd = toDate(p.slot().end());
 
-            // Completed and on-hold operations keep what they have. A running one keeps its
-            // start and gets the end it is now heading for.
+            // Completed and on-hold operations keep what they have. A running one is planned as
+            // it really is: from when it started to the end it is now heading for. Keeping its
+            // old planned start would leave a job that began early starting after it ends.
             if (p.pin() == null || p.pin() == Pin.IN_PROGRESS) {
                 if (p.machine() != null) op.setAssignedMachine(p.machine());
-                if (p.pin() == null || op.getPlannedStartDate() == null) op.setPlannedStartDate(opStart);
+                op.setPlannedStartDate(opStart);
                 op.setPlannedEndDate(opEnd);
                 workOrderOperationRepository.save(op);
             }
@@ -1025,7 +1026,7 @@ public class ProductionSchedulerService {
         if (timeline.isBusyDuring(now, end)) {
             warnings.add("Operation " + op.getSequence() + " (" + op.getOperationName() + ") is still running on "
                     + (machine != null ? machine.getMachineCode() : station.workCenter().getCenterCode())
-                    + " until " + end + ", over time already booked there for other work.");
+                    + " until " + fmt(end) + ", over time already booked there for other work.");
         }
         timeline.block(now, end);
 
@@ -1063,7 +1064,7 @@ public class ProductionSchedulerService {
                     .block(slot.start(), slot.end());
         }
         warnings.add("Operation " + op.getSequence() + " (" + op.getOperationName()
-                + ") is on hold; it keeps " + slot.start() + " to " + slot.end() + " until it is moved.");
+                + ") is on hold; it keeps " + fmt(slot.start()) + " to " + fmt(slot.end()) + " until it is moved.");
         LocalDateTime handOver = calendar != null && calendar.hasCapacity()
                 ? handOverAt(workOrder, op, calendar, slot) : slot.end();
         return new Placement(op, wc, op.getAssignedMachine(), calendar, slot, durationMinutes(workOrder, op),
