@@ -76,3 +76,7 @@ application-docker.properties
 /bulk_import/
 /scratch/
 /graphify-out/
+
+# Internal dev docs stay local; only docs/assets is published
+docs/*
+!docs/assets/
