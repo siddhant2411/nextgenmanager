@@ -515,4 +515,11 @@ public class InventoryItemController {
         return ResponseEntity.ok(itemRevisionService.obsolete(revisionId));
     }
 
+    @DeleteMapping("/revisions/{revisionId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_ENGINEERING')")
+    public ResponseEntity<Void> deleteUnreleasedRevision(@PathVariable long revisionId) {
+        itemRevisionService.deleteUnreleased(revisionId);
+        return ResponseEntity.noContent().build();
+    }
+
 }
