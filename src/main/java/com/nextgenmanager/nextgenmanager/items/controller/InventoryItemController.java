@@ -246,6 +246,21 @@ public class InventoryItemController {
         return result;
     }
 
+    /** Marks which attachment the item's drawing number opens. */
+    @PutMapping("/{id}/drawing/{attachmentId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN')")
+    public ResponseEntity<Void> setDrawingAttachment(@PathVariable int id, @PathVariable long attachmentId) {
+        inventoryItemService.setDrawingAttachment(id, attachmentId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/drawing")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_USER','ROLE_INVENTORY_ADMIN')")
+    public ResponseEntity<Void> clearDrawingAttachment(@PathVariable int id) {
+        inventoryItemService.clearDrawingAttachment(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping(value = "/{id}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @RequiresInventoryAdminAccess
     public ResponseEntity<String> uploadFile(@PathVariable int id, @RequestPart("file") MultipartFile file) {
@@ -513,6 +528,13 @@ public class InventoryItemController {
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN')")
     public ResponseEntity<com.nextgenmanager.nextgenmanager.items.DTO.ItemRevisionDTO> obsoleteRevision(@PathVariable long revisionId) {
         return ResponseEntity.ok(itemRevisionService.obsolete(revisionId));
+    }
+
+    @DeleteMapping("/revisions/{revisionId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_INVENTORY_ADMIN','ROLE_ENGINEERING')")
+    public ResponseEntity<Void> deleteUnreleasedRevision(@PathVariable long revisionId) {
+        itemRevisionService.deleteUnreleased(revisionId);
+        return ResponseEntity.noContent().build();
     }
 
 }

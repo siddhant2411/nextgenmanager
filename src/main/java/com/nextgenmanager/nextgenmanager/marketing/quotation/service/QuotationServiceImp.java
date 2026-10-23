@@ -1,13 +1,13 @@
 package com.nextgenmanager.nextgenmanager.marketing.quotation.service;
 
-import com.itextpdf.html2pdf.HtmlConverter;
+import com.nextgenmanager.nextgenmanager.common.service.PdfPageFit;
+import com.nextgenmanager.nextgenmanager.company.dto.CompanyDetailsDTO;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
 import com.nextgenmanager.nextgenmanager.bom.service.BusinessException;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.service.SalesPriceFloorService;
-import com.nextgenmanager.nextgenmanager.contact.model.ContactAddress;
 import com.nextgenmanager.nextgenmanager.contact.model.ContactPersonDetail;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.Enquiry;
 import com.nextgenmanager.nextgenmanager.marketing.enquiry.model.EnquiryStatus;
@@ -17,6 +17,9 @@ import com.nextgenmanager.nextgenmanager.marketing.quotation.model.Quotation;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProducts;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationStatus;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.QuotationRepository;
+import com.nextgenmanager.nextgenmanager.purchase.service.AmountInWords;
+import com.nextgenmanager.nextgenmanager.sales.service.SalesParties;
+import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,8 +29,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
-import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
-import org.thymeleaf.templatemode.TemplateMode;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
@@ -44,6 +45,7 @@ public class QuotationServiceImp implements QuotationService {
     @Autowired private EnquiryRepository enquiryRepository;
     @Autowired private com.nextgenmanager.nextgenmanager.company.service.CompanyDetailsService companyService;
     @Autowired private SalesPriceFloorService priceFloorService;
+    @Autowired private TemplateEngine templateEngine;
 
     Logger logger = LoggerFactory.getLogger(QuotationServiceImp.class);
 
@@ -102,22 +104,35 @@ public class QuotationServiceImp implements QuotationService {
         ));
     }
 
+    /** Item rows on a page when everything fits, as on the order acknowledgement. */
+    private static final int ITEMS_PER_PAGE = 10;
+
+    /** Below this the page is given up on: something other than the item rows is what does not fit. */
+    private static final int MIN_ITEMS_PER_PAGE = 2;
+
     @Override
     public byte[] generateQuotationPdf(String html) {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        HtmlConverter.convertToPdf(html, output);
-        return output.toByteArray();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        PdfRendererBuilder builder = new PdfRendererBuilder();
+        builder.useFastMode();
+        builder.withHtmlContent(html.replace("&nbsp;", "&#160;"), null);
+        builder.toStream(out);
+        try {
+            builder.run();
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not build the quotation PDF: " + e.getMessage(), e);
+        }
+        return out.toByteArray();
     }
 
     @Override
     @Transactional(readOnly = true)
     public ResponseEntity<byte[]> downloadQuotationPdf(Long id) {
-        String html = parseQuotationTemplate(id);
-        String qtnNo = getQuotationById(id).getQtnNo();
-        byte[] pdf = generateQuotationPdf(html);
+        Quotation quotation = getQuotationById(id);
+        byte[] pdf = renderFitted(quotation, buildPdfContext(quotation));
 
         HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=Quotation_" + qtnNo + ".pdf");
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=Quotation_" + quotation.getQtnNo() + ".pdf");
         headers.add("Cache-Control", "no-cache, no-store, must-revalidate");
         headers.add("Pragma", "no-cache");
         headers.add("Expires", "0");
@@ -128,75 +143,85 @@ public class QuotationServiceImp implements QuotationService {
                 .body(pdf);
     }
 
-    private String parseQuotationTemplate(Long id) {
-        try {
-            // Initialize template resolver
-            ClassLoaderTemplateResolver templateResolver = new ClassLoaderTemplateResolver();
-            templateResolver.setTemplateMode(TemplateMode.HTML);
-            // Same root as the shared engine, so the quotation can include fragments/brand.
-            templateResolver.setPrefix("templates/");
-            templateResolver.setSuffix(".html");
-
-            // Fetch quotation object
-            Quotation quotation = getQuotationById(id);
-            if (quotation == null) {
-                throw new IllegalArgumentException("Quotation with ID 253 not found.");
+    /**
+     * Renders with as many item rows per page as actually fit, the way the order acknowledgement does.
+     * A long description or a letterhead makes rows taller than the page was planned for; when the
+     * PDF comes out with more sheets than pages, a row is taken off every page and it is laid out again.
+     */
+    private byte[] renderFitted(Quotation quotation, Context ctx) {
+        List<QuotationProducts> items = quotation.getQuotationProducts() != null
+                ? quotation.getQuotationProducts() : Collections.emptyList();
+        for (int rowsPerPage = ITEMS_PER_PAGE; ; rowsPerPage--) {
+            List<List<QuotationProducts>> itemPages = paginate(items, rowsPerPage);
+            ctx.setVariable("rowsPerPage", rowsPerPage);
+            ctx.setVariable("itemPages", itemPages);
+            byte[] pdf = generateQuotationPdf(templateEngine.process("quotation/quotation", ctx));
+            if (rowsPerPage <= MIN_ITEMS_PER_PAGE || PdfPageFit.pageCount(pdf) <= itemPages.size()) {
+                return pdf;
             }
-
-            // Extract data safely with null checks
-            String companyName = (quotation.getEnquiry() != null && quotation.getEnquiry().getContact() != null) ?
-                    quotation.getEnquiry().getContact().getCompanyName() : "Unknown Company";
-            String companyAddress = "";
-            if (quotation.getEnquiry() != null) {
-                Contact c = quotation.getEnquiry().getContact();
-                if (c != null && c.getAddresses() != null && !c.getAddresses().isEmpty()) {
-                    ContactAddress addr = c.getAddresses().get(0);
-                    companyAddress = java.util.stream.Stream.of(addr.getStreet1(), addr.getStreet2(),
-                            addr.getCity(), addr.getState(), addr.getPinCode(), addr.getCountry())
-                            .filter(s -> s != null && !s.isBlank())
-                            .collect(java.util.stream.Collectors.joining(", "));
-                }
-            }
-            ContactPersonDetail contactInfo = (quotation.getEnquiry() != null && quotation.getEnquiry().getContact() != null &&
-                    !quotation.getEnquiry().getContact().getPersonDetails().isEmpty()) ?
-                    quotation.getEnquiry().getContact().getPersonDetails().get(0) : null;
-
-            Enquiry enquiryInfo = (quotation.getEnquiry() != null) ? quotation.getEnquiry() : null;
-            List<QuotationProducts> quotationProducts = (quotation.getQuotationProducts() != null) ?
-                    quotation.getQuotationProducts() : Collections.emptyList();
-
-            // Fetch company details
-            com.nextgenmanager.nextgenmanager.company.dto.CompanyDetailsDTO appCompany = companyService.get();
-
-            // Set context variables
-            Context context = new Context();
-            Map<String, Object> templateVariables = new HashMap<>();
-            templateVariables.put("companyAddress",companyAddress);
-            templateVariables.put("companyName", companyName);
-            templateVariables.put("contactInfo", contactInfo);
-            templateVariables.put("quotationInfo", quotation);
-            templateVariables.put("enquiryInfo", enquiryInfo);
-            templateVariables.put("quotationProducts", quotationProducts);
-            templateVariables.put("appCompany", appCompany);
-            templateVariables.put("brand", documentBrandingService.current());
-            context.setVariables(templateVariables);
-
-            // Initialize template engine
-            // The plain engine, as every other document uses. The Spring one (thymeleaf-spring5 3.1.5)
-            // calls into a newer Thymeleaf core than the 3.1.2 this build runs on and failed on the
-            // first expression of any template.
-            TemplateEngine templateEngine = new TemplateEngine();
-            templateEngine.setTemplateResolver(templateResolver);
-
-            // Process template
-            return templateEngine.process("quotation/quotation", context);
-
-        } catch (Exception e) {
-            // Rendering an error page into a PDF made the real cause invisible (the caller just saw a
-            // broken download). Fail with the reason instead.
-            logger.error("Quotation template failed for id {}", id, e);
-            throw new IllegalStateException("Could not build the quotation PDF: " + e.getMessage(), e);
         }
+    }
+
+    /** Pages of exactly {@code rowsPerPage} rows; the last is padded with nulls, printed as blank rows. */
+    private static List<List<QuotationProducts>> paginate(List<QuotationProducts> items, int rowsPerPage) {
+        List<List<QuotationProducts>> pages = new ArrayList<>();
+        int pageCount = Math.max(1, (int) Math.ceil((double) items.size() / rowsPerPage));
+        for (int p = 0; p < pageCount; p++) {
+            List<QuotationProducts> page = new ArrayList<>();
+            for (int i = 0; i < rowsPerPage; i++) {
+                int idx = p * rowsPerPage + i;
+                page.add(idx < items.size() ? items.get(idx) : null);
+            }
+            pages.add(page);
+        }
+        return pages;
+    }
+
+    private Context buildPdfContext(Quotation quotation) {
+        Enquiry enquiry = quotation.getEnquiry();
+        Contact customer = enquiry != null ? enquiry.getContact() : null;
+        ContactPersonDetail contactPerson = customer != null && customer.getPersonDetails() != null
+                && !customer.getPersonDetails().isEmpty() ? customer.getPersonDetails().get(0) : null;
+
+        CompanyDetailsDTO company = companyService.get();
+        String companyAddress = java.util.stream.Stream.of(company.street1(), company.street2(), company.city())
+                .filter(s -> s != null && !s.isBlank())
+                .collect(java.util.stream.Collectors.joining(", "));
+        if (company.pinCode() != null && !company.pinCode().isBlank())
+            companyAddress += (companyAddress.isEmpty() ? "" : " - ") + company.pinCode();
+        if (company.state() != null && !company.state().isBlank())
+            companyAddress += (companyAddress.isEmpty() ? "" : ", ") + company.state();
+
+        BigDecimal subTotal = orZero(quotation.getNetAmount());
+        BigDecimal discount = orZero(quotation.getDiscountAmount());
+        BigDecimal packing = orZero(quotation.getPackagingAndForwardingCharges());
+        BigDecimal total = orZero(quotation.getTotalAmount());
+
+        Integer rev = quotation.getRevisionNumber();
+        String qtnNoLabel = quotation.getQtnNo() + (rev != null && rev > 0 ? " (Rev " + rev + ")" : "");
+
+        Context ctx = new Context();
+        ctx.setVariable("brand", documentBrandingService.current());
+        ctx.setVariable("company", company);
+        ctx.setVariable("companyAddress", companyAddress);
+        ctx.setVariable("quotation", quotation);
+        ctx.setVariable("qtnNoLabel", qtnNoLabel);
+        ctx.setVariable("enquiry", enquiry);
+        ctx.setVariable("customer", SalesParties.of(customer));
+        ctx.setVariable("contactPerson", contactPerson);
+        ctx.setVariable("subTotal", subTotal);
+        ctx.setVariable("discountAmount", discount);
+        ctx.setVariable("packingAmount", packing);
+        ctx.setVariable("taxableValue", subTotal.subtract(discount).add(packing));
+        ctx.setVariable("gstAmount", orZero(quotation.getGstAmount()));
+        ctx.setVariable("roundOff", orZero(quotation.getRoundOff()));
+        ctx.setVariable("totalAmount", total);
+        ctx.setVariable("amountInWords", AmountInWords.convert(total));
+        return ctx;
+    }
+
+    private static BigDecimal orZero(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 
     @Transactional

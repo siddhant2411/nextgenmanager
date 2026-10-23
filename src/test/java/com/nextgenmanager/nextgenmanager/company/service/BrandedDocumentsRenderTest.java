@@ -299,10 +299,10 @@ class BrandedDocumentsRenderTest {
                 .generatePdf(1L);
     }
 
-    /** The quotation builds its own template engine and is laid out by a different PDF library (iText). */
+    /** The quotation is laid out as the order acknowledgement is, so its item names must wrap rather than be cut. */
     static byte[] quotation(Brand brand) {
         QuotationProducts product = new QuotationProducts();
-        product.setProductNameRequired("Flush Bottom Valve 1");
+        product.setProductNameRequired("Flush Bottom Tank Valve 50 NB x 40 NB, CF8M body, PTFE seat, ram type, pneumatic actuated");
         product.setQty(new BigDecimal("2"));
         product.setUnitPriceAfterDiscount(new BigDecimal("5000.00"));
         product.setTotalAmountOfProduct(new BigDecimal("10000.00"));
@@ -327,6 +327,7 @@ class BrandedDocumentsRenderTest {
         QuotationServiceImp service = new QuotationServiceImp();
         ReflectionTestUtils.setField(service, "quotationRepository", quotations);
         ReflectionTestUtils.setField(service, "companyService", companyDetailsService());
+        ReflectionTestUtils.setField(service, "templateEngine", engine());
         ReflectionTestUtils.setField(service, "documentBrandingService", brandingService(brand.branding()));
         return service.downloadQuotationPdf(1L).getBody();
     }

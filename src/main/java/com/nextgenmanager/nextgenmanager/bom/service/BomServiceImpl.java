@@ -30,6 +30,7 @@ import com.nextgenmanager.nextgenmanager.common.dto.FilterRequest;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ItemRevision;
 import com.nextgenmanager.nextgenmanager.items.model.ItemRevisionStatus;
+import com.nextgenmanager.nextgenmanager.items.service.ItemDrawingPicker;
 import com.nextgenmanager.nextgenmanager.items.repository.InventoryItemRepository;
 import com.nextgenmanager.nextgenmanager.items.service.InventoryItemService;
 import com.nextgenmanager.nextgenmanager.production.enums.CostType;
@@ -1617,14 +1618,8 @@ public class BomServiceImpl implements BomService {
 
         for (BomListDTO dto : dtos) {
             List<FileAttachment> attachments = attachmentMap.get((long) dto.getParentItemId());
-            if (attachments != null && !attachments.isEmpty()) {
-                FileAttachment drawing = attachments.stream()
-                        .filter(a -> dto.getParentDrawingNumber() != null && !dto.getParentDrawingNumber().isBlank() &&
-                                a.getOriginalName().toLowerCase().contains(dto.getParentDrawingNumber().toLowerCase()))
-                        .findFirst()
-                        .orElse(attachments.get(0));
-                dto.setDrawingFileId(drawing.getId());
-            }
+            ItemDrawingPicker.pick(attachments, dto.getParentDrawingNumber())
+                    .ifPresent(drawing -> dto.setDrawingFileId(drawing.getId()));
         }
     }
 
@@ -1634,22 +1629,14 @@ public class BomServiceImpl implements BomService {
         int itemId = dto.getParentInventoryItem().getInventoryItemId();
         List<FileAttachment> attachments = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem", (long) itemId);
 
-        if (!attachments.isEmpty()) {
-            String drawingNumber = null;
-            InventoryItem item = inventoryItemRepository.findById(itemId).orElse(null);
-            if (item != null && item.getProductSpecification() != null) {
-                drawingNumber = item.getProductSpecification().getDrawingNumber();
-            }
+        InventoryItem item = attachments.isEmpty() ? null : inventoryItemRepository.findById(itemId).orElse(null);
+        String drawingNumber = item != null && item.getProductSpecification() != null
+                ? item.getProductSpecification().getDrawingNumber() : null;
 
-            final String finalDrawingNumber = drawingNumber;
-            FileAttachment drawing = attachments.stream()
-                    .filter(a -> finalDrawingNumber != null && !finalDrawingNumber.isBlank() &&
-                            a.getOriginalName().toLowerCase().contains(finalDrawingNumber.toLowerCase()))
-                    .findFirst()
-                    .orElse(attachments.get(0));
+        ItemDrawingPicker.pick(attachments, drawingNumber).ifPresent(drawing -> {
             dto.setDrawingFileId(drawing.getId());
             dto.getParentInventoryItem().setDrawingFileId(drawing.getId());
-        }
+        });
     }
 
 }

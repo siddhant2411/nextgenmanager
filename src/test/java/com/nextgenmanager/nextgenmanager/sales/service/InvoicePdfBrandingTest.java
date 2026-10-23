@@ -13,9 +13,12 @@ import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderItem;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesPayment;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxType;
+import com.nextgenmanager.nextgenmanager.sales.model.DeliveryNote;
+import com.nextgenmanager.nextgenmanager.sales.repository.DeliveryNoteRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesPaymentRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -120,6 +123,27 @@ public class InvoicePdfBrandingTest {
         assertThat(sheets(service(noImage, 3, 0).generateProformaInvoicePdf(1L)).get(0)).contains("Plot No. 214/B");
     }
 
+    @Test
+    void invoicePrintsTheEwayBillsOfTheOrdersDeliveryNotes() throws Exception {
+        InvoicePdfService service = service(null, 3, 0, so -> so.setId(7L));
+        DeliveryNoteRepository notes = mock(DeliveryNoteRepository.class);
+        DeliveryNote first = new DeliveryNote();
+        first.setEwayBillNumber("331000112233");
+        DeliveryNote second = new DeliveryNote();
+        second.setEwayBillNumber("331000445566");
+        when(notes.findBySalesOrderIdOrderByIdAsc(7L)).thenReturn(List.of(first, new DeliveryNote(), second));
+        ReflectionTestUtils.setField(service, "deliveryNoteRepository", notes);
+
+        String sheet = sheets(service.generateInvoicePdf(1L)).get(0).replaceAll("\\s+", " ");
+        assertThat(sheet).contains("331000112233, 331000445566");
+    }
+
+    @Test
+    void anEwayBillTypedOnTheOrderStillWins() throws Exception {
+        InvoicePdfService service = service(null, 3, 0, so -> { so.setId(7L); so.setEwayBillNumber("991234567890"); });
+        assertThat(sheets(service.generateInvoicePdf(1L)).get(0)).contains("991234567890");
+    }
+
     // ── fixtures ──────────────────────────────────────────────────────────────
 
     static InvoicePdfService service(DocumentBranding branding, int itemCount, int paymentCount) {
@@ -148,7 +172,8 @@ public class InvoicePdfBrandingTest {
                 .thenReturn(new BigDecimal("25000.00").multiply(BigDecimal.valueOf(paymentCount)));
 
         return new InvoicePdfService(BrandingFixtures.engine(), orders, payments,
-                BrandingFixtures.companyRepository(), BrandingFixtures.brandingService(branding));
+                BrandingFixtures.companyRepository(), BrandingFixtures.brandingService(branding),
+                mock(DeliveryNoteRepository.class));
     }
 
     public static SalesOrder order(int itemCount) {

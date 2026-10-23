@@ -52,6 +52,12 @@ public interface InventoryItemService {
 
     public Page<InventoryItemDTO> filterInventoryItems(com.nextgenmanager.nextgenmanager.common.dto.FilterRequest request);
 
+    /** Marks one of the item's attachments as the file its drawing number opens, unmarking any other. */
+    void setDrawingAttachment(int itemId, long attachmentId);
+
+    /** Unmarks the item's drawing; the drawing number then links to the best guess again. */
+    void clearDrawingAttachment(int itemId);
+
 
 
 }

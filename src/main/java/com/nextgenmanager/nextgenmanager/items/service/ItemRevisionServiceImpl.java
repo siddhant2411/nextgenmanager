@@ -300,6 +300,35 @@ public class ItemRevisionServiceImpl implements ItemRevisionService {
     }
 
     @Override
+    @Transactional
+    public void deleteUnreleased(long revisionId) {
+        ItemRevision rev = findOr404(revisionId);
+        if (rev.getStatus() == ItemRevisionStatus.DRAFT) {
+            requireDraftRole();
+        } else if (rev.getStatus() == ItemRevisionStatus.PENDING_APPROVAL) {
+            // Throwing away a revision someone has asked to be released is the approver's call.
+            requireReleaseRole();
+        } else {
+            throw new IllegalArgumentException("Revision " + rev.getRevisionCode() + " is " + rev.getStatus()
+                    + " — only a revision that was never released (DRAFT or PENDING_APPROVAL) can be deleted.");
+        }
+        // Neither can happen through the normal flow (a draft is never current and BOMs pin the
+        // current revision), but a delete must not be what finds out.
+        InventoryItem item = rev.getInventoryItem();
+        if (item.getCurrentRevision() != null && Objects.equals(item.getCurrentRevision().getId(), rev.getId())) {
+            throw new IllegalArgumentException("Revision " + rev.getRevisionCode() + " is the item's current revision and cannot be deleted.");
+        }
+        long pinnedBy = itemRevisionRepository.countBomPositionsPinning(rev.getId());
+        if (pinnedBy > 0) {
+            throw new IllegalArgumentException("Revision " + rev.getRevisionCode() + " is used on " + pinnedBy
+                    + " BOM position(s) and cannot be deleted.");
+        }
+        itemRevisionRepository.delete(rev);
+        logger.info("Item {} revision {} ({}) deleted by {}", item.getInventoryItemId(), rev.getRevisionCode(),
+                rev.getStatus(), currentUsername());
+    }
+
+    @Override
     public void assertEngineeringFieldsUnchanged(InventoryItem existing, InventoryItem updated) {
         ItemRevision current = existing.getCurrentRevision();
         if (current == null || current.getStatus() != ItemRevisionStatus.RELEASED) {

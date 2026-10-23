@@ -45,6 +45,13 @@ public interface ItemRevisionService {
     ItemRevisionDTO obsolete(long revisionId);
 
     /**
+     * Deletes a revision that was never released (DRAFT or PENDING_APPROVAL). Nothing can have
+     * been built, bought or pinned against it, so it is removed outright and its code is free for
+     * the next revise. A revision that has ever been released is history and is never deleted.
+     */
+    void deleteUnreleased(long revisionId);
+
+    /**
      * Throws IllegalArgumentException if {@code updated} changes an engineering field
      * (dimension/size/weight/basicMaterial/processType/drawingNumber/uom/hsnCode) while the
      * item's current revision is RELEASED. Called from {@code editInventoryItem} so the ordinary
