@@ -1,408 +1,234 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
-
+<html xmlns:th="http://www.thymeleaf.org">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8"/>
     <title>Quotation</title>
+    <!-- Laid out as the order acknowledgement and invoice are, so a customer gets one look from quote to bill. -->
     <style>
-        /* Ensure the entire page takes up full space */
-        @page {
-            size: A4;
-            margin: 10mm;
-        }
+        @page { size: A4; margin: 10mm 12mm 10mm 12mm; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #000; background: #fff; }
+        .invoice-page { width: 100%; border: 1.5px solid #000; min-height: 272mm; }
 
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Times New Roman', Times, serif;
-        }
+        .doc-header { border-bottom: 1px solid #000; padding: 8px 12px; text-align: center; }
+        .company-name { font-size: 20px; font-weight: bold; letter-spacing: 1px; }
+        .company-sub  { font-size: 11px; margin-top: 3px; color: #333; }
+        .doc-title    { font-size: 15px; font-weight: bold; text-align: center; letter-spacing: 2px;
+                        border-top: 1px solid #000; border-bottom: 1px solid #000;
+                        padding: 4px 0; margin-top: 5px; }
 
-        /* Ensure the border covers the entire body */
-        body {
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            position: relative;
-        }
+        .page-info { font-size: 10px; color: #555; text-align: right;
+                     padding: 2px 10px; border-bottom: 1px solid #ccc; }
 
-        .header {
-            padding-bottom: 2mm;
-            margin-bottom: 2mm;
-            border-bottom: 2px solid #0097d9;
-        }
+        .addr-row  { display: table; width: 100%; border-bottom: 1px solid #000; }
+        .addr-cell { display: table-cell; vertical-align: top; padding: 8px 10px; }
+        .addr-cell.right { width: 50%; }
+        .addr-cell.left  { width: 50%; border-right: 1px solid #000; }
+        .addr-label { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 3px; }
+        .addr-name  { font-size: 14px; font-weight: bold; }
+        .addr-line  { font-size: 11px; line-height: 1.6; }
 
-        .header-container {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            width: 100%;
-        }
+        .ref-table { width: 100%; border-collapse: collapse; border-bottom: 1px solid #000; }
+        .ref-table td { border: 1px solid #ccc; padding: 5px 8px; font-size: 11px; vertical-align: top; width: 25%; }
+        .ref-label { font-size: 10px; color: #555; display: block; }
+        .ref-value { font-size: 12px; font-weight: bold; }
 
-        .gstNumber {
-            flex: 1;
-            text-align: left;
-        }
+        .intro { font-size: 11px; padding: 5px 10px; border-bottom: 1px solid #000; }
 
-        .fileheader {
-            flex: 1;
-            text-align: right;
-        }
+        .items-table { width: 100%; border-collapse: collapse; border-bottom: 1px solid #000; table-layout: fixed; }
+        .items-table th { background: #f0f0f0; border: 1px solid #999; padding: 5px 6px;
+                          font-size: 11px; text-align: center; font-weight: bold; }
+        .items-table td { border: 1px solid #ccc; padding: 2px 6px; font-size: 11px;
+                          vertical-align: middle; height: 32px; }
+        .items-table td.num { text-align: right; }
+        .items-table td.ctr { text-align: center; }
+        /* A long name wraps onto more lines and the row grows; it is never clipped. */
+        .items-table td.desc { word-wrap: break-word; overflow-wrap: break-word; padding-top: 4px; padding-bottom: 4px; }
+        .item-name { font-weight: bold; font-size: 11px; }
+        .item-code { font-size: 10px; color: #555; }
+        .item-note { font-size: 10px; color: #333; margin-top: 2px; }
 
-        .content {
-            padding: 0;
-        }
+        .totals-row   { display: table; width: 100%; border-bottom: 1px solid #000; }
+        .totals-left  { display: table-cell; width: 55%; vertical-align: top;
+                        padding: 8px 10px; border-right: 1px solid #000; }
+        .totals-right { display: table-cell; width: 45%; vertical-align: top; padding: 0; }
+        .totals-right table { width: 100%; border-collapse: collapse; }
+        .totals-right td { padding: 4px 10px; font-size: 12px; border-bottom: 1px solid #eee; }
+        .totals-right td.amount { text-align: right; }
+        .totals-right tr.grand td { font-size: 14px; font-weight: bold; background: #f0f0f0;
+                                     border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; }
 
-        .footer-text {
-            position: absolute;
-            bottom: 2px;
-            /* Adjust as needed */
-            left: 50%;
-            transform: translateX(-50%);
-            color: white;
-            /* Adjust based on your image */
-            font-size: 15px;
-            /* Adjust as needed */
-            font-weight: bold;
-            text-align: center;
-            padding-left: 15px;
-            padding-top: 5px
-        }
+        .terms-section { border-bottom: 1px solid #000; padding: 8px 10px; }
+        .terms-section table { width: 100%; border-collapse: collapse; }
+        .terms-section td { padding: 4px 8px; font-size: 11px; vertical-align: top; width: 25%; }
+        .terms-section td.label { font-weight: bold; }
 
-        .details {
-            margin-top: 3mm;
-
-        }
-
-        .file-details {
-            display: flex;
-            justify-content: space-between;
-            /* Ensures items go to extreme ends */
-            align-items: center;
-            width: 100%;
-        }
-
-        .company-details {
-            flex: 1;
-            text-align: left;
-            border: 1px solid black;
-            height: 25mm;
-            width: 50%;
-            padding: 3mm;
-            padding-bottom: 0px;
-            /* Adds padding inside the box */
-            box-sizing: border-box;
-
-
-        }
-
-        .document-details {
-            flex: 1;
-            text-align: right;
-            /* border: 3px solid red; */
-            height: 25mm;
-            width: 50%;
-            padding: 3mm;
-            padding-top: 0mm;
-            padding-right: 0mm;
-            margin-left: 20mm;
-            /* Adds padding inside the box */
-            box-sizing: border-box;
-            padding-bottom: 0px;
-
-        }
-
-        table {
-            border: 1px solid black;
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th,
-        td {
-            border: 1px solid black;
-            text-align: left;
-        }
-
-        .enquiry-details {
-            margin-top: 2mm;
-        }
-
-        .product-table {
-            margin-top: 5mm;
-        }
+        .bank-sig-row { display: table; width: 100%; }
+        .bank-cell { display: table-cell; width: 50%; vertical-align: top;
+                     padding: 8px 10px; border-right: 1px solid #000; font-size: 11px; }
+        .bank-cell td { font-size: 11px; padding: 1px 0; }
+        .bank-cell td.k { width: 35%; font-size: 10px; color: #555; }
+        .footer-sig { display: table-cell; width: 50%; vertical-align: top; padding: 8px 10px; text-align: right; font-size: 11px; }
+        .footer-sig .for-line { margin-bottom: 32px; }
+        .section-title { font-weight: bold; font-size: 11px; margin-bottom: 4px; text-decoration: underline; }
     </style>
 </head>
-
 <body>
+<th:block th:each="page, pageIter : ${itemPages}">
+<div class="invoice-page" th:style="${!pageIter.last ? 'page-break-after: always;' : ''}">
 
-    <div class="header">
-        <div th:replace="~{fragments/brand :: band}"></div>
-        <div th:unless="${brand.replacesHeader}" th:style="${brand.logo} ? 'text-align: left;' : 'text-align: center;'">
-            <img th:replace="~{fragments/brand :: floatLogo}"/>
-            <h1 th:text="${appCompany.companyName}" style="color: #0097d9; margin: 0; font-size: 28px; text-transform: uppercase;">Company Name</h1>
-            <div style="font-size: 12px; color: #666; margin-top: 2mm;">
-                <span th:text="${appCompany.street1} + ', ' + ${appCompany.street2} + ', ' + ${appCompany.city} + ' - ' + ${appCompany.pinCode} + ', ' + ${appCompany.state} + ', ' + ${appCompany.country}"></span>
+    <!-- Company header: text, logo or letterhead, as Company Details > Document branding says -->
+    <div th:replace="~{fragments/brand :: salesHeader('QUOTATION', null)}"></div>
+
+    <div class="page-info" th:if="${itemPages.size() > 1}">
+        Page <span th:text="${pageIter.index + 1}"></span> of <span th:text="${itemPages.size()}"></span>
+    </div>
+
+    <!-- Party details -->
+    <div class="addr-row">
+        <div class="addr-cell left">
+            <div class="addr-label">To</div>
+            <div class="addr-name" th:text="${customer.name}"></div>
+            <div class="addr-line" th:if="${customer.address != null}" th:text="${customer.address}"></div>
+            <div class="addr-line" th:if="${customer.gstin != null or customer.stateLabel != null}">
+                <span th:if="${customer.gstin != null}" th:text="${'GSTIN: ' + customer.gstin}"></span>
+                <span th:if="${customer.gstin != null and customer.stateLabel != null}">|</span>
+                <span th:if="${customer.stateLabel != null}" th:text="${'State: ' + customer.stateLabel}"></span>
             </div>
-            <div style="font-size: 12px; color: #666; margin-top: 1mm;">
-                <span th:if="${appCompany.phone}" th:text="'Phone: ' + ${appCompany.phone}"></span>
-                <span th:if="${appCompany.email}" th:text="' | Email: ' + ${appCompany.email}"></span>
-                <span th:if="${appCompany.website}" th:text="' | Website: ' + ${appCompany.website}"></span>
-            </div>
-            <div style="clear: both;"></div>
+        </div>
+        <div class="addr-cell right">
+            <div class="addr-label">Kind Attention</div>
+            <th:block th:if="${contactPerson != null}">
+                <div class="addr-name" th:text="${contactPerson.personName}"></div>
+                <div class="addr-line" th:if="${contactPerson.phoneNumber != null and contactPerson.phoneNumber != ''}"
+                     th:text="${'Ph: ' + contactPerson.phoneNumber}"></div>
+                <div class="addr-line" th:if="${contactPerson.emailId != null and contactPerson.emailId != ''}"
+                     th:text="${'E-mail: ' + contactPerson.emailId}"></div>
+            </th:block>
         </div>
     </div>
-    <div class="content">
-        <div class="header-container">
-            <div class="gstNumber">
-                <h3 th:if="${appCompany.gstNumber}" th:text="'GST No: ' + ${appCompany.gstNumber}">GST No: </h3>
-            </div>
-            <div class="fileheader">
-                <u>
-                    <h2>Quotation</h2>
-                </u>
-            </div>
-        </div>
 
-        <div class="details">
-            <div class="file-details">
-                <div class="company-details" style="font-size:12px">
+    <!-- Reference fields -->
+    <table class="ref-table">
+        <tr>
+            <td><span class="ref-label">Quotation No.</span><span class="ref-value" th:text="${qtnNoLabel}"></span></td>
+            <td><span class="ref-label">Quotation Date</span><span class="ref-value" th:text="${quotation.qtnDate}"></span></td>
+            <td><span class="ref-label">Your Enquiry No.</span><span class="ref-value" th:text="${enquiry != null ? enquiry.enqNo : ''}"></span></td>
+            <td><span class="ref-label">Enquiry Date</span><span class="ref-value" th:text="${enquiry != null ? enquiry.enqDate : ''}"></span></td>
+        </tr>
+    </table>
 
-                    <div th:text="'M/s.'+ ${companyName}"></div>
-                    <div th:text="${companyAddress}"></div>
-                    <div th:text="${contactInfo != null ? contactInfo.personName : ''}"></div>
-                    <div th:text="${contactInfo != null ? contactInfo.phoneNumber : ''}"></div>
-                    <div th:text="${contactInfo != null ? contactInfo.emailId : ''}"></div>
+    <div class="intro" th:if="${pageIter.first}">
+        We thank you for your enquiry and are pleased to submit our offer as below.
+    </div>
+
+    <!-- Items: a fixed number of rows per page, set by QuotationServiceImp -->
+    <table class="items-table">
+        <thead>
+        <tr>
+            <th style="width:5%">#</th>
+            <th style="width:38%">Description of Goods</th>
+            <th style="width:10%">HSN/SAC</th>
+            <th style="width:8%">Qty</th>
+            <th style="width:6%">UOM</th>
+            <th style="width:12%">Rate (₹)</th>
+            <th style="width:7%">Disc%</th>
+            <th style="width:14%">Amount (₹)</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="item, rowIter : ${page}">
+            <td class="ctr" th:text="${item != null ? pageIter.index * rowsPerPage + rowIter.index + 1 : ''}"></td>
+            <td class="desc" th:if="${item != null}">
+                <span class="item-name" th:text="${item.productNameRequired != null and item.productNameRequired != '' ? item.productNameRequired : (item.inventoryItem != null ? item.inventoryItem.name : '')}"></span>
+                <span class="item-code" th:if="${item.inventoryItem != null and item.inventoryItem.itemCode != null}"> &#160;(<span th:text="${item.inventoryItem.itemCode}"></span>)</span>
+                <div class="item-note" th:if="${item.specialInstruction != null and item.specialInstruction != ''}" th:text="${item.specialInstruction}"></div>
+            </td>
+            <td th:unless="${item != null}"></td>
+            <td class="ctr" th:text="${item != null and item.inventoryItem != null ? item.inventoryItem.hsnCode : ''}"></td>
+            <td class="num" th:text="${item != null ? item.qty : ''}"></td>
+            <td class="ctr" th:text="${item != null and item.inventoryItem != null ? item.inventoryItem.uom : ''}"></td>
+            <td class="num" th:text="${item != null and item.pricePerUnit != null ? #numbers.formatDecimal(item.pricePerUnit, 1, 2) : ''}"></td>
+            <td class="ctr" th:text="${item != null ? item.discountPercentage : ''}"></td>
+            <td class="num" th:text="${item != null and item.totalAmountOfProduct != null ? #numbers.formatDecimal(item.totalAmountOfProduct, 1, 2) : ''}"></td>
+        </tr>
+        </tbody>
+    </table>
+
+    <!-- Totals — only on last page -->
+    <th:block th:if="${pageIter.last}">
+
+        <div class="totals-row">
+            <div class="totals-left">
+                <div><b>Amount (in words):</b></div>
+                <div style="font-size:11px; font-style:italic; margin-top:4px;" th:text="${amountInWords}"></div>
+                <div style="margin-top:8px; font-size:11px;" th:if="${quotation.notes != null and quotation.notes != ''}">
+                    <b>Notes:</b> <span th:text="${quotation.notes}"></span>
                 </div>
-                <div class="document-details">
-                    <div class="quotation-details">
-                        <table style="border: 1px solid black; width: 100%;">
-                            <tr>
-                                <td style="width: 30%; padding-left: 3px;">Qtn No</td>
-                                <td th:text="${quotationInfo.qtnNo}"></td>
-                            </tr>
-                            <tr>
-                                <td style="width: 30%; padding-left: 3px;">Qtn Date</td>
-                                <td th:text="${quotationInfo.qtnDate}"></td>
-                            </tr>
-                        </table>
-                    </div>
-                    <div class="enquiry-details">
-                        <table style="border: 1px solid black; width: 100%;">
-                            <tr>
-                                <td style="width: 30%; padding-left: 3px;">Enq No</td>
-                                <td th:text="${enquiryInfo != null ? enquiryInfo.enqNo : ''}"></td>
-                            </tr>
-                            <tr>
-                                <td style="width: 30%; padding-left: 3px;">Enq Date</td>
-                                <td th:text="${enquiryInfo != null ? enquiryInfo.enqDate : ''}"></td>
-                            </tr>
-                        </table>
-                    </div>
-
-                </div>
             </div>
-
-            <div style="margin-top: 3mm;">
-                We thank you for your enquiry and are pleased to submit our quotation as below.
-            </div>
-
-            <div class="product-table" >
-                <table style="border-collapse: collapse; width: 100%; border: 1px solid black; min-height:80mm;">
-                    <!-- Table Header -->
-                    <thead>
-                        <tr style="background-color: #5fcfff; text-align: center; border-bottom: 2px solid black;">
-                            <th style="text-align: center; height: 10mm;">No.</th>
-                            <th style="width: 60%; text-align: center; height: 10mm;">Description</th>
-                            <th style="text-align: center; height: 10mm;">Qty No.</th>
-                            <th style="text-align: center; height: 10mm;">Rate Rs.</th>
-                            <th style="text-align: center; height: 10mm;">Per</th>
-                            <th style="text-align: center; height: 10mm;">Amount Rs.</th>
-                        </tr>
-
-                    </thead>
-
-                    <!-- Table Body -->
-                    <tbody>
-                        <!-- Iterate over "quotationProducts" list -->
-                        <tr th:each="product, iterStat : ${quotationProducts}" style="border: none; vertical-align:top; ">
-                            <td style="text-align: center; border-top: none; border-bottom: none;  padding-top: 5mm;"
-                                th:text="${iterStat.index + 1}"></td>
-                            <td style="text-align: left; border-top: none; border-bottom: none; padding-top: 5mm; padding-left: 3mm;"
-                                th:utext="${product.specialInstruction != null ? '<b>' + product.productNameRequired + '</b><br/><small>' + product.specialInstruction + '</small>' : '<b>' + product.productNameRequired + '</b>'}">
-                            </td>
-
-                            <td style="text-align: center; border-top: none; border-bottom: none; padding-top: 5mm;"
-                                th:text="${product.qty}"></td>
-                            <td style="text-align: right; border-top: none; border-bottom: none; padding-top: 5mm;"
-                                th:text="${product.unitPriceAfterDiscount}"></td>
-                            <td
-                                style="text-align: center; border-top: none; border-bottom: none; padding-top: 5mm; width: 8%;">
-                                Each</td>
-                            <td style="text-align: right; border-top: none; border-bottom: none; padding-top: 5mm;"
-                                th:text="${product.totalAmountOfProduct}">%</td>
-                        </tr>
-
-
-
-                    </tbody>
-
-
-
-                </table>
-
+            <div class="totals-right">
                 <table>
-                    <tbody>
-                        <td style="width: 15%; border-left: none;border-right: none;"></td>
-                        <td style="width: 35%; "></td>
-                        <td style="text-align: right;border-left: none; width: 30%; padding-right: 5mm;">
-                            Total
-                        </td>
-                        <td style="border-left: none;border-right: none;">
-
-                        </td>
-                        <td style="text-align: right;border-right: none;" th:text="${quotationInfo.netAmount}">
-
-                        </td>
-                        <tr>
-                            <td style="padding-left: 2mm;">
-                                Validity
-                            </td>
-                            <td style="padding-left: 2mm;"    th:text="${quotationInfo.validTill}">
-
-                            </td>
-                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
-                                Discount%
-                            </td>
-                            <td style="width: 7.9%; text-align: right;"
-                                th:text="${quotationInfo.discountPercentage != null ? #numbers.formatDecimal(quotationInfo.discountPercentage, 1, 1) : '0.0'} + '%'">
-                            </td>
-                            <td style="text-align: right;" th:text="${quotationInfo.discountAmount}">
-                            </td>
-
-                        <tr>
-                            <td style="padding-left: 2mm;">
-                                Prices
-                            </td>
-                            <td style="padding-left: 2mm;"   th:text="${quotationInfo.pricesTerms}">
-                            </td>
-                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
-                                P & F charges %
-                            </td>
-                            <td style="width: 7.9%; text-align: right;"  th:text="${quotationInfo.packagingAndForwardingChargesPercentage}+'%'">
-                            </td>
-                            <td style="text-align: right;" th:text="${quotationInfo.packagingAndForwardingCharges}">
-                            </td>
-
-                        <tr>
-                            <td style="padding-left: 2mm;">
-                                Terms:
-                            </td>
-                            <td style="padding-left: 2mm;" th:text="${quotationInfo.paymentTerms}">
-
-                            </td>
-                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
-                                Taxable Amount
-                            </td>
-                            <td style="width: 7.9%; text-align: right;">
-                            </td>
-                            <td style="text-align: right;"
-                                th:text="${#numbers.formatDecimal(quotationInfo.netAmount - quotationInfo.discountAmount + quotationInfo.packagingAndForwardingCharges, 1, 2)}">
-                            </td>
-
-                        </tr>
-                        <tr>
-                            <td style="padding-left: 2mm;">
-                                Delivery Date
-                            </td>
-                            <td style="padding-left: 2mm;"  th:text="${quotationInfo.deliveryTerms}">
-
-                            </td>
-                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
-                                GST%
-                            </td>
-                            <td style="width: 7.9%; text-align: right;"
-                                th:text="${quotationInfo.gstPercentage != null ? #numbers.formatDecimal(quotationInfo.gstPercentage, 1, 1) : '0.0'} + '%'">
-                            </td>
-                            <td style="text-align: right;" th:text="${quotationInfo.gstAmount}">
-                            </td>
-
-                        </tr>
-
-                        <tr>
-                            <td style="padding-left: 2mm;">
-                                Inspection :
-                            </td>
-                            <td style="padding-left: 2mm;" th:text="${quotationInfo.inspectionTerms}">
-
-                            </td>
-                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
-                                Round off
-                            </td>
-                            <td style="width: 7.9%; text-align: right;">
-                            </td>
-                            <td style="text-align: right;" th:text="${quotationInfo.roundOff}">
-                            </td>
-
-                        </tr>
-                        <tr>
-                            <td style="padding-left: 2mm;">
-                                Notes :
-                            </td>
-                            <td style="padding-left: 2mm;" th:text="${quotationInfo.notes}">
-
-                            </td>
-                            <td style="text-align: right;border-left: none; width:30.2%; padding-right: 5mm;">
-                                Total Amount
-                            </td>
-                            <td style="width: 7.9%; text-align: right;">
-                            </td>
-                            <td style="text-align: right;" th:text="${quotationInfo.totalAmount}">
-                            </td>
-
-                        </tr>
-                        <tr></tr>
-                    </tbody>
+                    <tr><td>Sub Total</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(subTotal, 1, 2)}"></td></tr>
+                    <tr th:if="${discountAmount.signum() != 0}">
+                        <td>Discount (<span th:text="${quotation.discountPercentage}"></span>%)</td>
+                        <td class="amount" th:text="'- ' + ${#numbers.formatDecimal(discountAmount, 1, 2)}"></td></tr>
+                    <tr th:if="${packingAmount.signum() != 0}">
+                        <td>P &amp; F Charges (<span th:text="${quotation.packagingAndForwardingChargesPercentage}"></span>%)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(packingAmount, 1, 2)}"></td></tr>
+                    <tr><td>Taxable Value</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(taxableValue, 1, 2)}"></td></tr>
+                    <tr><td>GST (<span th:text="${quotation.gstPercentage}"></span>%)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(gstAmount, 1, 2)}"></td></tr>
+                    <tr th:if="${roundOff.signum() != 0}">
+                        <td>Round Off</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(roundOff, 1, 2)}"></td></tr>
+                    <tr class="grand">
+                        <td>Total (₹)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(totalAmount, 1, 2)}"></td></tr>
                 </table>
-
-                <table style="margin-top: 5mm;">
-                    <tbody>
-                        <tr>
-                            <td style="width: 50%; border-bottom:none ;">BANK DETAIL</td>
-                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none" th:text="${appCompany.companyName}">Company Name</td>
-                        </tr>
-                        <tr>
-                            <td style="width: 50%;border-bottom:none; border-top: none;"></td>
-                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none"></td>
-                        </tr>
-                        <tr>
-                            <td style="width: 50%; border-bottom:none; border-top: none"></td>
-                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none">Authorized Signatory</td>
-                        </tr>
-                        <tr>
-                            <td style="width: 50%; border-bottom:none; border-top: none"></td>
-                            <td style="width: 50%; text-align: right; padding-right: 5mm; border-bottom:none; border-top: none"></td>
-                        </tr>
-                    </tbody>
-                </table>
-
-
             </div>
-
-
-
         </div>
-    </div>
 
-
-
-    <div class="footer" style="border-top: 1px solid #eee; padding: 3mm; text-align: center;">
-        <div style="font-size: 10px; color: #999;">
-            Generated by NextGenManager | 
-            <span th:if="${appCompany.website}" th:text="${appCompany.website}"></span>
+        <div class="terms-section">
+            <div class="section-title">Terms &amp; Conditions</div>
+            <table style="margin-top:4px;">
+                <tr>
+                    <td class="label">Prices</td><td th:text="${quotation.pricesTerms}"></td>
+                    <td class="label">Payment Terms</td><td th:text="${quotation.paymentTerms}"></td>
+                </tr>
+                <tr>
+                    <td class="label">Delivery</td><td th:text="${quotation.deliveryTerms}"></td>
+                    <td class="label">Inspection</td><td th:text="${quotation.inspectionTerms}"></td>
+                </tr>
+                <tr>
+                    <td class="label">Validity</td><td colspan="3" th:text="${quotation.validTill}"></td>
+                </tr>
+            </table>
         </div>
-    </div>
 
+        <div class="bank-sig-row">
+            <div class="bank-cell">
+                <div class="section-title">Bank Details</div>
+                <table style="width:100%; border-collapse:collapse; margin-top:3px;">
+                    <tr><td class="k">Bank Name</td><td th:text="${company.bankName}"></td></tr>
+                    <tr><td class="k">A/c Holder</td><td th:text="${company.companyName}"></td></tr>
+                    <tr><td class="k">Account No.</td><td th:text="${company.bankAccountNumber}"></td></tr>
+                    <tr><td class="k">IFSC Code</td><td th:text="${company.bankIfscCode}"></td></tr>
+                </table>
+            </div>
+            <div class="footer-sig">
+                <div style="font-size:11px; margin-bottom:20px; text-align:left;">
+                    We look forward to your valued order.
+                </div>
+                <div class="for-line">For <b th:text="${company.companyName}"></b></div>
+                <div>Authorised Signatory</div>
+            </div>
+        </div>
+
+    </th:block>
+
+</div>
+</th:block>
 </body>
-
 </html>

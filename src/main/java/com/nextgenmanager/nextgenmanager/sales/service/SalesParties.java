@@ -42,6 +42,15 @@ public final class SalesParties {
         return new DocumentParty(customer.getCompanyName(), address, text(customer.getGstNumber()), stateCodeOf(customer));
     }
 
+    /** A customer at their billing address, for a document raised before there is an order (a quotation). */
+    public static DocumentParty of(Contact customer) {
+        if (customer == null) {
+            return new DocumentParty(null, null, null, null);
+        }
+        return new DocumentParty(customer.getCompanyName(), format(billingAddressOf(customer)),
+                text(customer.getGstNumber()), stateCodeOf(customer));
+    }
+
     public static DocumentParty shipTo(SalesOrder so) {
         DocumentParty billTo = billTo(so);
 
