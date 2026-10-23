@@ -508,6 +508,27 @@ public class InventoryItemServiceImpl implements InventoryItemService {
         return dtos;
     }
 
+    @Override
+    @Transactional
+    public void setDrawingAttachment(int itemId, long attachmentId) {
+        List<FileAttachment> attachments = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem", (long) itemId);
+        if (attachments.stream().noneMatch(a -> a.getId() == attachmentId)) {
+            throw new IllegalArgumentException("Attachment " + attachmentId + " is not a file of item " + itemId + ".");
+        }
+        attachments.forEach(a -> a.setPrimaryDrawing(a.getId() == attachmentId));
+        fileAttachmentRepository.saveAll(attachments);
+        logger.info("Item {} drawing set to attachment {}", itemId, attachmentId);
+    }
+
+    @Override
+    @Transactional
+    public void clearDrawingAttachment(int itemId) {
+        List<FileAttachment> attachments = fileAttachmentRepository.findByReferenceTypeAndReferenceId("inventoryItem", (long) itemId);
+        attachments.forEach(a -> a.setPrimaryDrawing(false));
+        fileAttachmentRepository.saveAll(attachments);
+        logger.info("Item {} drawing mark cleared", itemId);
+    }
+
     private void populateDrawingFileIds(Page<InventoryItemDTO> dtos) {
         if (dtos.isEmpty()) return;
 
@@ -524,15 +545,8 @@ public class InventoryItemServiceImpl implements InventoryItemService {
 
         for (InventoryItemDTO dto : dtos) {
             List<FileAttachment> attachments = attachmentMap.get((long) dto.getInventoryItemId());
-            if (attachments != null && !attachments.isEmpty()) {
-                // Heuristic: Find attachment matching drawingNumber, or first one
-                FileAttachment drawing = attachments.stream()
-                        .filter(a -> dto.getDrawingNumber() != null && !dto.getDrawingNumber().isBlank() &&
-                                a.getOriginalName().toLowerCase().contains(dto.getDrawingNumber().toLowerCase()))
-                        .findFirst()
-                        .orElse(attachments.get(0));
-                dto.setDrawingFileId(drawing.getId());
-            }
+            ItemDrawingPicker.pick(attachments, dto.getDrawingNumber())
+                    .ifPresent(drawing -> dto.setDrawingFileId(drawing.getId()));
         }
     }
 

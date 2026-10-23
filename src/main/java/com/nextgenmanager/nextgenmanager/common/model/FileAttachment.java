@@ -53,4 +53,11 @@ public class FileAttachment {
 
     // Optional description (e.g., “Technical Drawing”, “Quotation PDF”)
     private String description;
+
+    /**
+     * This file is its item's drawing — the one the drawing number links to. Only used for
+     * inventory item attachments; at most one per item. See {@code ItemDrawingPicker}.
+     */
+    @Column(nullable = false)
+    private boolean primaryDrawing;
 }
