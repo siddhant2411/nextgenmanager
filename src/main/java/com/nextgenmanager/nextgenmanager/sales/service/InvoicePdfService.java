@@ -6,9 +6,11 @@ import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsReposi
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.purchase.service.AmountInWords;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
+import com.nextgenmanager.nextgenmanager.sales.model.DeliveryNote;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesPayment;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxType;
+import com.nextgenmanager.nextgenmanager.sales.repository.DeliveryNoteRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesPaymentRepository;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
@@ -42,6 +44,7 @@ public class InvoicePdfService {
     private final SalesPaymentRepository salesPaymentRepository;
     private final CompanyDetailsRepository companyDetailsRepository;
     private final DocumentBrandingService documentBrandingService;
+    private final DeliveryNoteRepository deliveryNoteRepository;
 
     public byte[] generateInvoicePdf(Long id) {
         return renderFitted("invoice/invoice", buildContext(id, true));
@@ -81,6 +84,7 @@ public class InvoicePdfService {
         ctx.setVariable("shipTo", SalesParties.shipTo(salesOrder));
         ctx.setVariable("TaxType", TaxType.class);
         ctx.setVariable("amountInWords", AmountInWords.convert(salesOrder.getTotalPayableAmount()));
+        ctx.setVariable("ewayBillNumber", ewayBillNumber(salesOrder));
 
         BigDecimal cgstAmt  = salesOrder.getCgstAmount()  != null ? salesOrder.getCgstAmount()  : BigDecimal.ZERO;
         BigDecimal sgstAmt  = salesOrder.getSgstAmount()  != null ? salesOrder.getSgstAmount()  : BigDecimal.ZERO;
@@ -108,6 +112,24 @@ public class InvoicePdfService {
             ctx.setVariable("balanceDue", payable.subtract(totalPaid).max(BigDecimal.ZERO));
         }
         return ctx;
+    }
+
+    /**
+     * The e-way bill is raised per consignment, so it is entered on the delivery note. An order shipped
+     * in several lots prints each lot's number. A number typed on the order itself (older data) still wins.
+     */
+    private String ewayBillNumber(SalesOrder salesOrder) {
+        if (salesOrder.getEwayBillNumber() != null && !salesOrder.getEwayBillNumber().isBlank()) {
+            return salesOrder.getEwayBillNumber().trim();
+        }
+        if (salesOrder.getId() == null) return null;
+        String fromNotes = deliveryNoteRepository.findBySalesOrderIdOrderByIdAsc(salesOrder.getId()).stream()
+                .map(DeliveryNote::getEwayBillNumber)
+                .filter(s -> s != null && !s.isBlank())
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.joining(", "));
+        return fromNotes.isEmpty() ? null : fromNotes;
     }
 
     /**
