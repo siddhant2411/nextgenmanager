@@ -83,8 +83,8 @@ public class RoutingOperation {
     /**
      * RATE_TIMES_QTY only: when true, the work center's overhead% is loaded on top of the
      * piece-rate subtotal (rate × costQuantity). Defaults to false — a piece rate is treated as an
-     * all-in price unless this is explicitly enabled. Ignored for other cost types (CALCULATED
-     * always applies overhead; FIXED_RATE / SUB_CONTRACTED never do).
+     * all-in price unless this is explicitly enabled. Ignored for other cost types, and ignored
+     * whenever the BOM has its own blanket overhead % — see OverheadPolicy.
      */
     @Column(nullable = false)
     private Boolean applyOverhead = false;

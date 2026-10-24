@@ -5,6 +5,7 @@ import com.nextgenmanager.nextgenmanager.production.dto.MaterialCostLineItemDTO;
 import com.nextgenmanager.nextgenmanager.production.dto.OperationCostLineItemDTO;
 import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import com.nextgenmanager.nextgenmanager.bom.model.Bom;
+import com.nextgenmanager.nextgenmanager.bom.service.OverheadPolicy;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
@@ -43,7 +44,7 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
                 .orElseThrow(() -> new EntityNotFoundException("Work order not found: " + workOrderId));
 
         List<MaterialCostLineItemDTO> matLines = buildMaterialLines(wo);
-        List<OperationCostLineItemDTO> opLines = buildOperationLines(wo);
+        List<OperationCostLineItemDTO> opLines = buildOperationLines(wo, bomOverheadPercentage(wo));
 
         BigDecimal estMat = sum(matLines, MaterialCostLineItemDTO::getEstimatedCost);
         BigDecimal actMat = sum(matLines, MaterialCostLineItemDTO::getActualCost);
@@ -60,25 +61,23 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
         BigDecimal estSub = sumFlat(opLines, OperationCostLineItemDTO::getEstimatedTotalCost);
         BigDecimal actSub = sumFlat(opLines, OperationCostLineItemDTO::getActualTotalCost);
 
-        // Blanket manufacturing overhead: a single per-BOM % at this level's rate on everything except
-        // subcontracted operations (their vendor price already carries overhead). Sub-assembly material
-        // is included (child standard costs are stored prime). Replaces per-work-center overhead.
-        // Blanket overhead % comes from the BOM of the line being made. This report is still
-        // work-order-wide, so with several lines it uses the first line's rate; giving the report
-        // a per-line breakdown is a DTO/UI change tracked with the multi-line UI work.
-        BigDecimal overheadPct = wo.activeLines().stream()
-                .map(WorkOrderLine::getBom)
-                .filter(Objects::nonNull)
-                .map(Bom::getOverheadPercentage)
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(BigDecimal.ZERO);
+        // Overhead — see OverheadPolicy. BOM % set: a single blanket rate on everything except
+        // subcontracted operations (their vendor price already carries overhead); sub-assembly
+        // material is included (child standard costs are stored without blanket overhead).
+        // BOM % blank: the operation lines carry their work centers' overhead instead, summed here.
+        // The BOM comes from the line being made. This report is still work-order-wide, so with
+        // several lines it uses the first line's BOM; giving the report a per-line breakdown is a
+        // DTO/UI change tracked with the multi-line UI work.
+        BigDecimal bomOverheadPct = bomOverheadPercentage(wo);
+        BigDecimal blanketPct = OverheadPolicy.blanketPercentage(bomOverheadPct);
         BigDecimal estSubOnly = sumByType(opLines, OperationCostLineItemDTO::getEstimatedTotalCost, CostType.SUB_CONTRACTED);
         BigDecimal actSubOnly = sumByType(opLines, OperationCostLineItemDTO::getActualTotalCost, CostType.SUB_CONTRACTED);
-        BigDecimal estOvhd = estMat.add(estLabour).add(estMachine).add(estSub).subtract(estSubOnly)
-                .multiply(overheadPct).divide(BigDecimal.valueOf(100), SCALE, RM).setScale(2, RM);
-        BigDecimal actOvhd = actMat.add(actLabour).add(actMachine).add(actSub).subtract(actSubOnly)
-                .multiply(overheadPct).divide(BigDecimal.valueOf(100), SCALE, RM).setScale(2, RM);
+        BigDecimal estOvhd = OverheadPolicy.percentOf(
+                estMat.add(estLabour).add(estMachine).add(estSub).subtract(estSubOnly), blanketPct)
+                .add(sum(opLines, OperationCostLineItemDTO::getEstimatedOverheadCost)).setScale(2, RM);
+        BigDecimal actOvhd = OverheadPolicy.percentOf(
+                actMat.add(actLabour).add(actMachine).add(actSub).subtract(actSubOnly), blanketPct)
+                .add(sum(opLines, OperationCostLineItemDTO::getActualOverheadCost)).setScale(2, RM);
 
         BigDecimal totalEst = estMat.add(estLabour).add(estMachine).add(estOvhd).add(estSub);
         BigDecimal totalAct = actMat.add(actLabour).add(actMachine).add(actOvhd).add(actSub);
@@ -185,9 +184,19 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
     }
 
 
+    /** The overhead % of the first line's BOM — null (work-center mode) when it has none. */
+    private BigDecimal bomOverheadPercentage(WorkOrder wo) {
+        return wo.activeLines().stream()
+                .map(WorkOrderLine::getBom)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .map(Bom::getOverheadPercentage)
+                .orElse(null);
+    }
+
     // ─── Operation lines ──────────────────────────────────────────────────────
 
-    private List<OperationCostLineItemDTO> buildOperationLines(WorkOrder wo) {
+    private List<OperationCostLineItemDTO> buildOperationLines(WorkOrder wo, BigDecimal bomOverheadPct) {
         List<OperationCostLineItemDTO> lines = new ArrayList<>();
         for (WorkOrderOperation op : wo.getOperations()) {
             if (op.getDeletedDate() != null) continue;
@@ -253,12 +262,16 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
                 BigDecimal plannedQty    = safe(op.getPlannedQuantity());
                 BigDecimal doneQty       = safe(op.getCompletedQuantity());
                 WorkCenter wc = op.getWorkCenter() != null ? op.getWorkCenter() : ro.getWorkCenter();
+                BigDecimal ovhdPct = OverheadPolicy.workCenterPercentage(
+                        bomOverheadPct, CostType.RATE_TIMES_QTY, ro.getApplyOverhead(), wc);
 
-                // No per-op overhead — the blanket BOM overhead is applied once in compute().
                 BigDecimal estBase     = rate.multiply(eachesPerUnit).multiply(plannedQty).setScale(2, RM);
                 BigDecimal actBase     = rate.multiply(eachesPerUnit).multiply(doneQty).setScale(2, RM);
+                BigDecimal estOvhd     = OverheadPolicy.percentOf(estBase, ovhdPct).setScale(2, RM);
+                BigDecimal actOvhd     = OverheadPolicy.percentOf(actBase, ovhdPct).setScale(2, RM);
 
-                // Base lands in the labour bucket so the header total (labour+machine) counts it.
+                // Base lands in the labour bucket so the header total (labour+machine) counts it;
+                // any work-center overhead is summed into the header overhead in compute().
                 lines.add(OperationCostLineItemDTO.builder()
                         .sequence(op.getSequence())
                         .operationName(op.getOperationName())
@@ -267,11 +280,14 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
                         .subcontractRatePerUnit(scale2(rate))
                         .plannedQuantity(plannedQty)
                         .completedQuantity(doneQty)
+                        .overheadPercentage(ovhdPct)
                         .estimatedLabourCost(estBase)
-                        .estimatedTotalCost(estBase)
+                        .estimatedOverheadCost(estOvhd)
+                        .estimatedTotalCost(estBase.add(estOvhd))
                         .actualLabourCost(actBase)
-                        .actualTotalCost(actBase)
-                        .variance(scale2(actBase.subtract(estBase)))
+                        .actualOverheadCost(actOvhd)
+                        .actualTotalCost(actBase.add(actOvhd))
+                        .variance(scale2(actBase.add(actOvhd).subtract(estBase).subtract(estOvhd)))
                         .build());
                 continue;
             }
@@ -291,11 +307,16 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
             BigDecimal completedQty  = safe(op.getCompletedQuantity());
             BigDecimal totalPlanned  = setupTime.add(runTime.multiply(plannedQty));
 
-            // Estimated — direct conversion only; blanket overhead is applied once in compute().
+            // Work-center overhead on conversion, only when the BOM has no blanket rate (see
+            // OverheadPolicy); a blanket rate is applied once in compute() instead.
+            BigDecimal ovhdPct = OverheadPolicy.workCenterPercentage(
+                    bomOverheadPct, costType, ro != null ? ro.getApplyOverhead() : null, wc);
+
             BigDecimal estHours      = divide(totalPlanned, SIXTY);
             BigDecimal estLabour     = estHours.multiply(labourRate).multiply(operators).setScale(2, RM);
             BigDecimal estMachine    = estHours.multiply(machineRate).setScale(2, RM);
-            BigDecimal estTotal      = estLabour.add(estMachine);
+            BigDecimal estOvhd       = OverheadPolicy.percentOf(estLabour.add(estMachine), ovhdPct).setScale(2, RM);
+            BigDecimal estTotal      = estLabour.add(estMachine).add(estOvhd);
 
             // Actual labour from logged entries
             BigDecimal actLabourCost    = BigDecimal.ZERO;
@@ -309,7 +330,8 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
             // Actual machine: use operation actual dates if available, else routing rate on completed qty
             BigDecimal actMachineMinutes = resolveActualMachineMinutes(op, runTime, completedQty);
             BigDecimal actMachine   = divide(actMachineMinutes, SIXTY).multiply(machineRate).setScale(2, RM);
-            BigDecimal actTotal     = actLabourCost.add(actMachine);
+            BigDecimal actOvhd      = OverheadPolicy.percentOf(actLabourCost.add(actMachine), ovhdPct).setScale(2, RM);
+            BigDecimal actTotal     = actLabourCost.add(actMachine).add(actOvhd);
 
             String wcName = wc != null ? wc.getCenterName() : "";
 
@@ -327,11 +349,14 @@ public class CostOfProductionServiceImpl implements CostOfProductionService {
                     .laborCostPerHour(scale2(labourRate))
                     .numberOfOperators(operators)
                     .machineCostPerHour(scale2(machineRate))
+                    .overheadPercentage(ovhdPct)
                     .estimatedLabourCost(scale2(estLabour))
                     .estimatedMachineCost(scale2(estMachine))
+                    .estimatedOverheadCost(estOvhd)
                     .estimatedTotalCost(scale2(estTotal))
                     .actualLabourCost(scale2(actLabourCost))
                     .actualMachineCost(scale2(actMachine))
+                    .actualOverheadCost(actOvhd)
                     .actualTotalCost(scale2(actTotal))
                     .variance(scale2(actTotal.subtract(estTotal)))
                     .build());

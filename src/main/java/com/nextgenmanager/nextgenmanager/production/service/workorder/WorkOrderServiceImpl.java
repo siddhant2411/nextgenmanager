@@ -15,6 +15,8 @@ import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderListMapper;
 import com.nextgenmanager.nextgenmanager.production.mapper.WorkOrderMapper;
 import com.nextgenmanager.nextgenmanager.bom.model.routing.Routing;
 import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
+import com.nextgenmanager.nextgenmanager.bom.service.OverheadPolicy;
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
 import com.nextgenmanager.nextgenmanager.production.model.TestTemplate;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrder;
 import com.nextgenmanager.nextgenmanager.production.model.WorkOrderLine;
@@ -1011,7 +1013,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 continue;
             }
 
-            BigDecimal lineCost = materialCostOf(lineMaterials).add(operationCostOf(lineOperations));
+            BigDecimal lineCost = lineCostOf(line, lineMaterials, lineOperations);
             BigDecimal unitCost = lineCost.divide(lineCompleted, 2, RoundingMode.HALF_UP);
 
             InventoryItem produced = line.getInventoryItem();
@@ -1088,8 +1090,31 @@ public class WorkOrderServiceImpl implements WorkOrderService{
         return total;
     }
 
-    /** Actual machine cost of a line's operations, loaded with each work centre's overhead. */
-    private BigDecimal operationCostOf(List<WorkOrderOperation> lineOperations) {
+    /**
+     * What one line's finished goods cost: material consumed plus its operations, with overhead per
+     * OverheadPolicy — the line BOM's blanket rate on everything but subcontracted operations, or,
+     * when the BOM has none, each operation's own work-centre rate.
+     */
+    private BigDecimal lineCostOf(WorkOrderLine line, List<WorkOrderMaterial> lineMaterials,
+                                  List<WorkOrderOperation> lineOperations) {
+        BigDecimal bomOverheadPct = line.getBom() != null ? line.getBom().getOverheadPercentage() : null;
+        List<WorkOrderOperation> subcontracted = lineOperations.stream()
+                .filter(op -> costTypeOf(op) == CostType.SUB_CONTRACTED).toList();
+        List<WorkOrderOperation> inHouse = lineOperations.stream()
+                .filter(op -> costTypeOf(op) != CostType.SUB_CONTRACTED).toList();
+
+        BigDecimal overheadBase = materialCostOf(lineMaterials).add(operationCostOf(inHouse, bomOverheadPct));
+        BigDecimal blanket = OverheadPolicy.percentOf(overheadBase, OverheadPolicy.blanketPercentage(bomOverheadPct));
+        return overheadBase.add(blanket).add(operationCostOf(subcontracted, bomOverheadPct));
+    }
+
+    private CostType costTypeOf(WorkOrderOperation op) {
+        RoutingOperation ro = op.getRoutingOperation();
+        return ro != null && ro.getCostType() != null ? ro.getCostType() : CostType.CALCULATED;
+    }
+
+    /** Actual machine cost of a line's operations, loaded with work-centre overhead where OverheadPolicy allows. */
+    private BigDecimal operationCostOf(List<WorkOrderOperation> lineOperations, BigDecimal bomOverheadPct) {
         BigDecimal total = BigDecimal.ZERO;
         for (WorkOrderOperation op : lineOperations) {
             if (op.getWorkCenter() == null || op.getWorkCenter().getMachineCostPerHour() == null) {
@@ -1104,13 +1129,10 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                     .multiply(op.getCompletedQuantity())
                     .multiply(op.getWorkCenter().getMachineCostPerHour());
 
-            if (op.getWorkCenter().getOverheadPercentage() != null) {
-                BigDecimal overheadFactor = BigDecimal.ONE.add(
-                        op.getWorkCenter().getOverheadPercentage()
-                                .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
-                opCost = opCost.multiply(overheadFactor);
-            }
-            total = total.add(opCost);
+            BigDecimal overheadPct = OverheadPolicy.workCenterPercentage(bomOverheadPct, costTypeOf(op),
+                    op.getRoutingOperation() != null ? op.getRoutingOperation().getApplyOverhead() : null,
+                    op.getWorkCenter());
+            total = total.add(opCost).add(OverheadPolicy.percentOf(opCost, overheadPct));
         }
         return total;
     }
@@ -3222,7 +3244,7 @@ public class WorkOrderServiceImpl implements WorkOrderService{
                 continue;
             }
 
-            BigDecimal lineCost = materialCostOf(lineMaterials).add(operationCostOf(lineOperations));
+            BigDecimal lineCost = lineCostOf(line, lineMaterials, lineOperations);
             BigDecimal realUnitCost = lineCost.divide(lineCompleted, 2, RoundingMode.HALF_UP);
 
             // Same PRODUCE movement as a normal completion. The earlier addInventory path wrote a stock

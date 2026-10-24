@@ -90,9 +90,11 @@ public class StandardCostRollupServiceImpl implements StandardCostRollupService 
             }
         }
 
-        // Store PRIME cost (material incl. rolled child prime costs + conversion + additional, WITHOUT
-        // overhead). Overhead is applied fresh at each level's own rate when a BOM is costed, so it must
-        // not be baked into a stored cost — otherwise a parent would charge overhead on overhead.
+        // Store cost WITHOUT blanket overhead (material incl. rolled child costs + conversion + additional).
+        // A blanket rate is applied fresh at each level when a BOM is costed, so it must not be baked
+        // into a stored cost — otherwise a parent would charge overhead on overhead. Work-center
+        // overhead (BOM % blank, see OverheadPolicy) sits inside the operation lines and is kept:
+        // it is a real cost of this part that no parent re-applies.
         var breakdown = bomService.getBomCostBreakdown(bom.getId());
         BigDecimal overhead = breakdown.getOverheadCost() != null ? breakdown.getOverheadCost() : BigDecimal.ZERO;
         BigDecimal prime = breakdown.getTotalCost().subtract(overhead);

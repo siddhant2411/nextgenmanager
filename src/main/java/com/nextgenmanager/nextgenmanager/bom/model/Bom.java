@@ -75,7 +75,8 @@ public class Bom {
     /**
      * Blanket manufacturing overhead %, applied at the cost rollup to the total manufacturing base
      * (material + in-house conversion + consumables + fixed-rate operations), excluding
-     * subcontracted operations. Replaces the legacy per-work-center overhead. Null = 0%.
+     * subcontracted operations. When set (0 included) it is the only overhead; when null, each
+     * operation carries its work center's overhead % instead — see OverheadPolicy.
      */
     @Column(name = "overheadPercentage", precision = 6, scale = 3)
     private java.math.BigDecimal overheadPercentage;
