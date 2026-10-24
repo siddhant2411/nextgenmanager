@@ -29,6 +29,7 @@
         .footer-left, .footer-right { display: table-cell; width: 50%; vertical-align: bottom; font-size: 10px; }
         .footer-right { text-align: right; }
         .tc-section { padding: 6px 8px; border-top: 1px solid #000; font-size: 10px; }
+        .cur { font-family: 'Currency Signs'; }
     </style>
 </head>
 <body>
@@ -188,7 +189,7 @@
         <tr th:if="${po.roundOff != null}">
             <td>Round Off</td>              <td class="right" th:text="${#numbers.formatDecimal(po.roundOff, 1, 2)}"></td></tr>
         <tr class="grand">
-            <td>Grand Total (&#8377;)</td>  <td class="right" th:text="${#numbers.formatDecimal(po.grandTotal, 1, 2)}"></td></tr>
+            <td>Grand Total (<span class="cur" th:text="${cur}">&#8377;</span>)</td>  <td class="right" th:text="${#numbers.formatDecimal(po.grandTotal, 1, 2)}"></td></tr>
     </table>
 
     <!-- Amount in words -->

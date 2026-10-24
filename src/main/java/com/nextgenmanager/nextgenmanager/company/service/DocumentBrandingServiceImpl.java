@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.company.service;
 
 import com.nextgenmanager.nextgenmanager.bom.service.BusinessException;
+import com.nextgenmanager.nextgenmanager.common.service.PdfFonts;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.company.dto.BrandImageDTO;
 import com.nextgenmanager.nextgenmanager.company.dto.DocumentBrand;
@@ -149,6 +150,7 @@ public class DocumentBrandingServiceImpl implements DocumentBrandingService {
         String html = templateEngine.process("branding_preview", context).replace("&nbsp;", "&#160;");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
+        PdfFonts.register(builder);
         builder.useFastMode();
         builder.withHtmlContent(html, null);
         builder.toStream(out);

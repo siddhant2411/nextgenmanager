@@ -531,7 +531,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 dto.subtotal(), dto.totalDiscount(), dto.taxableValue(),
                 dto.cgstAmount(), dto.sgstAmount(), dto.igstAmount(),
                 dto.cessAmount(), dto.roundOff(), dto.grandTotal(),
-                AmountInWords.convert(po.getGrandTotal()),
+                AmountInWords.convert(po.getGrandTotal(), po.getCurrency()),
                 po.getQuotationNumber(), po.getQuotationDate(), po.getReference(),
                 po.getSentToVendorAt(), po.getSentToVendorEmail(),
                 dto.revisionNo(), dto.parentPoId(), dto.salesOrderId(),

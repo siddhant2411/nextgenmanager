@@ -10,6 +10,7 @@ import com.nextgenmanager.nextgenmanager.accounting.voucher.exception.InvalidVou
 import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.service.PostingService;
 import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.sales.events.SalesPaymentReceivedEvent;
 import com.nextgenmanager.nextgenmanager.sales.model.PaymentMode;
@@ -72,7 +73,10 @@ public class SalesReceiptPostingListener {
             LedgerAccount cashOrBank = payment.getPaymentMode() == PaymentMode.CASH
                     ? ledgers.cashInHand() : ledgers.bankPrimary();
 
-            BigDecimal amount = nz(payment.getAmount());
+            // A payment is recorded in its order's currency; the books take it in rupees at the order's rate,
+            // the same rate its invoice posted at, so the customer's ledger clears. A difference in what the
+            // bank actually credited is exchange gain or loss, entered by journal.
+            BigDecimal amount = ExchangeRates.toBase(nz(payment.getAmount()), payment.getSalesOrder().getExchangeRate());
             String ref = payment.getReferenceNumber() != null ? " (" + payment.getReferenceNumber() + ")" : "";
 
             List<VoucherLineDraft> lines = new ArrayList<>();

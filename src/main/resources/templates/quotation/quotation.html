@@ -71,6 +71,7 @@
         .footer-sig { display: table-cell; width: 50%; vertical-align: top; padding: 8px 10px; text-align: right; font-size: 11px; }
         .footer-sig .for-line { margin-bottom: 32px; }
         .section-title { font-weight: bold; font-size: 11px; margin-bottom: 4px; text-decoration: underline; }
+        .cur { font-family: 'Currency Signs'; }
     </style>
 </head>
 <body>
@@ -131,9 +132,9 @@
             <th style="width:10%">HSN/SAC</th>
             <th style="width:8%">Qty</th>
             <th style="width:6%">UOM</th>
-            <th style="width:12%">Rate (₹)</th>
+            <th style="width:12%">Rate (<span class="cur" th:text="${cur}">&#8377;</span>)</th>
             <th style="width:7%">Disc%</th>
-            <th style="width:14%">Amount (₹)</th>
+            <th style="width:14%">Amount (<span class="cur" th:text="${cur}">&#8377;</span>)</th>
         </tr>
         </thead>
         <tbody>
@@ -184,7 +185,7 @@
                         <td>Round Off</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(roundOff, 1, 2)}"></td></tr>
                     <tr class="grand">
-                        <td>Total (₹)</td>
+                        <td>Total (<span class="cur" th:text="${cur}">&#8377;</span>)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(totalAmount, 1, 2)}"></td></tr>
                 </table>
             </div>

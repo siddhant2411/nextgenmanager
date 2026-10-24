@@ -79,6 +79,7 @@
         /* ── Footer ── */
         .footer-sig { padding: 8px 10px; text-align: right; font-size: 11px; }
         .footer-sig .for-line { margin-bottom: 32px; }
+        .cur { font-family: 'Currency Signs'; }
     </style>
 </head>
 <body>
@@ -144,9 +145,9 @@
             <th style="width:9%">HSN/SAC</th>
             <th style="width:7%">Qty</th>
             <th style="width:6%">UOM</th>
-            <th style="width:11%">Rate (₹)</th>
+            <th style="width:11%">Rate (<span class="cur" th:text="${cur}">&#8377;</span>)</th>
             <th style="width:6%">Disc%</th>
-            <th style="width:13%">Amount (₹)</th>
+            <th style="width:13%">Amount (<span class="cur" th:text="${cur}">&#8377;</span>)</th>
         </tr>
         </thead>
         <tbody>
@@ -202,7 +203,7 @@
                     <tr><td class="label">Round Off</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.roundOffAmount, 1, 2)}"></td></tr>
                     <tr class="grand">
-                        <td class="label">Total Payable (₹)</td>
+                        <td class="label">Total Payable (<span class="cur" th:text="${cur}">&#8377;</span>)</td>
                         <td class="amount" th:text="${#numbers.formatDecimal(salesOrder.totalPayableAmount, 1, 2)}"></td></tr>
                 </table>
             </div>
@@ -213,7 +214,7 @@
             <div class="section-title">Advance / Payments Received</div>
             <table style="margin-top:4px;">
                 <tr>
-                    <th>Date</th><th>Mode</th><th>Reference</th><th style="text-align:right">Amount (₹)</th>
+                    <th>Date</th><th>Mode</th><th>Reference</th><th style="text-align:right">Amount (<span class="cur" th:text="${cur}">&#8377;</span>)</th>
                 </tr>
                 <tr th:each="pmt : ${payments}">
                     <td th:text="${pmt.paymentDate}"></td>
@@ -223,9 +224,9 @@
                 </tr>
             </table>
             <div class="balance-due">
-                Total Received: ₹<span th:text="${#numbers.formatDecimal(totalPaid, 1, 2)}"></span>
+                Total Received: <span class="cur" th:text="${cur}">&#8377;</span><span th:text="${#numbers.formatDecimal(totalPaid, 1, 2)}"></span>
                 &#160;&#160;|&#160;&#160;
-                Balance Due: ₹<span th:text="${#numbers.formatDecimal(balanceDue, 1, 2)}"></span>
+                Balance Due: <span class="cur" th:text="${cur}">&#8377;</span><span th:text="${#numbers.formatDecimal(balanceDue, 1, 2)}"></span>
             </div>
         </div>
 

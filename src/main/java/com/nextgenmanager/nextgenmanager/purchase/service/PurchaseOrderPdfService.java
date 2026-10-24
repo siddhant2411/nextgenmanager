@@ -1,6 +1,8 @@
 package com.nextgenmanager.nextgenmanager.purchase.service;
 
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
+import com.nextgenmanager.nextgenmanager.common.service.PdfFonts;
+import com.nextgenmanager.nextgenmanager.common.model.DocumentCurrency;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
@@ -68,7 +70,8 @@ public class PurchaseOrderPdfService {
         ctx.setVariable("billTo", PurchaseParties.billTo(company));
         ctx.setVariable("shipTo", PurchaseParties.shipTo(po, company));
         ctx.setVariable("shipToKind", PurchaseParties.kindOf(po));
-        ctx.setVariable("amountInWords", AmountInWords.convert(po.getGrandTotal()));
+        ctx.setVariable("cur", DocumentCurrency.signOf(po.getCurrency()));
+        ctx.setVariable("amountInWords", AmountInWords.convert(po.getGrandTotal(), po.getCurrency()));
         ctx.setVariable("vendorAddress", vendorAddress(po));
         ctx.setVariable("vendorPerson", vendorPerson(po.getVendor()));
 
@@ -77,6 +80,7 @@ public class PurchaseOrderPdfService {
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
+        PdfFonts.register(builder);
         builder.useFastMode();
         builder.withHtmlContent(html, null);
         builder.toStream(out);

@@ -1,6 +1,8 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
+import com.nextgenmanager.nextgenmanager.common.service.PdfFonts;
+import com.nextgenmanager.nextgenmanager.common.model.DocumentCurrency;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.purchase.service.AmountInWords;
@@ -44,7 +46,10 @@ public class TaxInvoicePdfService {
         context.setVariable("brand", documentBrandingService.current());
         context.setVariable("invoice", invoice);
         context.setVariable("company", company);
-        context.setVariable("amountInWords", AmountInWords.convert(invoice.getTotalPayableAmount()));
+        String currency = invoice.getCurrency() != null ? invoice.getCurrency()
+                : invoice.getSalesOrder() != null ? invoice.getSalesOrder().getCurrency() : null;
+        context.setVariable("cur", DocumentCurrency.signOf(currency));
+        context.setVariable("amountInWords", AmountInWords.convert(invoice.getTotalPayableAmount(), currency));
         
         context.setVariable("billTo", SalesParties.billTo(invoice));
         context.setVariable("shipTo", SalesParties.shipTo(invoice));
@@ -106,6 +111,7 @@ public class TaxInvoicePdfService {
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
+        PdfFonts.register(builder);
         builder.useFastMode();
         builder.withHtmlContent(html, null);
         builder.toStream(out);

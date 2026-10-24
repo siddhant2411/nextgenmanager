@@ -1,5 +1,6 @@
 package com.nextgenmanager.nextgenmanager.sales.model;
 
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -51,6 +52,17 @@ public class TaxInvoice {
     @Column(precision = 12, scale = 2) private BigDecimal igstAmount;
     @Column(precision = 12, scale = 2) private BigDecimal totalPayableAmount;
     @Column(precision = 12, scale = 2) private BigDecimal paidAmount = BigDecimal.ZERO;
+
+    // The amounts above are in this currency. Both are copied from the order when the invoice is
+    // raised, so the posting, the GST returns and the printed copy agree however the order changes.
+    @Column(length = 20) private String currency;
+    /** Rupees per one unit of {@link #currency}. */
+    @Column(precision = 18, scale = 6, nullable = false) private BigDecimal exchangeRate = BigDecimal.ONE;
+
+    /** An amount on this invoice, in rupees: what the books and the GST returns take. */
+    public BigDecimal inRupees(BigDecimal amount) {
+        return ExchangeRates.toBase(amount, exchangeRate);
+    }
 
     // Both parties as they stood when the invoice was raised (SalesParties.freezeOnto). Null on
     // invoices older than V179, which read from their sales order instead.

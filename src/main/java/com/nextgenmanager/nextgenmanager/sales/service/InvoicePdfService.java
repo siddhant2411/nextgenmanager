@@ -1,6 +1,8 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.common.service.PdfPageFit;
+import com.nextgenmanager.nextgenmanager.common.service.PdfFonts;
+import com.nextgenmanager.nextgenmanager.common.model.DocumentCurrency;
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
@@ -83,7 +85,8 @@ public class InvoicePdfService {
         ctx.setVariable("billTo", SalesParties.billTo(salesOrder));
         ctx.setVariable("shipTo", SalesParties.shipTo(salesOrder));
         ctx.setVariable("TaxType", TaxType.class);
-        ctx.setVariable("amountInWords", AmountInWords.convert(salesOrder.getTotalPayableAmount()));
+        ctx.setVariable("cur", DocumentCurrency.signOf(salesOrder.getCurrency()));
+        ctx.setVariable("amountInWords", AmountInWords.convert(salesOrder.getTotalPayableAmount(), salesOrder.getCurrency()));
         ctx.setVariable("ewayBillNumber", ewayBillNumber(salesOrder));
 
         BigDecimal cgstAmt  = salesOrder.getCgstAmount()  != null ? salesOrder.getCgstAmount()  : BigDecimal.ZERO;
@@ -175,6 +178,7 @@ public class InvoicePdfService {
                 .replace("&nbsp;", "&#160;");
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
+        PdfFonts.register(builder);
         builder.useFastMode();
         builder.withHtmlContent(html, null);
         builder.toStream(out);

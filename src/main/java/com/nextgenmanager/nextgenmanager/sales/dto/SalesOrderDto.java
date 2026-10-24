@@ -66,6 +66,7 @@ public class SalesOrderDto {
     private String paymentTerms;
     private String incoterms;
     private String currency;
+    private BigDecimal exchangeRate;
 
     // Bill to / ship to, as entered on the order (blank where the order leaves it to the default)
     private String billToAddress;

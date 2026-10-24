@@ -75,14 +75,17 @@ public interface SalesAnalyticsRepository extends Repository<SalesOrder, Long> {
      * <p>The three-arm COALESCE falls back to {@code subTotal - discountAmount} for rows written
      * before the header recalculated its totals, and to zero for rows with neither. A single null
      * here would otherwise poison an entire SUM.
+     *
+     * <p>In rupees: an order in another currency is taken at its own rate, so a dashboard never adds
+     * dollars to rupees. Invoice sums below do the same with the rate the invoice was raised at.
      */
     String ORDER_VALUE =
-            " COALESCE(so.taxableValue, so.subTotal - COALESCE(so.discountAmount, 0), 0) ";
+            " (COALESCE(so.taxableValue, so.subTotal - COALESCE(so.discountAmount, 0), 0) * COALESCE(so.exchangeRate, 1)) ";
 
     /** See the class note: recomputed, never read from {@code totalAmountOfProduct}. */
     String LINE_VALUE =
             " (COALESCE(soi.qty, 0) * COALESCE(soi.pricePerUnit, 0)"
-          + "  * (1 - COALESCE(so.discountPercentage, 0) / 100.0)) ";
+          + "  * (1 - COALESCE(so.discountPercentage, 0) / 100.0) * COALESCE(so.exchangeRate, 1)) ";
 
     // ------------------------------------------------------------------ headline
 
@@ -325,11 +328,11 @@ public interface SalesAnalyticsRepository extends Repository<SalesOrder, Long> {
      */
     @Query(nativeQuery = true, value =
             "SELECT COUNT(*) AS \"openInvoiceCount\", "
-          + "       COALESCE(SUM(ti.totalPayableAmount), 0) AS \"invoicedTotal\", "
-          + "       COALESCE(SUM(ti.paidAmount), 0) AS \"collected\", "
-          + "       COALESCE(SUM(ti.totalPayableAmount - COALESCE(ti.paidAmount, 0)), 0) "
+          + "       COALESCE(SUM(ti.totalPayableAmount * COALESCE(ti.exchangeRate, 1)), 0) AS \"invoicedTotal\", "
+          + "       COALESCE(SUM(ti.paidAmount * COALESCE(ti.exchangeRate, 1)), 0) AS \"collected\", "
+          + "       COALESCE(SUM((ti.totalPayableAmount - COALESCE(ti.paidAmount, 0)) * COALESCE(ti.exchangeRate, 1)), 0) "
           + "           AS \"outstanding\", "
-          + "       COALESCE(SUM(ti.totalPayableAmount - COALESCE(ti.paidAmount, 0)) "
+          + "       COALESCE(SUM((ti.totalPayableAmount - COALESCE(ti.paidAmount, 0)) * COALESCE(ti.exchangeRate, 1)) "
           + "                FILTER (WHERE ti.dueDate IS NOT NULL AND ti.dueDate < CURRENT_DATE), 0) "
           + "           AS \"overdue\", "
           + "       COUNT(*) FILTER (WHERE ti.dueDate IS NOT NULL "
@@ -359,7 +362,7 @@ public interface SalesAnalyticsRepository extends Repository<SalesOrder, Long> {
           + "    WHERE " + LIVE_ORDER
           + "      AND so.orderDate >= CAST(b.d AS DATE) "
           + "      AND so.orderDate < CAST(b.d + CAST(:step AS INTERVAL) AS DATE)) AS \"orderValue\", "
-          + "  (SELECT COALESCE(SUM(ti.taxableValue), 0) FROM taxInvoice ti "
+          + "  (SELECT COALESCE(SUM(ti.taxableValue * COALESCE(ti.exchangeRate, 1)), 0) FROM taxInvoice ti "
           + "    WHERE ti.deletedDate IS NULL AND ti.status <> 'CANCELLED' "
           + "      AND ti.invoiceDate >= CAST(b.d AS DATE) "
           + "      AND ti.invoiceDate < CAST(b.d + CAST(:step AS INTERVAL) AS DATE)) "

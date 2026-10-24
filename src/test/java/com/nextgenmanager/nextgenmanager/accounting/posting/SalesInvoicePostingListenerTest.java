@@ -169,6 +169,72 @@ class SalesInvoicePostingListenerTest {
     }
 
     @Test
+    void postsADollarInvoiceInRupeesAtItsRate() {
+        Contact customer = new Contact();
+        customer.setCompanyName("Overseas Buyer Inc");
+        // $1,000 + 18% IGST = $1,180, raised at ₹84.25 to the dollar
+        TaxInvoice inv = invoice(new BigDecimal("1000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                new BigDecimal("180.00"), new BigDecimal("1180.00"), customer);
+        inv.setCurrency("USD");
+        inv.setExchangeRate(new BigDecimal("84.25"));
+
+        LedgerAccount party = ledger(3001L), sales = ledger(4010L), igstLed = ledger(9012L);
+        when(taxInvoiceRepo.findByIdAndDeletedDateIsNull(50L)).thenReturn(Optional.of(inv));
+        when(coaService.getOrCreatePartyLedger(customer, SubLedgerType.CUSTOMER)).thenReturn(party);
+        when(ledgers.salesDomestic()).thenReturn(sales);
+        when(ledgers.outputIgst()).thenReturn(igstLed);
+
+        listener.onTaxInvoiceIssued(new TaxInvoiceIssuedEvent(50L));
+
+        ArgumentCaptor<VoucherDraft> cap = ArgumentCaptor.forClass(VoucherDraft.class);
+        verify(postingService).post(cap.capture(), eq("SYSTEM"));
+        VoucherDraft d = cap.getValue();
+
+        assertThat(d.getLines()).hasSize(3); // no round-off: each amount converts exactly
+        assertThat(sumDr(d)).isEqualByComparingTo("99415.00");
+        assertThat(sumCr(d)).isEqualByComparingTo("99415.00");
+        assertThat(d.getLines()).anyMatch(l -> l.getLedgerAccountId().equals(4010L)
+                && l.getCrAmount().compareTo(new BigDecimal("84250.00")) == 0);
+        assertThat(d.getLines()).anyMatch(l -> l.getTaxType() == TaxLineType.IGST
+                && l.getCrAmount().compareTo(new BigDecimal("15165.00")) == 0);
+        assertThat(d.getNarration()).contains("USD 1180.00 @ 84.25");
+    }
+
+    @Test
+    void aConversionThatLeavesPaiseBalancesThroughRoundOff() {
+        Contact customer = new Contact();
+        customer.setCompanyName("Overseas Buyer Inc");
+        // $100.01 + $18.00 tax = $118.01; at 83.333 each amount rounds on its own
+        TaxInvoice inv = invoice(new BigDecimal("100.01"), BigDecimal.ZERO, BigDecimal.ZERO,
+                new BigDecimal("18.00"), new BigDecimal("118.01"), customer);
+        inv.setCurrency("USD");
+        inv.setExchangeRate(new BigDecimal("83.333"));
+
+        LedgerAccount party = ledger(3001L), sales = ledger(4010L), igstLed = ledger(9012L),
+                roundOffIncome = ledger(4023L), roundOffExpense = ledger(5023L);
+        when(taxInvoiceRepo.findByIdAndDeletedDateIsNull(50L)).thenReturn(Optional.of(inv));
+        when(coaService.getOrCreatePartyLedger(customer, SubLedgerType.CUSTOMER)).thenReturn(party);
+        when(ledgers.salesDomestic()).thenReturn(sales);
+        when(ledgers.outputIgst()).thenReturn(igstLed);
+        lenient().when(ledgers.roundOffIncome()).thenReturn(roundOffIncome);
+        lenient().when(ledgers.roundOffExpense()).thenReturn(roundOffExpense);
+
+        listener.onTaxInvoiceIssued(new TaxInvoiceIssuedEvent(50L));
+
+        ArgumentCaptor<VoucherDraft> cap = ArgumentCaptor.forClass(VoucherDraft.class);
+        verify(postingService).post(cap.capture(), eq("SYSTEM"));
+        VoucherDraft d = cap.getValue();
+        // 118.01 x 83.333 = 9834.13; 100.01 x 83.333 = 8334.13; 18 x 83.333 = 1499.99 -> 0.01 left over
+        assertThat(sumDr(d)).isEqualByComparingTo(sumCr(d));
+        VoucherLineDraft customerLine = d.getLines().stream()
+                .filter(l -> l.getLedgerAccountId().equals(3001L)).findFirst().orElseThrow();
+        assertThat(customerLine.getDrAmount()).isEqualByComparingTo("9834.13");
+        VoucherLineDraft roundOff = d.getLines().stream()
+                .filter(l -> l.getLedgerAccountId().equals(4023L)).findFirst().orElseThrow();
+        assertThat(roundOff.getCrAmount()).isEqualByComparingTo("0.01");
+    }
+
+    @Test
     void swallowsIdempotencyConflict_whenVoucherAlreadyExists() {
         Contact customer = new Contact();
         customer.setCompanyName("Delta Ltd");

@@ -11,6 +11,7 @@ import com.nextgenmanager.nextgenmanager.accounting.voucher.model.TaxLineType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.service.PostingService;
 import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.sales.events.TaxInvoiceIssuedEvent;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxInvoice;
@@ -72,11 +73,13 @@ public class SalesInvoicePostingListener {
             Contact customer = inv.getSalesOrder().getCustomer();
             LedgerAccount party = coaService.getOrCreatePartyLedger(customer, SubLedgerType.CUSTOMER);
 
-            BigDecimal taxable = nz(inv.getTaxableValue());
-            BigDecimal cgst = nz(inv.getCgstAmount());
-            BigDecimal sgst = nz(inv.getSgstAmount());
-            BigDecimal igst = nz(inv.getIgstAmount());
-            BigDecimal total = nz(inv.getTotalPayableAmount());
+            // The books are in rupees; an invoice in another currency is posted at the rate it was raised at.
+            // Each amount is converted on its own, so any paisa left over goes to round-off below.
+            BigDecimal taxable = inv.inRupees(inv.getTaxableValue());
+            BigDecimal cgst = inv.inRupees(inv.getCgstAmount());
+            BigDecimal sgst = inv.inRupees(inv.getSgstAmount());
+            BigDecimal igst = inv.inRupees(inv.getIgstAmount());
+            BigDecimal total = inv.inRupees(inv.getTotalPayableAmount());
 
             List<VoucherLineDraft> lines = new ArrayList<>();
             lines.add(line(party.getId(), total, BigDecimal.ZERO,
@@ -97,7 +100,7 @@ public class SalesInvoicePostingListener {
             VoucherDraft draft = new VoucherDraft();
             draft.setVoucherType(VoucherType.SALES);
             draft.setDate(inv.getInvoiceDate());
-            draft.setNarration("Sales Invoice " + inv.getInvoiceNumber() + " - " + customer.getCompanyName());
+            draft.setNarration("Sales Invoice " + inv.getInvoiceNumber() + " - " + customer.getCompanyName() + foreignNote(inv));
             draft.setSourceDocType(SOURCE_DOC_TYPE);
             draft.setSourceDocId(inv.getId());
             draft.setLines(lines);
@@ -112,6 +115,13 @@ public class SalesInvoicePostingListener {
             log.error("Sales auto-post FAILED for invoice {} — GL not updated, manual posting required",
                     event.getTaxInvoiceId(), e);
         }
+    }
+
+    /** " (USD 1,000.00 @ 84.25)" for an invoice in another currency, so the voucher says what was billed. */
+    private static String foreignNote(TaxInvoice inv) {
+        if (ExchangeRates.isBase(inv.getCurrency())) return "";
+        return " (" + inv.getCurrency() + " " + nz(inv.getTotalPayableAmount()).toPlainString()
+                + " @ " + ExchangeRates.orOne(inv.getExchangeRate()).stripTrailingZeros().toPlainString() + ")";
     }
 
     private static VoucherLineDraft line(Long ledgerId, BigDecimal dr, BigDecimal cr, String narration, TaxLineType taxType) {

@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.accounting.gst.hsn.service;
 
 import com.nextgenmanager.nextgenmanager.accounting.gst.GstSupport;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.accounting.gst.hsn.dto.HsnSummaryDto;
 import com.nextgenmanager.nextgenmanager.accounting.gst.hsn.dto.HsnSummaryRow;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
@@ -56,17 +57,18 @@ public class HsnSummaryServiceImpl implements HsnSummaryService {
             // a header-level discount is present). Use invoice-header totals to build a proportional factor
             // so that each item's taxable = itemTaxes × (invTaxable / invTax). This distributes the correct
             // post-discount taxable across items in proportion to their tax amounts.
-            BigDecimal invTaxable = nz(inv.getTaxableValue());
-            BigDecimal invTax = nz(inv.getCgstAmount()).add(nz(inv.getSgstAmount())).add(nz(inv.getIgstAmount()));
+            // In rupees: an invoice in another currency at its own rate.
+            BigDecimal invTaxable = inv.inRupees(inv.getTaxableValue());
+            BigDecimal invTax = inv.inRupees(inv.getCgstAmount()).add(inv.inRupees(inv.getSgstAmount())).add(inv.inRupees(inv.getIgstAmount()));
 
             for (InvoiceItem it : inv.getItems()) {
-                BigDecimal cgst = nz(it.getCgstAmount());
-                BigDecimal sgst = nz(it.getSgstAmount());
-                BigDecimal igst = nz(it.getIgstAmount());
+                BigDecimal cgst = inv.inRupees(it.getCgstAmount());
+                BigDecimal sgst = inv.inRupees(it.getSgstAmount());
+                BigDecimal igst = inv.inRupees(it.getIgstAmount());
                 BigDecimal taxes = cgst.add(sgst).add(igst);
                 // Derive per-item taxable proportionally from the invoice header (handles header discounts).
                 BigDecimal taxable = invTax.signum() == 0
-                        ? nz(it.getTotalAmount())   // fallback: zero-tax item (exempt supply)
+                        ? inv.inRupees(it.getTotalAmount())   // fallback: zero-tax item (exempt supply)
                         : taxes.multiply(invTaxable).divide(invTax, 2, RoundingMode.HALF_UP);
                 int rate = gst.effectiveRate(taxable, taxes).intValue();
                 accumulate(buckets, it.getInventoryItem(), rate,
@@ -79,14 +81,16 @@ public class HsnSummaryServiceImpl implements HsnSummaryService {
                 .findByStatusAndCreditNoteDateBetweenAndDeletedDateIsNullOrderByCreditNoteDateAscCreditNoteNumberAsc(
                         SalesCreditNoteStatus.CONFIRMED, from, to)) {
             boolean inter = gst.isInterState(cn.getCustomer());
+            // In the currency of the invoice it is against.
+            BigDecimal fx = cn.getTaxInvoice() != null ? cn.getTaxInvoice().getExchangeRate() : BigDecimal.ONE;
             for (SalesCreditNoteItem it : cn.getItems()) {
-                BigDecimal taxable = money(it.getReturnedQty() * it.getRate());
-                BigDecimal[] split = gst.splitGst(money(it.getGstAmount()), inter);
+                BigDecimal taxable = ExchangeRates.toBase(money(it.getReturnedQty() * it.getRate()), fx);
+                BigDecimal[] split = gst.splitGst(ExchangeRates.toBase(money(it.getGstAmount()), fx), inter);
                 int rate = (int) Math.round(it.getGstRate());
                 accumulate(buckets, it.getInventoryItem(), rate,
                         money(-it.getReturnedQty()), taxable.negate(),
                         split[0].negate(), split[1].negate(), split[2].negate(),
-                        BigDecimal.ZERO, money(-it.getTotalAmount()));
+                        BigDecimal.ZERO, ExchangeRates.toBase(money(-it.getTotalAmount()), fx));
             }
         }
 

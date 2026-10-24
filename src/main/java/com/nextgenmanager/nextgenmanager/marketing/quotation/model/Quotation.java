@@ -82,6 +82,10 @@ public class Quotation {
 
     private String currency = "INR";
 
+    /** Rupees per one unit of {@link #currency}; exactly 1 for a rupee quotation. */
+    @Column(precision = 18, scale = 6, nullable = false)
+    private BigDecimal exchangeRate = BigDecimal.ONE;
+
     private String validTill;
     private String paymentTerms;
     private String deliveryTerms;

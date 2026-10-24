@@ -1,6 +1,9 @@
 package com.nextgenmanager.nextgenmanager.marketing.enquiry.service;
 
 import com.nextgenmanager.nextgenmanager.bom.service.InvalidDataException;
+import com.nextgenmanager.nextgenmanager.contact.model.Contact;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
+import com.nextgenmanager.nextgenmanager.sales.service.LatestExchangeRate;
 import com.nextgenmanager.nextgenmanager.bom.service.ResourceNotFoundException;
 import com.nextgenmanager.nextgenmanager.common.model.AppUser;
 import com.nextgenmanager.nextgenmanager.common.repository.AppUserRepository;
@@ -49,6 +52,9 @@ public class EnquiryServiceImpl implements EnquiryService {
 
     @Autowired
     EnquiryRepository enquiryRepository;
+
+    @Autowired
+    LatestExchangeRate latestExchangeRate;
 
     @Autowired
     EnquiryCloseReasonRepository closeReasonRepository;
@@ -656,7 +662,25 @@ public class EnquiryServiceImpl implements EnquiryService {
         quotation.setEnquiry(enquiry);
         quotation.setQtnDate(LocalDate.now());
         quotation.setQuotationStatus(QuotationStatus.DRAFT);
-        
+        // Quoted in the customer's own currency and on their usual payment terms.
+        Contact customer = enquiry.getContact();
+        // A foreign currency needs a rate to price the lines; with none entered on any document yet the
+        // quotation stays in rupees, and the form shows that the customer is billed in another currency.
+        if (customer != null && customer.getCurrency() != null && !customer.getCurrency().isBlank()) {
+            String currency = customer.getCurrency().trim().toUpperCase(java.util.Locale.ROOT);
+            if (ExchangeRates.isBase(currency)) {
+                quotation.setCurrency(currency);
+            } else {
+                latestExchangeRate.forCurrency(currency).ifPresent(rate -> {
+                    quotation.setCurrency(currency);
+                    quotation.setExchangeRate(rate);
+                });
+            }
+        }
+        if (customer != null && customer.getDefaultPaymentTerms() != null && !customer.getDefaultPaymentTerms().isBlank()) {
+            quotation.setPaymentTerms(customer.getDefaultPaymentTerms());
+        }
+
         // Copy products
         List<QuotationProducts> qProducts = new ArrayList<>();
         if (enquiry.getEnquiredProducts() != null) {
@@ -666,7 +690,8 @@ public class EnquiryServiceImpl implements EnquiryService {
                 qp.setProductNameRequired(ep.getProductNameRequired());
                 qp.setQty(ep.getQty());
                 qp.setSpecialInstruction(ep.getSpecialInstruction());
-                qp.setPricePerUnit(quotePriceFor(ep));
+                // Item and enquiry prices are in rupees.
+                qp.setPricePerUnit(ExchangeRates.fromBase(quotePriceFor(ep), quotation.getExchangeRate()));
                 qp.setDiscountPercentage(BigDecimal.ZERO);
                 qp.setQuotation(quotation);
                 qProducts.add(qp);

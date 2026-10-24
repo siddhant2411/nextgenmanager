@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrder;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesOrderItem;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxType;
 import org.springframework.stereotype.Service;
@@ -87,7 +88,8 @@ public class SalesOrderTaxCalculator {
 
         BigDecimal netAmount = taxableValue.add(totalTax);
 
-        BigDecimal rounded = netAmount.setScale(0, ROUND);
+        // A rupee order is rounded to the rupee; one in another currency only to its cent.
+        BigDecimal rounded = netAmount.setScale(ExchangeRates.isBase(so.getCurrency()) ? 0 : 2, ROUND);
         BigDecimal roundOff = rounded.subtract(netAmount).setScale(2, ROUND);
 
         so.setSubTotal(subTotal.setScale(2, ROUND));

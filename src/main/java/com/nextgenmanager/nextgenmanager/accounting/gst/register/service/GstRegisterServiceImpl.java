@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.accounting.gst.register.service;
 
 import com.nextgenmanager.nextgenmanager.accounting.gst.GstSupport;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.common.gst.GstState;
 import com.nextgenmanager.nextgenmanager.accounting.gst.register.dto.GstTotals;
 import com.nextgenmanager.nextgenmanager.accounting.gst.register.dto.InwardRegisterDto;
@@ -50,12 +51,13 @@ public class GstRegisterServiceImpl implements GstRegisterService {
 
         for (TaxInvoice inv : taxInvoiceRepo.findForGstRegister(from, to)) {
             Contact customer = inv.getSalesOrder() != null ? inv.getSalesOrder().getCustomer() : null;
-            BigDecimal taxable = nz(inv.getTaxableValue());
-            BigDecimal cgst = nz(inv.getCgstAmount());
-            BigDecimal sgst = nz(inv.getSgstAmount());
-            BigDecimal igst = nz(inv.getIgstAmount());
+            // In rupees: an invoice in another currency at its own rate.
+            BigDecimal taxable = inv.inRupees(inv.getTaxableValue());
+            BigDecimal cgst = inv.inRupees(inv.getCgstAmount());
+            BigDecimal sgst = inv.inRupees(inv.getSgstAmount());
+            BigDecimal igst = inv.inRupees(inv.getIgstAmount());
             BigDecimal cess = BigDecimal.ZERO;
-            BigDecimal total = nz(inv.getTotalPayableAmount());
+            BigDecimal total = inv.inRupees(inv.getTotalPayableAmount());
             rows.add(new OutwardRegisterRow("INV", inv.getInvoiceNumber(), inv.getInvoiceDate(),
                     customer != null ? customer.getGstNumber() : null,
                     gst.partyName(customer), gst.placeOfSupply(customer),
@@ -67,9 +69,11 @@ public class GstRegisterServiceImpl implements GstRegisterService {
                 .findByStatusAndCreditNoteDateBetweenAndDeletedDateIsNullOrderByCreditNoteDateAscCreditNoteNumberAsc(
                         SalesCreditNoteStatus.CONFIRMED, from, to)) {
             Contact customer = cn.getCustomer();
-            BigDecimal taxable = money(cn.getSubtotal());
-            BigDecimal[] split = gst.splitGst(money(cn.getTotalGstAmount()), gst.isInterState(customer));
-            BigDecimal total = money(cn.getTotalAmount());
+            // In the currency of the invoice it is against.
+            BigDecimal fx = cn.getTaxInvoice() != null ? cn.getTaxInvoice().getExchangeRate() : BigDecimal.ONE;
+            BigDecimal taxable = ExchangeRates.toBase(money(cn.getSubtotal()), fx);
+            BigDecimal[] split = gst.splitGst(ExchangeRates.toBase(money(cn.getTotalGstAmount()), fx), gst.isInterState(customer));
+            BigDecimal total = ExchangeRates.toBase(money(cn.getTotalAmount()), fx);
             rows.add(new OutwardRegisterRow("CRN", cn.getCreditNoteNumber(), cn.getCreditNoteDate(),
                     customer != null ? customer.getGstNumber() : null,
                     gst.partyName(customer), gst.placeOfSupply(customer),

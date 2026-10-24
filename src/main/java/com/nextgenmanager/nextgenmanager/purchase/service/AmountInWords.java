@@ -1,11 +1,18 @@
 package com.nextgenmanager.nextgenmanager.purchase.service;
 
+import com.nextgenmanager.nextgenmanager.common.model.DocumentCurrency;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Locale;
 
 /**
- * Converts a BigDecimal rupee amount to Indian-English words.
+ * Converts an amount to English words.
  * e.g. 1,50,500.75 → "Rupees One Lakh Fifty Thousand Five Hundred and Paise Seventy-Five Only"
+ *
+ * <p>Rupees are counted in lakhs and crores; any other currency in thousands and millions, as its
+ * buyer would read it: 1,50,500.75 USD → "US Dollars One Hundred Fifty Thousand Five Hundred and
+ * Cents Seventy Five Only".
  */
 public final class AmountInWords {
 
@@ -21,20 +28,26 @@ public final class AmountInWords {
     private AmountInWords() {}
 
     public static String convert(BigDecimal amount) {
-        if (amount == null) return "";
-        amount = amount.setScale(2, RoundingMode.HALF_UP);
-        long rupees = amount.longValue();
-        int paise   = amount.subtract(BigDecimal.valueOf(rupees)).multiply(BigDecimal.valueOf(100))
-                            .intValue();
+        return convert(amount, "INR");
+    }
 
-        StringBuilder sb = new StringBuilder("Rupees ");
-        if (rupees == 0) {
-            sb.append("Zero");
-        } else {
-            sb.append(inWords(rupees));
-        }
-        if (paise > 0) {
-            sb.append(" and Paise ").append(inWords(paise));
+    public static String convert(BigDecimal amount, String currencyCode) {
+        if (amount == null) return "";
+        DocumentCurrency currency = DocumentCurrency.of(currencyCode);
+        boolean indian = currency == DocumentCurrency.INR;
+        String major = currency != null ? currency.getMajorInWords() : currencyCode.trim().toUpperCase(Locale.ROOT);
+        String minor = currency != null ? currency.getMinorInWords() : null;
+        int decimals = currency != null ? currency.getDecimals() : 2;
+
+        amount = amount.setScale(minor != null ? decimals : 0, RoundingMode.HALF_UP);
+        long whole = amount.longValue();
+        int fraction = minor == null ? 0
+                : amount.subtract(BigDecimal.valueOf(whole)).movePointRight(decimals).intValue();
+
+        StringBuilder sb = new StringBuilder(major).append(' ');
+        sb.append(whole == 0 ? "Zero" : indian ? inWords(whole) : inWordsInternational(whole));
+        if (fraction > 0) {
+            sb.append(" and ").append(minor).append(' ').append(inWords(fraction));
         }
         sb.append(" Only");
         return sb.toString();
@@ -52,5 +65,16 @@ public final class AmountInWords {
             return inWords(n / 1_00_000) + " Lakh" + (n % 1_00_000 != 0 ? " " + inWords(n % 1_00_000) : "");
         // crores
         return inWords(n / 1_00_00_000L) + " Crore" + (n % 1_00_00_000L != 0 ? " " + inWords(n % 1_00_00_000L) : "");
+    }
+
+    private static String inWordsInternational(long n) {
+        if (n < 1_000) return inWords(n);
+        if (n < 1_000_000)
+            return inWords(n / 1_000) + " Thousand" + (n % 1_000 != 0 ? " " + inWords(n % 1_000) : "");
+        if (n < 1_000_000_000L)
+            return inWordsInternational(n / 1_000_000) + " Million"
+                    + (n % 1_000_000 != 0 ? " " + inWordsInternational(n % 1_000_000) : "");
+        return inWordsInternational(n / 1_000_000_000L) + " Billion"
+                + (n % 1_000_000_000L != 0 ? " " + inWordsInternational(n % 1_000_000_000L) : "");
     }
 }

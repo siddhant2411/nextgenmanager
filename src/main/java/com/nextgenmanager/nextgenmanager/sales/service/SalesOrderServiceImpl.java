@@ -22,6 +22,7 @@ import com.nextgenmanager.nextgenmanager.sales.dto.*;
 import com.nextgenmanager.nextgenmanager.sales.exception.InvalidSalesOrderStateException;
 import com.nextgenmanager.nextgenmanager.sales.exception.SalesOrderNotFoundException;
 import com.nextgenmanager.nextgenmanager.sales.mapper.SalesOrderMapper;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.sales.model.*;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesOrderSpecification;
@@ -84,6 +85,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         so.setEnquiry(resolveEnquiry(dto.getEnquiryId(), quotation));
         so.setOrderDate(dto.getOrderDate());
         so.setCurrency(dto.getCurrency());
+        so.setExchangeRate(ExchangeRates.normalise(dto.getCurrency(), dto.getExchangeRate()));
         so.setPaymentTerms(dto.getPaymentTerms());
         so.setIncoterms(dto.getIncoterms());
         so.setVoucherType(VoucherType.SALES_ORDER);
@@ -124,7 +126,8 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private void populatePriceFloor(SalesOrderDto dto) {
         if (dto.getItems() == null) return;
         for (SalesOrderItemDto itemDto : dto.getItems()) {
-            BigDecimal floor = priceFloorService.floorFor(itemDto.getInventoryItem());
+            // The minimum is in rupees; the order may not be.
+            BigDecimal floor = ExchangeRates.fromBase(priceFloorService.floorFor(itemDto.getInventoryItem()), dto.getExchangeRate());
             // Line discounts are disabled on sales orders; only the order discount applies.
             BigDecimal effective = SalesPriceFloorService.effectiveUnitPrice(
                     itemDto.getPricePerUnit(), null, dto.getDiscountPercentage());
@@ -166,6 +169,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
         existing.setOrderDate(dto.getOrderDate());
         existing.setCurrency(dto.getCurrency());
+        existing.setExchangeRate(ExchangeRates.normalise(dto.getCurrency(), dto.getExchangeRate()));
         existing.setPaymentTerms(dto.getPaymentTerms());
         existing.setIncoterms(dto.getIncoterms());
         existing.setPoNumber(dto.getPoNumber());
@@ -564,14 +568,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         analytics.put("completed",        salesOrderRepository.countByStatusAndNotDeleted(SalesOrderStatus.COMPLETED));
         analytics.put("cancelled",        salesOrderRepository.countByStatusAndNotDeleted(SalesOrderStatus.CANCELLED));
 
-        // Revenue from non-draft, non-cancelled active orders
+        // Revenue from non-draft, non-cancelled active orders, in rupees whatever each order's currency
         BigDecimal totalRevenue = salesOrderRepository
                 .findByStatusInAndDeletedDateIsNull(List.of(
                         SalesOrderStatus.APPROVED, SalesOrderStatus.IN_PROGRESS,
                         SalesOrderStatus.PARTIALLY_DISPATCHED, SalesOrderStatus.FULLY_DISPATCHED,
                         SalesOrderStatus.INVOICED, SalesOrderStatus.COMPLETED))
                 .stream()
-                .map(o -> o.getTotalPayableAmount() != null ? o.getTotalPayableAmount() : BigDecimal.ZERO)
+                .map(o -> ExchangeRates.toBase(o.getTotalPayableAmount(), o.getExchangeRate()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         analytics.put("totalRevenue", totalRevenue);
         return analytics;
@@ -654,7 +658,8 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             }
         }
 
-        BigDecimal revenue = so.getTaxableValue() != null ? so.getTaxableValue() : BigDecimal.ZERO;
+        // Costs are in rupees, so revenue is too: an order in another currency at its own rate.
+        BigDecimal revenue = ExchangeRates.toBase(so.getTaxableValue(), so.getExchangeRate());
         BigDecimal grossProfit = revenue.subtract(totalCost);
         BigDecimal marginPct = BigDecimal.ZERO;
         if (revenue.compareTo(BigDecimal.ZERO) > 0) {
