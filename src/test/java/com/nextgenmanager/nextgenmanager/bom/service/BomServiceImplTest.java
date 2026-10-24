@@ -7,7 +7,11 @@ import com.nextgenmanager.nextgenmanager.bom.model.BomCostLine;
 import com.nextgenmanager.nextgenmanager.bom.model.BomPosition;
 import com.nextgenmanager.nextgenmanager.bom.model.BomStatus;
 import com.nextgenmanager.nextgenmanager.bom.repository.BomRepository;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.Routing;
+import com.nextgenmanager.nextgenmanager.bom.model.routing.RoutingOperation;
 import com.nextgenmanager.nextgenmanager.bom.repository.routing.RoutingRepository;
+import com.nextgenmanager.nextgenmanager.production.enums.CostType;
+import com.nextgenmanager.nextgenmanager.production.model.workCenter.WorkCenter;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.items.model.InventoryItem;
 import com.nextgenmanager.nextgenmanager.items.model.ProductFinanceSettings;
@@ -81,6 +85,79 @@ class BomServiceImplTest {
         // Uses the per-BOM price (₹10), not the item's standardCost (₹8)
         assertThat(breakdown.getTotalAdditionalCost()).isEqualByComparingTo("10.00");
         assertThat(breakdown.getTotalCost()).isEqualByComparingTo("210.00"); // 200 + 0 ops + 10
+    }
+
+    // ── Overhead: BOM blanket % overrides, blank falls back to work centers ──
+
+    @Test
+    void getBomCostBreakdown_blanketRateOverridesWorkCenterOverhead() {
+        Bom bom = bomWithOneHourOnA20PercentWorkCenter(new BigDecimal("10"));
+
+        BomCostBreakdownDTO breakdown = service.getBomCostBreakdown(60);
+
+        // Operation carries no work-center overhead: 1 h × ₹100 machine = ₹100
+        assertThat(breakdown.getTotalOperationCost()).isEqualByComparingTo("100.00");
+        assertThat(breakdown.getWorkCenterOverheadCost()).isEqualByComparingTo("0.00");
+        // Blanket 10% on 200 material + 100 operation = 30
+        assertThat(breakdown.getOverheadMode()).isEqualTo("BLANKET");
+        assertThat(breakdown.getOverheadCost()).isEqualByComparingTo("30.00");
+        assertThat(breakdown.getTotalCost()).isEqualByComparingTo("330.00");
+    }
+
+    @Test
+    void getBomCostBreakdown_zeroBlanketRateStillOverridesWorkCenterOverhead() {
+        bomWithOneHourOnA20PercentWorkCenter(BigDecimal.ZERO);
+
+        BomCostBreakdownDTO breakdown = service.getBomCostBreakdown(60);
+
+        assertThat(breakdown.getOverheadMode()).isEqualTo("BLANKET");
+        assertThat(breakdown.getTotalCost()).isEqualByComparingTo("300.00");
+    }
+
+    @Test
+    void getBomCostBreakdown_blankBlanketRateUsesWorkCenterOverhead() {
+        bomWithOneHourOnA20PercentWorkCenter(null);
+
+        BomCostBreakdownDTO breakdown = service.getBomCostBreakdown(60);
+
+        // Work center's 20% loads the operation only: 100 + 20 = 120; material carries none
+        assertThat(breakdown.getOverheadMode()).isEqualTo("WORK_CENTER");
+        assertThat(breakdown.getTotalOperationCost()).isEqualByComparingTo("120.00");
+        assertThat(breakdown.getWorkCenterOverheadCost()).isEqualByComparingTo("20.00");
+        assertThat(breakdown.getOverheadCost()).isEqualByComparingTo("0.00");
+        assertThat(breakdown.getTotalCost()).isEqualByComparingTo("320.00");
+    }
+
+    private Bom bomWithOneHourOnA20PercentWorkCenter(BigDecimal bomOverheadPct) {
+        InventoryItem parent = item(1, "FG-1", "Gear", null);
+        InventoryItem steel = item(2, "RM-1", "Steel", 100.0);
+
+        Bom bom = new Bom();
+        bom.setId(60);
+        bom.setBomName("Gear BOM");
+        bom.setParentInventoryItem(parent);
+        bom.setPositions(new ArrayList<>(List.of(position(steel, 2.0))));       // 2 × 100 = 200 material
+        bom.setOverheadPercentage(bomOverheadPct);
+
+        WorkCenter wc = new WorkCenter();
+        wc.setCenterName("Lathe");
+        wc.setMachineCostPerHour(new BigDecimal("100"));
+        wc.setOverheadPercentage(new BigDecimal("20"));
+
+        RoutingOperation op = new RoutingOperation();
+        op.setId(1L);
+        op.setName("Turning");
+        op.setCostType(CostType.CALCULATED);
+        op.setWorkCenter(wc);
+        op.setSetupTime(BigDecimal.ZERO);
+        op.setRunTime(new BigDecimal("60"));                                   // minutes
+        Routing routing = new Routing();
+        routing.setOperations(new ArrayList<>(List.of(op)));
+
+        when(bomRepository.findById(60)).thenReturn(Optional.of(bom));
+        when(inventoryItemService.getInventoryItem(2)).thenReturn(steel);
+        when(routingRepository.findByBomId(60)).thenReturn(Optional.of(routing));
+        return bom;
     }
 
     // ── Cost line references an existing master item (never creates one) ─────

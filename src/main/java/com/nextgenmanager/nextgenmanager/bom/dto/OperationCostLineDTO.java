@@ -18,7 +18,7 @@ public class OperationCostLineDTO {
 
     // Work center info
     private String workCenterName;
-    private BigDecimal overheadPercentage;
+    private BigDecimal overheadPercentage;   // work-center overhead % loaded on this line (0 under a BOM blanket rate)
 
     // Machine info
     private String machineName;

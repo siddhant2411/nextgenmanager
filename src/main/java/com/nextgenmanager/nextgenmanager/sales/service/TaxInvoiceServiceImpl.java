@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.sales.dto.DocumentParty;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.sales.dto.SalesPaymentCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.TaxInvoiceCreateDto;
 import com.nextgenmanager.nextgenmanager.sales.dto.TaxInvoiceDto;
@@ -77,6 +78,9 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
         invoice.setSgstAmount(so.getSgstAmount());
         invoice.setIgstAmount(so.getIgstAmount());
         invoice.setTotalPayableAmount(so.getTotalPayableAmount());
+        // The amounts above are in the order's currency; the rate goes with them so the books get rupees.
+        invoice.setCurrency(so.getCurrency());
+        invoice.setExchangeRate(ExchangeRates.orOne(so.getExchangeRate()));
 
         // The invoice keeps its own copy of who it was billed and shipped to
         SalesParties.freezeOnto(invoice, so);
@@ -237,6 +241,9 @@ public class TaxInvoiceServiceImpl implements TaxInvoiceService {
         dto.setIgstAmount(inv.getIgstAmount());
         dto.setTotalPayableAmount(inv.getTotalPayableAmount());
         dto.setPaidAmount(inv.getPaidAmount());
+        dto.setCurrency(inv.getCurrency() != null ? inv.getCurrency()
+                : inv.getSalesOrder() != null ? inv.getSalesOrder().getCurrency() : null);
+        dto.setExchangeRate(inv.getExchangeRate());
         dto.setCreationDate(inv.getCreationDate());
         dto.setUpdatedDate(inv.getUpdatedDate());
 

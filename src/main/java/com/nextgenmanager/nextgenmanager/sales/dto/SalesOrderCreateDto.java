@@ -39,6 +39,8 @@ public class SalesOrderCreateDto {
 
     @Size(max = 20)
     private String currency;
+    // Rupees per one unit of currency; required, and above zero, for any currency but INR.
+    private BigDecimal exchangeRate;
     @Size(max = 200)
     private String paymentTerms;
     @Size(max = 200)

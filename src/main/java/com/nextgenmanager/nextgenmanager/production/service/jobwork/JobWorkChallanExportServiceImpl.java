@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.production.service.jobwork;
 
 import com.google.zxing.BarcodeFormat;
+import com.nextgenmanager.nextgenmanager.common.service.PdfFonts;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
@@ -194,6 +195,7 @@ public class JobWorkChallanExportServiceImpl implements JobWorkChallanExportServ
                    .replace("&trade;", "&#8482;");
         try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
             PdfRendererBuilder builder = new PdfRendererBuilder();
+            PdfFonts.register(builder);
             builder.useFastMode();
             builder.withHtmlContent(html, null);
             builder.toStream(os);

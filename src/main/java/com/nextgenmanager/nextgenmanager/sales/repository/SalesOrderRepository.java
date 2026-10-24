@@ -11,6 +11,9 @@ import java.util.List;
 
 public interface SalesOrderRepository extends JpaRepository<SalesOrder, Long>, JpaSpecificationExecutor<SalesOrder> {
 
+    /** The latest order in a currency whose rate was actually entered (an old row defaulted to 1 is skipped). */
+    java.util.Optional<SalesOrder> findFirstByCurrencyIgnoreCaseAndExchangeRateNotAndDeletedDateIsNullOrderByCreationDateDesc(String currency, java.math.BigDecimal one);
+
     List<SalesOrder> findByStatusInAndDeletedDateIsNull(List<SalesOrderStatus> statuses);
 
     @Query("SELECT so FROM SalesOrder so WHERE so.deliveryDate < :today " +

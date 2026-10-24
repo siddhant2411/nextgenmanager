@@ -19,6 +19,9 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
 
     List<Quotation> findByEnquiryId(Long enquiryId);
 
+    /** The latest quotation in a currency whose rate was actually entered (an old row defaulted to 1 is skipped). */
+    java.util.Optional<Quotation> findFirstByCurrencyIgnoreCaseAndExchangeRateNotAndDeletedDateIsNullOrderByCreationDateDesc(String currency, BigDecimal one);
+
     @Query(nativeQuery = true, value = """
     SELECT 
         q.id AS id, 

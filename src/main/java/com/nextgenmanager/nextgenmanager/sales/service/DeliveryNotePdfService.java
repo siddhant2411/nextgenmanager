@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.company.model.CompanyDetails;
+import com.nextgenmanager.nextgenmanager.common.service.PdfFonts;
 import com.nextgenmanager.nextgenmanager.company.repository.CompanyDetailsRepository;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.sales.model.DeliveryNote;
@@ -55,6 +56,7 @@ public class DeliveryNotePdfService {
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
+        PdfFonts.register(builder);
         builder.useFastMode();
         builder.withHtmlContent(html, null);
         builder.toStream(out);

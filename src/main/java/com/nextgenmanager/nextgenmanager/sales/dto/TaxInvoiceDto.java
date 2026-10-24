@@ -48,6 +48,9 @@ public class TaxInvoiceDto {
     private BigDecimal igstAmount;
     private BigDecimal totalPayableAmount;
     private BigDecimal paidAmount;
+    // The invoice's currency, copied from its order: every amount above is in it.
+    private String currency;
+    private BigDecimal exchangeRate;
 
     // Company (Host)
     private String companyName;

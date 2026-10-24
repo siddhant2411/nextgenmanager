@@ -1,6 +1,9 @@
 package com.nextgenmanager.nextgenmanager.marketing.quotation.service;
 
 import com.nextgenmanager.nextgenmanager.common.service.PdfPageFit;
+import com.nextgenmanager.nextgenmanager.common.service.PdfFonts;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
+import com.nextgenmanager.nextgenmanager.common.model.DocumentCurrency;
 import com.nextgenmanager.nextgenmanager.company.dto.CompanyDetailsDTO;
 import com.nextgenmanager.nextgenmanager.company.service.DocumentBrandingService;
 import com.nextgenmanager.nextgenmanager.Inventory.repository.InventoryInstanceRepository;
@@ -18,6 +21,7 @@ import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationProd
 import com.nextgenmanager.nextgenmanager.marketing.quotation.model.QuotationStatus;
 import com.nextgenmanager.nextgenmanager.marketing.quotation.repository.QuotationRepository;
 import com.nextgenmanager.nextgenmanager.purchase.service.AmountInWords;
+import com.nextgenmanager.nextgenmanager.sales.dto.DocumentParty;
 import com.nextgenmanager.nextgenmanager.sales.service.SalesParties;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.slf4j.Logger;
@@ -114,6 +118,7 @@ public class QuotationServiceImp implements QuotationService {
     public byte[] generateQuotationPdf(String html) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfRendererBuilder builder = new PdfRendererBuilder();
+        PdfFonts.register(builder);
         builder.useFastMode();
         builder.withHtmlContent(html.replace("&nbsp;", "&#160;"), null);
         builder.toStream(out);
@@ -180,8 +185,7 @@ public class QuotationServiceImp implements QuotationService {
     private Context buildPdfContext(Quotation quotation) {
         Enquiry enquiry = quotation.getEnquiry();
         Contact customer = enquiry != null ? enquiry.getContact() : null;
-        ContactPersonDetail contactPerson = customer != null && customer.getPersonDetails() != null
-                && !customer.getPersonDetails().isEmpty() ? customer.getPersonDetails().get(0) : null;
+        ContactPersonDetail contactPerson = kindAttention(enquiry, customer);
 
         CompanyDetailsDTO company = companyService.get();
         String companyAddress = java.util.stream.Stream.of(company.street1(), company.street2(), company.city())
@@ -207,7 +211,13 @@ public class QuotationServiceImp implements QuotationService {
         ctx.setVariable("quotation", quotation);
         ctx.setVariable("qtnNoLabel", qtnNoLabel);
         ctx.setVariable("enquiry", enquiry);
-        ctx.setVariable("customer", SalesParties.of(customer));
+        DocumentParty to = SalesParties.of(customer);
+        if (customer == null && enquiry != null && enquiry.getManualCompanyName() != null
+                && !enquiry.getManualCompanyName().isBlank()) {
+            // An enquiry from someone not yet in the contact master still names the company it is for.
+            to = new DocumentParty(enquiry.getManualCompanyName().trim(), null, null, null);
+        }
+        ctx.setVariable("customer", to);
         ctx.setVariable("contactPerson", contactPerson);
         ctx.setVariable("subTotal", subTotal);
         ctx.setVariable("discountAmount", discount);
@@ -216,8 +226,29 @@ public class QuotationServiceImp implements QuotationService {
         ctx.setVariable("gstAmount", orZero(quotation.getGstAmount()));
         ctx.setVariable("roundOff", orZero(quotation.getRoundOff()));
         ctx.setVariable("totalAmount", total);
-        ctx.setVariable("amountInWords", AmountInWords.convert(total));
+        ctx.setVariable("cur", DocumentCurrency.signOf(quotation.getCurrency()));
+        ctx.setVariable("amountInWords", AmountInWords.convert(total, quotation.getCurrency()));
         return ctx;
+    }
+
+    /**
+     * The person the quotation is addressed to: whoever the enquiry names, else the customer's
+     * primary contact person, else their first one. Null when there is nobody to name.
+     */
+    static ContactPersonDetail kindAttention(Enquiry enquiry, Contact customer) {
+        if (enquiry != null && enquiry.getContactPersonName() != null && !enquiry.getContactPersonName().isBlank()) {
+            ContactPersonDetail fromEnquiry = new ContactPersonDetail();
+            fromEnquiry.setPersonName(enquiry.getContactPersonName().trim());
+            fromEnquiry.setPhoneNumber(enquiry.getContactPersonPhone());
+            fromEnquiry.setEmailId(enquiry.getContactPersonEmail());
+            return fromEnquiry;
+        }
+        if (customer == null || customer.getPersonDetails() == null) return null;
+        List<ContactPersonDetail> people = customer.getPersonDetails().stream()
+                .filter(p -> p.getPersonName() != null && !p.getPersonName().isBlank())
+                .toList();
+        return people.stream().filter(ContactPersonDetail::isPrimary).findFirst()
+                .orElse(people.isEmpty() ? null : people.get(0));
     }
 
     private static BigDecimal orZero(BigDecimal value) {
@@ -227,6 +258,7 @@ public class QuotationServiceImp implements QuotationService {
     @Transactional
     @Override
     public Quotation createQuotation(Quotation quotation) throws Exception {
+        quotation.setExchangeRate(ExchangeRates.normalise(quotation.getCurrency(), quotation.getExchangeRate()));
         enforcePriceFloor(quotation, null);
         try {
 
@@ -276,6 +308,7 @@ public class QuotationServiceImp implements QuotationService {
         Quotation existing = quotationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Quotation not found with ID: " + id));
         quotation.setId(existing.getId());
+        quotation.setExchangeRate(ExchangeRates.normalise(quotation.getCurrency(), quotation.getExchangeRate()));
         enforcePriceFloor(quotation, existing);
 
         try {
@@ -361,21 +394,24 @@ public class QuotationServiceImp implements QuotationService {
         for (QuotationProducts line : incoming.getQuotationProducts()) {
             InventoryItem item = line.getInventoryItem();
             BigDecimal floor = priceFloorService.floorFor(item);
-            BigDecimal offered = SalesPriceFloorService.effectiveUnitPrice(
-                    line.getPricePerUnit(), line.getDiscountPercentage(), incoming.getDiscountPercentage());
+            // The minimum is in rupees, so a foreign-currency price is compared at the quotation's rate.
+            BigDecimal offered = ExchangeRates.toBase(SalesPriceFloorService.effectiveUnitPrice(
+                    line.getPricePerUnit(), line.getDiscountPercentage(), incoming.getDiscountPercentage()),
+                    incoming.getExchangeRate());
             if (!SalesPriceFloorService.isBelow(offered, floor)) continue;
 
             QuotationProducts before = line.getId() != null ? stored.get(line.getId()) : null;
             if (before != null && before.getInventoryItem() != null
                     && before.getInventoryItem().getInventoryItemId() == item.getInventoryItemId()) {
-                BigDecimal agreed = SalesPriceFloorService.effectiveUnitPrice(
-                        before.getPricePerUnit(), before.getDiscountPercentage(), existing.getDiscountPercentage());
+                BigDecimal agreed = ExchangeRates.toBase(SalesPriceFloorService.effectiveUnitPrice(
+                        before.getPricePerUnit(), before.getDiscountPercentage(), existing.getDiscountPercentage()),
+                        existing.getExchangeRate());
                 if (offered.compareTo(agreed) >= 0) continue;
             }
 
             String name = line.getProductNameRequired() != null && !line.getProductNameRequired().isBlank()
                     ? line.getProductNameRequired() : "Item " + item.getInventoryItemId();
-            belowFloor.add(name + " at " + offered.toPlainString() + " (minimum " + floor.toPlainString() + ")");
+            belowFloor.add(name + " at Rs. " + offered.toPlainString() + " (minimum Rs. " + floor.toPlainString() + ")");
         }
         if (!belowFloor.isEmpty()) {
             throw new BusinessException("Price is below the minimum selling price after discounts: "
@@ -414,7 +450,10 @@ public class QuotationServiceImp implements QuotationService {
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
         BigDecimal total = discountedNet.add(pandfChanrges).add(gstAmount);
-        BigDecimal roundedTotal = BigDecimal.valueOf(Math.round(total.doubleValue()));
+        // A rupee quotation is rounded to the rupee; one in another currency only to its cent.
+        BigDecimal roundedTotal = ExchangeRates.isBase(quotation.getCurrency())
+                ? BigDecimal.valueOf(Math.round(total.doubleValue()))
+                : total.setScale(2, RoundingMode.HALF_UP);
         BigDecimal roundOff = roundedTotal.subtract(total);
 
         quotation.setDiscountAmount(discountAmount);
@@ -458,6 +497,8 @@ public class QuotationServiceImp implements QuotationService {
         revised.setDeliveryTerms(existing.getDeliveryTerms());
         revised.setInspectionTerms(existing.getInspectionTerms());
         revised.setPricesTerms(existing.getPricesTerms());
+        revised.setCurrency(existing.getCurrency());
+        revised.setExchangeRate(existing.getExchangeRate());
         revised.setNotes(existing.getNotes());
         
         // Revision logic

@@ -28,11 +28,14 @@ public class BomCostBreakdownDTO {
     private List<BomCostLineDTO> additionalCosts;
     private BigDecimal totalAdditionalCost;
 
-    // Blanket manufacturing overhead (per-BOM %), applied to material + in-house conversion +
-    // additional + fixed-rate operations, EXCLUDING subcontracted operations.
-    private BigDecimal overheadPercentage;   // the BOM's blanket rate (null/0 = none)
-    private BigDecimal overheadBase;          // the cost base the % is applied to
-    private BigDecimal overheadCost;          // overheadBase × overheadPercentage / 100
+    // Overhead — see OverheadPolicy. BLANKET: the BOM's own % on material + in-house conversion +
+    // additional + fixed-rate operations, EXCLUDING subcontracted operations. WORK_CENTER: the BOM %
+    // is blank, so each operation line carries its work center's overhead instead.
+    private String overheadMode;              // "BLANKET" | "WORK_CENTER"
+    private BigDecimal overheadPercentage;    // the BOM's blanket rate (null in WORK_CENTER mode)
+    private BigDecimal overheadBase;          // the cost base the blanket % is applied to
+    private BigDecimal overheadCost;          // blanket only: overheadBase × overheadPercentage / 100
+    private BigDecimal workCenterOverheadCost; // sum of the operation lines' overhead; already inside totalOperationCost
 
     // Totals
     private BigDecimal totalCost;            // material + operation + additional + overhead

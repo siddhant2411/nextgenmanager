@@ -11,6 +11,7 @@ import com.nextgenmanager.nextgenmanager.accounting.voucher.model.TaxLineType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.model.VoucherType;
 import com.nextgenmanager.nextgenmanager.accounting.voucher.service.PostingService;
 import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.contact.model.Contact;
 import com.nextgenmanager.nextgenmanager.purchase.model.GstTreatment;
 import com.nextgenmanager.nextgenmanager.purchase.service.GstResolver;
@@ -78,9 +79,11 @@ public class SalesCreditNotePostingListener {
             Contact customer = cn.getCustomer();
             LedgerAccount party = coaService.getOrCreatePartyLedger(customer, SubLedgerType.CUSTOMER);
 
-            BigDecimal subtotal = money(cn.getSubtotal());
-            BigDecimal totalGst = money(cn.getTotalGstAmount());
-            BigDecimal total = money(cn.getTotalAmount());
+            // A credit note against an invoice is in that invoice's currency, and goes to the books at its rate.
+            BigDecimal rate = cn.getTaxInvoice() != null ? cn.getTaxInvoice().getExchangeRate() : BigDecimal.ONE;
+            BigDecimal subtotal = ExchangeRates.toBase(money(cn.getSubtotal()), rate);
+            BigDecimal totalGst = ExchangeRates.toBase(money(cn.getTotalGstAmount()), rate);
+            BigDecimal total = ExchangeRates.toBase(money(cn.getTotalAmount()), rate);
 
             List<VoucherLineDraft> lines = new ArrayList<>();
             lines.add(dr(ledgers.salesDomestic().getId(), subtotal, "Sales return " + cn.getCreditNoteNumber(), null));

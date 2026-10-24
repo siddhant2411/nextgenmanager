@@ -98,6 +98,8 @@ public class SalesOrder {
     @Column(length = 200) private String paymentTerms;                    // e.g. “30% advance, balance on delivery”
     @Column(length = 200) private String incoterms;                      // e.g. “FOB, Indian Port”
     @Column(length = 20)  private String currency;                       // e.g. “INR”
+    /** Rupees per one unit of {@link #currency}; exactly 1 for a rupee order (ExchangeRates.normalise). */
+    @Column(precision = 18, scale = 6, nullable = false) private BigDecimal exchangeRate = BigDecimal.ONE;
 
     // — Bill to / ship to —
     // All optional. Read them through SalesParties, which fills the blanks: no billToAddress means

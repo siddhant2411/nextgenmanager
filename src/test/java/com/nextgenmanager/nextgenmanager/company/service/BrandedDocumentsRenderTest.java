@@ -301,6 +301,10 @@ class BrandedDocumentsRenderTest {
 
     /** The quotation is laid out as the order acknowledgement is, so its item names must wrap rather than be cut. */
     static byte[] quotation(Brand brand) {
+        return quotation(brand, "INR");
+    }
+
+    static byte[] quotation(Brand brand, String currency) {
         QuotationProducts product = new QuotationProducts();
         product.setProductNameRequired("Flush Bottom Tank Valve 50 NB x 40 NB, CF8M body, PTFE seat, ram type, pneumatic actuated");
         product.setQty(new BigDecimal("2"));
@@ -309,6 +313,7 @@ class BrandedDocumentsRenderTest {
 
         Quotation quotation = new Quotation();
         quotation.setQtnNo("QTN-0031");
+        quotation.setCurrency(currency);
         quotation.setQtnDate(LocalDate.of(2026, 5, 2));
         quotation.setQuotationProducts(List.of(product));
         quotation.setNetAmount(new BigDecimal("10000.00"));

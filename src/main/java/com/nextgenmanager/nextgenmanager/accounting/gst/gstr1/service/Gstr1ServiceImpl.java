@@ -1,6 +1,7 @@
 package com.nextgenmanager.nextgenmanager.accounting.gst.gstr1.service;
 
 import com.nextgenmanager.nextgenmanager.accounting.gst.GstSupport;
+import com.nextgenmanager.nextgenmanager.common.service.ExchangeRates;
 import com.nextgenmanager.nextgenmanager.accounting.gst.gstr1.dto.*;
 import com.nextgenmanager.nextgenmanager.common.gst.GstState;
 import com.nextgenmanager.nextgenmanager.accounting.gst.hsn.dto.HsnSummaryDto;
@@ -49,7 +50,8 @@ public class Gstr1ServiceImpl implements Gstr1Service {
             Contact customer = inv.getSalesOrder() != null ? inv.getSalesOrder().getCustomer() : null;
             String pos = gst.placeOfSupply(customer);
             List<RateLine> lines = invoiceRateLines(inv);
-            BigDecimal value = nz(inv.getTotalPayableAmount());
+            // Returns are filed in rupees; an invoice in another currency is taken at its own rate.
+            BigDecimal value = inv.inRupees(inv.getTotalPayableAmount());
 
             if (gst.isB2B(customer)) {
                 b2b.add(new B2bInvoice(customer.getGstNumber(), gst.partyName(customer),
@@ -83,7 +85,7 @@ public class Gstr1ServiceImpl implements Gstr1Service {
             List<RateLine> lines = creditNoteRateLines(cn);
             CdnRow row = new CdnRow(gst.isB2B(customer) ? customer.getGstNumber() : null,
                     gst.partyName(customer), cn.getCreditNoteNumber(), cn.getCreditNoteDate(),
-                    "C", money(cn.getTotalAmount()), pos, lines);
+                    "C", ExchangeRates.toBase(money(cn.getTotalAmount()), creditNoteRate(cn)), pos, lines);
             if (gst.isB2B(customer)) cdnr.add(row); else cdnur.add(row);
         }
 
@@ -108,22 +110,28 @@ public class Gstr1ServiceImpl implements Gstr1Service {
      * for GSTR-1 purposes in this release.
      */
     private List<RateLine> invoiceRateLines(TaxInvoice inv) {
-        BigDecimal taxable = nz(inv.getTaxableValue());
-        BigDecimal cgst = nz(inv.getCgstAmount());
-        BigDecimal sgst = nz(inv.getSgstAmount());
-        BigDecimal igst = nz(inv.getIgstAmount());
+        BigDecimal taxable = inv.inRupees(inv.getTaxableValue());
+        BigDecimal cgst = inv.inRupees(inv.getCgstAmount());
+        BigDecimal sgst = inv.inRupees(inv.getSgstAmount());
+        BigDecimal igst = inv.inRupees(inv.getIgstAmount());
         BigDecimal taxes = cgst.add(sgst).add(igst);
         int rate = gst.effectiveRate(taxable, taxes).intValue();
         return List.of(new RateLine(BigDecimal.valueOf(rate), taxable, cgst, sgst, igst, BigDecimal.ZERO));
     }
 
+    /** A credit note is in the currency of the invoice it is against. */
+    private static BigDecimal creditNoteRate(SalesCreditNote cn) {
+        return cn.getTaxInvoice() != null ? cn.getTaxInvoice().getExchangeRate() : BigDecimal.ONE;
+    }
+
     /** Groups a credit note's line items into rate-wise lines; combined GST split by treatment. */
     private List<RateLine> creditNoteRateLines(SalesCreditNote cn) {
         boolean inter = gst.isInterState(cn.getCustomer());
+        BigDecimal fx = creditNoteRate(cn);
         Map<Integer, RateAcc> byRate = new LinkedHashMap<>();
         for (SalesCreditNoteItem it : cn.getItems()) {
-            BigDecimal taxable = money(it.getReturnedQty() * it.getRate());
-            BigDecimal[] split = gst.splitGst(money(it.getGstAmount()), inter);
+            BigDecimal taxable = ExchangeRates.toBase(money(it.getReturnedQty() * it.getRate()), fx);
+            BigDecimal[] split = gst.splitGst(ExchangeRates.toBase(money(it.getGstAmount()), fx), inter);
             int rate = (int) Math.round(it.getGstRate());
             byRate.computeIfAbsent(rate, k -> new RateAcc(null, BigDecimal.valueOf(rate)))
                     .add(taxable, split[0], split[1], split[2], BigDecimal.ZERO);

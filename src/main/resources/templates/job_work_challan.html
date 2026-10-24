@@ -253,6 +253,7 @@
             pointer-events: none;
             letter-spacing: 10px;
         }
+        .cur { font-family: 'Currency Signs'; }
     </style>
 </head>
 <body>
@@ -379,7 +380,7 @@
     <tr>
         <td>
             <div class="meta-key">Agreed Rate / Unit</div>
-            <div class="meta-val" th:text="${challan.agreedRatePerUnit != null ? '&#8377; ' + challan.agreedRatePerUnit : '—'}">&#8377; 500.00</div>
+            <div class="meta-val"><th:block th:if="${challan.agreedRatePerUnit != null}"><span class="cur">&#8377;</span> <span th:text="${challan.agreedRatePerUnit}">500.00</span></th:block><th:block th:unless="${challan.agreedRatePerUnit != null}">—</th:block></div>
         </td>
         <td>
             <div class="meta-key">Dispatch Date</div>
@@ -444,8 +445,8 @@
             <th style="width:9%;">Qty Sent</th>
             <th style="width:9%;">Qty Recd.</th>
             <th style="width:9%;">Qty Pending</th>
-            <th style="width:9%;">Rate (&#8377;)</th>
-            <th style="width:10%;">Value (&#8377;)</th>
+            <th style="width:9%;">Rate (<span class="cur">&#8377;</span>)</th>
+            <th style="width:10%;">Value (<span class="cur">&#8377;</span>)</th>
         </tr>
     </thead>
     <tbody>
@@ -492,7 +493,7 @@
                     <td class="val" th:text="${totalQtyPending}">30.00</td>
                 </tr>
                 <tr class="total-row">
-                    <td>Total Declared Value (&#8377;)</td>
+                    <td>Total Declared Value (<span class="cur">&#8377;</span>)</td>
                     <td th:text="${totalValue}">15000.00</td>
                 </tr>
             </table>
