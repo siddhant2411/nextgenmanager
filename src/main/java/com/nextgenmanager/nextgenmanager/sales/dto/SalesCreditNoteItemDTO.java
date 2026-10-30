@@ -1,5 +1,7 @@
 package com.nextgenmanager.nextgenmanager.sales.dto;
 
+import com.nextgenmanager.nextgenmanager.sales.model.SalesReturnGoodsCondition;
+
 public record SalesCreditNoteItemDTO(
         Long id,
         int inventoryItemId,
@@ -12,5 +14,6 @@ public record SalesCreditNoteItemDTO(
         double gstAmount,
         double totalAmount,
         String warehouseTo,
-        String remarks
+        String remarks,
+        SalesReturnGoodsCondition goodsCondition
 ) {}

@@ -47,4 +47,7 @@ public class InventoryTransactionDTO {
      * books without being pickable.
      */
     private com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus qualityStatus;
+
+    /** Sales returns only: the credit note line the stock came back on, stamped on its units. */
+    private Long salesCreditNoteItemId;
 }

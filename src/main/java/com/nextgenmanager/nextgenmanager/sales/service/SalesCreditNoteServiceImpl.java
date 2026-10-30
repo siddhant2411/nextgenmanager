@@ -1,7 +1,10 @@
 package com.nextgenmanager.nextgenmanager.sales.service;
 
 import com.nextgenmanager.nextgenmanager.Inventory.dto.InventoryTransactionDTO;
+import com.nextgenmanager.nextgenmanager.Inventory.model.QualityStatus;
+import com.nextgenmanager.nextgenmanager.Inventory.model.Warehouse;
 import com.nextgenmanager.nextgenmanager.Inventory.service.InventoryTransactionService;
+import com.nextgenmanager.nextgenmanager.Inventory.service.WarehouseService;
 import com.nextgenmanager.nextgenmanager.common.events.DomainEventPublisher;
 import com.nextgenmanager.nextgenmanager.common.events.DocumentVoidedEvent;
 import com.nextgenmanager.nextgenmanager.common.events.SourceDocTypes;
@@ -14,6 +17,7 @@ import com.nextgenmanager.nextgenmanager.sales.events.SalesCreditNoteConfirmedEv
 import com.nextgenmanager.nextgenmanager.sales.model.SalesCreditNote;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesCreditNoteItem;
 import com.nextgenmanager.nextgenmanager.sales.model.SalesCreditNoteStatus;
+import com.nextgenmanager.nextgenmanager.sales.model.SalesReturnGoodsCondition;
 import com.nextgenmanager.nextgenmanager.sales.model.TaxInvoice;
 import com.nextgenmanager.nextgenmanager.sales.repository.SalesCreditNoteRepository;
 import com.nextgenmanager.nextgenmanager.sales.repository.TaxInvoiceRepository;
@@ -38,6 +42,7 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
     private final SalesCreditNoteNumberGenerator numberGenerator;
     private final DomainEventPublisher domainEventPublisher;
     private final InventoryTransactionService txService;
+    private final WarehouseService warehouseService;
 
     public SalesCreditNoteServiceImpl(SalesCreditNoteRepository creditNoteRepo,
                                       ContactRepository contactRepo,
@@ -45,7 +50,9 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
                                       TaxInvoiceRepository taxInvoiceRepo,
                                       SalesCreditNoteNumberGenerator numberGenerator,
                                       DomainEventPublisher domainEventPublisher,
-                                      InventoryTransactionService txService) {
+                                      InventoryTransactionService txService,
+                                      WarehouseService warehouseService) {
+        this.warehouseService = warehouseService;
         this.creditNoteRepo  = creditNoteRepo;
         this.contactRepo     = contactRepo;
         this.itemRepo        = itemRepo;
@@ -108,6 +115,9 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
                 cni.setTotalAmount(lineTotal);
                 cni.setWarehouseTo(line.getWarehouseTo());
                 cni.setRemarks(line.getRemarks());
+                cni.setGoodsCondition(line.getGoodsCondition() != null
+                        ? line.getGoodsCondition() : conditionFromReason(req.getReason()));
+                assertWholeUnitsForSerials(item, cni);
 
                 cn.getItems().add(cni);
                 subtotal += base;
@@ -130,16 +140,38 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
         }
         // Restock returned goods at standard cost so perpetual inventory stays in sync.
         // The companion SALES_RETURN inventory movement auto-posts Dr FG Stock / Cr COGS.
+        // Received the way a production run is, so batch- and serial-tracked goods come back as
+        // units that can be picked, not as a bare number on the item.
         for (SalesCreditNoteItem line : cn.getItems()) {
+            SalesReturnGoodsCondition condition = conditionOf(line);
+            if (condition == SalesReturnGoodsCondition.NOT_RETURNED || line.getReturnedQty() <= 0) continue;
+
+            InventoryItem item = line.getInventoryItem();
+            Warehouse warehouse = warehouseService.resolveByCodeOrDefault(line.getWarehouseTo());
             InventoryTransactionDTO dto = new InventoryTransactionDTO();
-            dto.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
+            if (condition == SalesReturnGoodsCondition.DEFECTIVE) {
+                // Faulty goods are on the books where they physically are, but nobody can pick them.
+                Warehouse quarantine = warehouseService.resolveQuarantineWarehouse();
+                if (quarantine != null) warehouse = quarantine;
+                dto.setQualityStatus(QualityStatus.FAILED);
+            }
+            double rate = standardCost(item);
+
+            dto.setInventoryItemId(item.getInventoryItemId());
             dto.setQuantity(line.getReturnedQty());   // positive = stock comes back
             dto.setTransactionType("SALES_RETURN");
             dto.setReferenceType("SALES_CREDIT_NOTE");
             dto.setReferenceDocNo(cn.getCreditNoteNumber());
-            dto.setWarehouse(line.getWarehouseTo());
+            dto.setWarehouse(warehouse.getCode());
+            dto.setCostPerUnit(rate);
             dto.setCreatedBy(cn.getCreatedBy());
-            txService.adjustStock(dto);
+            dto.setSalesCreditNoteItemId(line.getId());
+            txService.produceStock(dto);
+
+            // Recorded as done, so a cancellation takes back out of the same place at the same rate.
+            line.setWarehouseTo(warehouse.getCode());
+            line.setGoodsCondition(condition);
+            line.setRestockRate(rate);
         }
         cn.setStatus(SalesCreditNoteStatus.CONFIRMED);
         SalesCreditNote saved = creditNoteRepo.save(cn);
@@ -155,6 +187,26 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
         if (cn.getStatus() == SalesCreditNoteStatus.CANCELLED) {
             throw new IllegalStateException("Credit note is already cancelled.");
         }
+
+        // A confirmed note put the returned goods into stock; cancelling it takes them back out,
+        // or refuses if they have since been reserved, picked or used.
+        if (cn.getStatus() == SalesCreditNoteStatus.CONFIRMED) {
+            for (SalesCreditNoteItem line : cn.getItems()) {
+                if (conditionOf(line) == SalesReturnGoodsCondition.NOT_RETURNED || line.getReturnedQty() <= 0) continue;
+
+                InventoryTransactionDTO dto = new InventoryTransactionDTO();
+                dto.setInventoryItemId(line.getInventoryItem().getInventoryItemId());
+                dto.setQuantity(line.getReturnedQty());
+                dto.setTransactionType("SALES_RETURN_REVERSAL");
+                dto.setReferenceType("SALES_CREDIT_NOTE");
+                dto.setReferenceDocNo(cn.getCreditNoteNumber());
+                dto.setWarehouse(line.getWarehouseTo());
+                dto.setCostPerUnit(line.getRestockRate() != null ? line.getRestockRate() : 0);
+                dto.setCreatedBy(currentUser(cn.getCreatedBy()));
+                txService.reverseSalesReturn(dto, line.getId());
+            }
+        }
+
         cn.setStatus(SalesCreditNoteStatus.CANCELLED);
         cn.setDeletedDate(LocalDate.now());
         SalesCreditNote saved = creditNoteRepo.save(cn);
@@ -197,6 +249,40 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
+    /**
+     * What a line does with the goods when nobody said. A rate difference or a short supply sends
+     * nothing back; a defect or quality complaint sends back goods that are not fit to sell again.
+     */
+    private static SalesReturnGoodsCondition conditionFromReason(String reason) {
+        if (reason == null) return SalesReturnGoodsCondition.GOOD;
+        return switch (reason.trim().toUpperCase()) {
+            case "RATE_DIFFERENCE", "SHORT_SUPPLY" -> SalesReturnGoodsCondition.NOT_RETURNED;
+            case "DEFECTIVE", "QUALITY_ISSUE"      -> SalesReturnGoodsCondition.DEFECTIVE;
+            default                                -> SalesReturnGoodsCondition.GOOD;
+        };
+    }
+
+    /** Lines confirmed before V191 carry no condition; every one of them was restocked as good. */
+    private static SalesReturnGoodsCondition conditionOf(SalesCreditNoteItem line) {
+        return line.getGoodsCondition() != null ? line.getGoodsCondition() : SalesReturnGoodsCondition.GOOD;
+    }
+
+    /** A serial number is one unit, so a serial-tracked item cannot come back in fractions. */
+    private static void assertWholeUnitsForSerials(InventoryItem item, SalesCreditNoteItem line) {
+        if (line.getGoodsCondition() == SalesReturnGoodsCondition.NOT_RETURNED) return;
+        var settings = item.getProductInventorySettings();
+        if (settings == null || !settings.isSerialTracked()) return;
+        if (line.getReturnedQty() != Math.rint(line.getReturnedQty())) {
+            throw new IllegalArgumentException(item.getItemCode() + " is serial-tracked: return a whole number of units, not "
+                    + line.getReturnedQty());
+        }
+    }
+
+    private static double standardCost(InventoryItem item) {
+        var finance = item.getProductFinanceSettings();
+        return finance != null && finance.getStandardCost() != null ? finance.getStandardCost() : 0;
+    }
+
     private SalesCreditNote loadActive(Long id) {
         return creditNoteRepo.findByIdAndDeletedDateIsNull(id)
                 .orElseThrow(() -> new IllegalArgumentException("Sales Credit Note not found: " + id));
@@ -224,7 +310,8 @@ public class SalesCreditNoteServiceImpl implements SalesCreditNoteService {
                 i.getGstAmount(),
                 i.getTotalAmount(),
                 i.getWarehouseTo(),
-                i.getRemarks()
+                i.getRemarks(),
+                conditionOf(i)
         )).collect(Collectors.toList());
 
         return new SalesCreditNoteResponseDTO(

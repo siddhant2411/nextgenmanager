@@ -54,6 +54,18 @@ public interface InventoryTransactionService {
     void adjustStock(InventoryTransactionDTO dto);
 
     /**
+     * Takes back out the stock a sales return put in, when its credit note is cancelled. The units
+     * the return created are found by their credit note line and taken out as they are; the
+     * reversal is refused if any of them has since been reserved, picked, moved or used. A line
+     * with no units of its own (untracked good stock, or one confirmed before units were linked)
+     * comes out of the counters of the warehouse it went into.
+     *
+     * @param dto                    item, quantity (positive), warehouse, rate and reference
+     * @param salesCreditNoteItemId  the credit note line the stock came back on
+     */
+    void reverseSalesReturn(InventoryTransactionDTO dto, Long salesCreditNoteItemId);
+
+    /**
      * Sets aside stock that is already on the books because an inspection rejected it: out of the
      * warehouse it was received into and into quarantine, marked FAILED so it cannot be picked.
      * The company-wide quantity does not change — the goods are still in the building.
