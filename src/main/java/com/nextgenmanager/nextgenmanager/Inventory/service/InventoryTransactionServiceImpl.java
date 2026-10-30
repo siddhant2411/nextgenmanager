@@ -190,6 +190,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
             //   Everything else        → "MANUAL"
             String batchSource = "GRN".equals(req.getTransactionType()) ? "GRN"
                     : "WORK_ORDER".equals(req.getReferenceType()) ? "WORK_ORDER"
+                    : "SALES_RETURN".equals(req.getTransactionType()) ? "SALES_RETURN"
                     : "MANUAL";
 
             // ── Create batch record (one per produce call) ─────────────────
@@ -246,6 +247,7 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
                         ? req.getQualityStatus() : QualityStatus.PASSED);
                 inst.setBatchNumber(batch);
                 if (serials != null) inst.setSerialNumber(serials.get(i));
+                inst.setSalesCreditNoteItemId(req.getSalesCreditNoteItemId());
                 inventoryInstanceRepository.save(inst);
             }
         }
@@ -308,6 +310,84 @@ public class InventoryTransactionServiceImpl implements InventoryTransactionServ
         writeLedger(req, item, delta, settings.getAvailableQuantity());
         inventoryItemRepository.save(item);
         logger.info("ADJUSTMENT {} of {} | available={}", delta, item.getItemCode(), settings.getAvailableQuantity());
+    }
+
+    // ─── SALES RETURN REVERSAL ────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public void reverseSalesReturn(InventoryTransactionDTO req, Long salesCreditNoteItemId) {
+        InventoryItem item = loadItem(req.getInventoryItemId());
+        ProductInventorySettings settings = item.getProductInventorySettings();
+        double qty = req.getQuantity();
+        if (qty <= 0) return;
+
+        List<InventoryInstance> units = salesCreditNoteItemId == null ? List.of()
+                : inventoryInstanceRepository.findBySalesCreditNoteItemIdAndDeletedDateIsNull(salesCreditNoteItemId);
+        Warehouse warehouse;
+
+        if (!units.isEmpty()) {
+            // The return created these units, so taking it back means taking exactly these out —
+            // and only while nothing else has a claim on them. A unit since reserved, picked,
+            // boxed, moved or used belongs to that document now, not to the credit note.
+            double free = 0;
+            for (InventoryInstance unit : units) {
+                boolean untouched = !unit.isConsumed()
+                        && unit.getInventoryInstanceStatus() == InventoryInstanceStatus.AVAILABLE
+                        && unit.getBookedDate() == null
+                        && unit.getPickListLine() == null
+                        && unit.getPackageLine() == null
+                        && unit.getStockTransferLine() == null;
+                if (untouched && unit.getQuantity() != null) free += unit.getQuantity().doubleValue();
+            }
+            if (free + STOCK_EPSILON < qty) {
+                throw new IllegalStateException(String.format(
+                        "Cannot take back the %s of %s returned on %s: only %s of it is still untouched — "
+                                + "the rest has since been reserved, picked, moved or used",
+                        plainQty(qty), item.getItemCode(), req.getReferenceDocNo(), plainQty(free)));
+            }
+
+            warehouse = units.get(0).getWarehouse();
+            Date now = new Date();
+            for (InventoryInstance unit : units) {
+                unit.setConsumed(true);
+                unit.setConsumeDate(now);
+                unit.setQuantity(BigDecimal.ZERO);
+                unit.setInventoryInstanceStatus(InventoryInstanceStatus.CONSUMED);
+                unit.setConsumptionReferenceNo(req.getReferenceDocNo());
+                if (unit.getSerialNumber() != null) {
+                    unit.getSerialNumber().setStatus(SerialStatus.CONSUMED);
+                    unit.getSerialNumber().setConsumedDate(now);
+                    unit.getSerialNumber().setConsumedByDocNo(req.getReferenceDocNo());
+                }
+                inventoryInstanceRepository.save(unit);
+            }
+            BatchNumber batch = units.get(0).getBatchNumber();
+            if (batch != null) {
+                batch.setRemainingQty(BigDecimal.ZERO);
+                batch.setStatus(BatchStatus.CONSUMED);
+            }
+        } else {
+            // Untracked good stock, or a note confirmed before returns were linked to their units:
+            // only the counters ever moved, so only the counters move back.
+            warehouse = warehouseService.resolveByCodeOrDefault(req.getWarehouse());
+            double onHand = itemWarehouseStockRepository.find(item.getInventoryItemId(), warehouse.getId())
+                    .map(row -> row.getOnHand().doubleValue()).orElse(0.0);
+            assertStockSufficient(item, settings, onHand, qty, "take back a sales return from " + warehouse.getCode());
+            assertStockSufficient(item, settings, settings.getAvailableQuantity(), qty, "take back a sales return");
+        }
+
+        settings.setAvailableQuantity(settings.getAvailableQuantity() - qty);
+        applyWarehouseDelta(item, warehouse, -qty, 0);
+        req.setWarehouse(warehouse.getCode());
+        writeLedger(req, item, -qty, settings.getAvailableQuantity());
+        inventoryItemRepository.save(item);
+        logger.info("SALES_RETURN_REVERSAL {} of {} from {} | available={}",
+                qty, item.getItemCode(), warehouse.getCode(), settings.getAvailableQuantity());
+    }
+
+    private static String plainQty(double value) {
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
     }
 
     // ─── QUARANTINE ───────────────────────────────────────────────────────────

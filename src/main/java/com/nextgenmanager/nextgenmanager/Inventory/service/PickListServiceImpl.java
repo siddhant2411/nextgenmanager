@@ -47,11 +47,15 @@ public class PickListServiceImpl implements PickListService {
 
     @Override
     public List<PickListDto> list(PickListStatus status, Long salesOrderId) {
+        // Both filters apply together: the challan asks for one order's PICKED lists, and taking
+        // the status alone hands it every order's.
         List<PickList> rows;
-        if (status != null)            rows = pickListRepository.findLiveByStatus(status);
-        else if (salesOrderId != null) rows = pickListRepository.findLiveBySalesOrder(salesOrderId);
-        else                           rows = pickListRepository.findAllLive();
-        return rows.stream().map(this::toDto).toList();
+        if (salesOrderId != null) rows = pickListRepository.findLiveBySalesOrder(salesOrderId);
+        else if (status != null)  rows = pickListRepository.findLiveByStatus(status);
+        else                      rows = pickListRepository.findAllLive();
+        return rows.stream()
+                .filter(p -> status == null || p.getStatus() == status)
+                .map(this::toDto).toList();
     }
 
     @Override

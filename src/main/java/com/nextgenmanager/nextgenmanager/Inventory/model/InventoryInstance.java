@@ -152,6 +152,10 @@ public class InventoryInstance {
     @Column(name = "delivery_note_item_id")
     private Long deliveryNoteItemId;
 
+    /** The sales credit note line that brought this unit back, so cancelling the note can find it. */
+    @Column(name = "sales_credit_note_item_id")
+    private Long salesCreditNoteItemId;
+
     private static String generateShortUUID() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }

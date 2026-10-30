@@ -186,6 +186,9 @@ public interface InventoryInstanceRepository extends JpaRepository<InventoryInst
     @Query("SELECT i FROM InventoryInstance i WHERE i.packageLine.id = :lineId AND i.deletedDate IS NULL")
     List<InventoryInstance> findByPackageLineId(@Param("lineId") Long lineId);
 
+    /** The units a sales return created for one credit note line. */
+    List<InventoryInstance> findBySalesCreditNoteItemIdAndDeletedDateIsNull(Long salesCreditNoteItemId);
+
     @Query(value = "SELECT * FROM inventoryInstance i WHERE i.inventoryItemRef = :inventoryItemId ORDER BY i.entryDate ASC LIMIT :consumedQty", nativeQuery = true)
     public List<InventoryInstance> getItemsToConsume(@Param("inventoryItemId") int inventoryItemId, @Param("consumedQty") int consumedQty);
 

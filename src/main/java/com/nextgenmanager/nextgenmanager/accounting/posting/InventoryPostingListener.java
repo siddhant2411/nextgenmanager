@@ -64,6 +64,7 @@ public class InventoryPostingListener {
     private static final String TXN_RETURN = "RETURN";
     private static final String TXN_PURCHASE_RETURN = "PURCHASE_RETURN";
     private static final String TXN_SALES_RETURN = "SALES_RETURN";
+    private static final String TXN_SALES_RETURN_REVERSAL = "SALES_RETURN_REVERSAL";
     private static final String REF_WORK_ORDER = "WORK_ORDER";
     private static final String REF_OPENING_STOCK = "OPENING_STOCK";
 
@@ -153,6 +154,12 @@ public class InventoryPostingListener {
             lines.add(dr(ledgers.stockLedgerFor(item).getId(), amount, "Sales return " + ref, null));
             lines.add(cr(ledgers.cogs().getId(), amount, "COGS reversed " + ref, null));
             narration = "Sales return " + ref;
+        } else if (TXN_SALES_RETURN_REVERSAL.equals(txn)) {
+            // Cancelled credit note — the returned goods leave stock again, so the sales return
+            // above is undone (Cr stock / Dr COGS). The credit note voucher reverses on its own.
+            lines.add(dr(ledgers.cogs().getId(), amount, "COGS restored " + ref, null));
+            lines.add(cr(ledgers.stockLedgerFor(item).getId(), amount, "Sales return reversed " + ref, null));
+            narration = "Sales return reversed " + ref;
         } else if (TXN_ADJUSTMENT.equals(txn)) {
             // Opening stock (migration cutover) credits Opening Balance Equity, not P&L; a regular
             // adjustment hits Inventory Adjustment Gain (income) / Write-off (expense) by direction.
